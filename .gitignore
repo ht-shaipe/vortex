@@ -38,6 +38,7 @@ src-tauri/gen/
 *.njsproj
 *.sln
 *.sw?
+*.lock
 
 # CodeArts local workspace
 .codeartsdoer/
