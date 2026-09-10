@@ -2,11 +2,21 @@ use crate::db::models::{ProxyRequest, UsageEntry};
 use crate::db::{core as db_core, providers as db_providers, usage as db_usage};
 use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
-use crate::proxy::executor::ExecutorFactory;
+use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
 use crate::proxy::retry::RetryPolicy;
+use crate::proxy::sse::SseStream;
 use crate::AppState;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// 引擎处理结果。
+/// 流式响应以归一化 SSE 流返回，由入站协议层（OpenAI/Anthropic）决定如何包装。
+pub enum ProxyOutput {
+    /// 非流式响应（OpenAI 格式 JSON）
+    Response(actix_web::HttpResponse),
+    /// 流式响应（归一化为 OpenAI chunk 格式的 SSE 流）
+    Stream(SseStream),
+}
 
 pub struct ProxyEngine {
     executor_factory: ExecutorFactory,
@@ -25,7 +35,7 @@ impl ProxyEngine {
         &self,
         state: &Arc<AppState>,
         request: ProxyRequest,
-    ) -> Result<actix_web::HttpResponse> {
+    ) -> Result<ProxyOutput> {
         let start = Instant::now();
         let conn = db_core::get_conn(&state.db_pool)?;
 
@@ -104,6 +114,25 @@ impl ProxyEngine {
             return Ok((def.clone(), connection, model));
         }
 
+        // 模型名无法解析（如 Claude Code 发送的 claude-sonnet-4 等原生模型名）：
+        // 回退到配置了默认模型的活跃连接（借鉴 relay-rs 的默认模型回退）
+        for def in registry.list() {
+            let connections = db_providers::list_by_provider(conn, &def.id, enc_key)?;
+            if let Some(c) = connections.iter().find(|c| {
+                c.default_model.as_deref().is_some_and(|m| !m.is_empty())
+            }) {
+                let model = c.default_model.clone().unwrap_or_default();
+                log::warn!(
+                    "Model '{}' cannot be resolved, falling back to default model '{}/{}' (connection: {})",
+                    request.model,
+                    def.id,
+                    model,
+                    c.name
+                );
+                return Ok((def.clone(), Some(c.clone()), model));
+            }
+        }
+
         Err(AppError::Routing(format!("Cannot resolve model: {}", request.model)))
     }
 
@@ -116,7 +145,7 @@ impl ProxyEngine {
         connection: &crate::db::models::ProviderConnection,
         model: &str,
         start: Instant,
-    ) -> Result<actix_web::HttpResponse> {
+    ) -> Result<ProxyOutput> {
         let executor = self.executor_factory.create(def);
         let mut last_err = None;
 
@@ -124,54 +153,82 @@ impl ProxyEngine {
             let breaker_name = format!("{}:{}", def.id, connection.id);
             if !state.resilience_manager.is_available(&breaker_name) {
                 last_err = Some(AppError::Provider(format!("Circuit breaker open for {}", breaker_name)));
-                continue;
+                break;
             }
 
             match executor.execute(state, request, def, connection, model).await {
-                Ok(response) => {
-                    let status = response.status();
-                    let body_bytes = actix_web::body::to_bytes(response.into_body()).await.unwrap_or_default();
+                Ok(ExecutorOutput::Json(body)) => {
+                    let (tokens_in, tokens_out, cost) =
+                        extract_usage_from_response(&body, def.api_format.as_str());
+                    let latency = start.elapsed().as_millis() as i64;
+                    let _ = db_providers::reset_backoff(conn, &connection.id);
+                    let _ = db_providers::increment_usage(conn, &connection.id);
+                    state.resilience_manager.record_success(&breaker_name);
+                    let entry = UsageEntry {
+                        id: 0,
+                        provider: Some(def.id.clone()),
+                        model: Some(model.to_string()),
+                        connection_id: Some(connection.id.clone()),
+                        api_key_id: request.api_key.clone(),
+                        api_key_name: None,
+                        tokens_input: tokens_in,
+                        tokens_output: tokens_out,
+                        tokens_cache_read: 0,
+                        tokens_cache_creation: 0,
+                        tokens_reasoning: 0,
+                        service_tier: "standard".to_string(),
+                        status: "success".to_string(),
+                        success: true,
+                        error_code: None,
+                        latency_ms: Some(latency),
+                        ttft_ms: None,
+                        cost,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = db_usage::record(conn, &entry);
 
-                    if status.is_success() {
-                        let (tokens_in, tokens_out, cost) = extract_usage_from_response(&body_bytes, def.api_format.as_str());
-                        let latency = start.elapsed().as_millis() as i64;
-                        let _ = db_providers::reset_backoff(conn, &connection.id);
-                        let _ = db_providers::increment_usage(conn, &connection.id);
-                        state.resilience_manager.record_success(&breaker_name);
-                        let entry = UsageEntry {
-                            id: 0,
-                            provider: Some(def.id.clone()),
-                            model: Some(model.to_string()),
-                            connection_id: Some(connection.id.clone()),
-                            api_key_id: request.api_key.clone(),
-                            api_key_name: None,
-                            tokens_input: tokens_in,
-                            tokens_output: tokens_out,
-                            tokens_cache_read: 0,
-                            tokens_cache_creation: 0,
-                            tokens_reasoning: 0,
-                            service_tier: "standard".to_string(),
-                            status: "success".to_string(),
-                            success: true,
-                            error_code: None,
-                            latency_ms: Some(latency),
-                            ttft_ms: None,
-                            cost,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        };
-                        let _ = db_usage::record(conn, &entry);
+                    return Ok(ProxyOutput::Response(actix_web::HttpResponse::Ok().json(body)));
+                }
+                Ok(ExecutorOutput::Stream(stream)) => {
+                    // 流式响应直接透传，不缓冲（缓冲会破坏 SSE 实时性）
+                    let latency = start.elapsed().as_millis() as i64;
+                    let _ = db_providers::reset_backoff(conn, &connection.id);
+                    let _ = db_providers::increment_usage(conn, &connection.id);
+                    state.resilience_manager.record_success(&breaker_name);
+                    let entry = UsageEntry {
+                        id: 0,
+                        provider: Some(def.id.clone()),
+                        model: Some(model.to_string()),
+                        connection_id: Some(connection.id.clone()),
+                        api_key_id: request.api_key.clone(),
+                        api_key_name: None,
+                        tokens_input: 0,
+                        tokens_output: 0,
+                        tokens_cache_read: 0,
+                        tokens_cache_creation: 0,
+                        tokens_reasoning: 0,
+                        service_tier: "standard".to_string(),
+                        status: "success".to_string(),
+                        success: true,
+                        error_code: None,
+                        latency_ms: Some(latency),
+                        ttft_ms: None,
+                        cost: 0.0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = db_usage::record(conn, &entry);
 
-                        return Ok(actix_web::HttpResponseBuilder::new(status).body(body_bytes.to_vec()));
-                    }
-
-                    let status_code = status.as_u16();
+                    return Ok(ProxyOutput::Stream(stream));
+                }
+                Ok(ExecutorOutput::UpstreamError { status, body }) => {
+                    let status_code = status;
                     if !self.retry_policy.should_retry(attempt, Some(status_code)) {
                         if status_code == 429 {
                             let retry_after = chrono::Utc::now() + chrono::Duration::seconds(60);
                             let _ = db_providers::increment_backoff(conn, &connection.id, Some(retry_after.to_rfc3339().as_str()));
                         }
                         state.resilience_manager.record_failure(&breaker_name);
-                        return Err(AppError::Provider(format!("Provider returned {}: {}", status_code, String::from_utf8_lossy(&body_bytes))));
+                        return Err(AppError::Provider(format!("Provider returned {}: {}", status_code, body)));
                     }
 
                     let delay = self.retry_policy.delay_for_attempt(attempt);
@@ -179,7 +236,6 @@ impl ProxyEngine {
                     last_err = Some(AppError::Provider(format!("Provider returned {} (attempt {}), retrying", status_code, attempt + 1)));
                 }
                 Err(e) => {
-                    let breaker_name = format!("{}:{}", def.id, connection.id);
                     state.resilience_manager.record_failure(&breaker_name);
                     if !self.retry_policy.should_retry(attempt, None) {
                         return Err(e);
@@ -195,27 +251,21 @@ impl ProxyEngine {
     }
 }
 
-fn extract_usage_from_response(body: &[u8], api_format: &str) -> (i64, i64, f64) {
-    let parsed: Option<serde_json::Value> = serde_json::from_slice(body).ok();
-    let parsed = match parsed {
-        Some(p) => p,
-        None => return (0, 0, 0.0),
-    };
-
+fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i64, i64, f64) {
     let (tokens_in, tokens_out) = match api_format {
         "anthropic" => {
-            let input = parsed.get("usage")
+            let input = body.get("usage")
                 .and_then(|u| u.get("input_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let output = parsed.get("usage")
+            let output = body.get("usage")
                 .and_then(|u| u.get("output_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             (input, output)
         }
         "gemini" => {
-            let meta = parsed.get("usageMetadata");
+            let meta = body.get("usageMetadata");
             let input = meta
                 .and_then(|u| u.get("promptTokenCount"))
                 .and_then(|v| v.as_i64())
@@ -227,11 +277,11 @@ fn extract_usage_from_response(body: &[u8], api_format: &str) -> (i64, i64, f64)
             (input, output)
         }
         _ => {
-            let input = parsed.get("usage")
+            let input = body.get("usage")
                 .and_then(|u| u.get("prompt_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let output = parsed.get("usage")
+            let output = body.get("usage")
                 .and_then(|u| u.get("completion_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);

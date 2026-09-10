@@ -36,7 +36,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/th-shaipe/vortex/releases/latest/download/latest.json"
+        "https://github.com/ht-shaipe/vortex/releases/latest/download/latest.json"
       ],
       "pubkey": "REPLACE_WITH_UPDATER_PUBKEY",
       "windows": {

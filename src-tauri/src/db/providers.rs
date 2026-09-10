@@ -89,7 +89,25 @@ pub fn create(conn: &rusqlite::Connection, req: &crate::db::models::CreateProvid
     let id = uuid::Uuid::new_v4().to_string();
     let auth_type = req.auth_type.as_deref().unwrap_or("apikey");
     let now = chrono::Utc::now().to_rfc3339();
-    let specific_data = req.provider_specific_data.clone().unwrap_or(serde_json::json!({}));
+
+    // 组装 provider_specific_data：合并三处来源（请求里已有 / baseUrl / displayName / apiProtocol / customId）
+    let mut specific_data = req.provider_specific_data.clone().unwrap_or(serde_json::json!({}));
+    if !specific_data.is_object() {
+        specific_data = serde_json::json!({});
+    }
+    let obj = specific_data.as_object_mut().unwrap();
+    if let Some(base_url) = req.base_url.as_deref() {
+        obj.insert("baseUrl".to_string(), serde_json::Value::String(base_url.to_string()));
+    }
+    if let Some(display_name) = req.display_name.as_deref() {
+        obj.insert("displayName".to_string(), serde_json::Value::String(display_name.to_string()));
+    }
+    if let Some(api_protocol) = req.api_protocol.as_deref() {
+        obj.insert("apiProtocol".to_string(), serde_json::Value::String(api_protocol.to_string()));
+    }
+    if let Some(custom_id) = req.custom_provider_id.as_deref() {
+        obj.insert("customId".to_string(), serde_json::Value::String(custom_id.to_string()));
+    }
 
     let encrypted_api_key = req.api_key.as_deref().and_then(|k| encrypt_value(enc_key, k));
     let encrypted_access_token = req.access_token.as_deref().and_then(|k| encrypt_value(enc_key, k));
@@ -99,13 +117,14 @@ pub fn create(conn: &rusqlite::Connection, req: &crate::db::models::CreateProvid
         "INSERT INTO provider_connections \
          (id, provider, auth_type, name, email, priority, is_active, api_key, \
          access_token, refresh_token, project_id, rate_limit_protection, \
-         group_name, max_concurrent, default_model, provider_specific_data, \
+         group_name, max_concurrent, default_model, display_name, provider_specific_data, \
          test_status, created_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10, 0, ?11, ?12, ?13, ?14, 'unknown', ?15, ?16)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10, 0, ?11, ?12, ?13, ?14, ?15, 'unknown', ?16, ?17)",
         params![
             id, req.provider, auth_type, req.name, req.email, req.priority.unwrap_or(0),
             encrypted_api_key, encrypted_access_token, encrypted_refresh_token, req.project_id,
             req.group_name, req.max_concurrent, req.default_model,
+            req.display_name.clone().unwrap_or_default(),
             specific_data.to_string(), now, now
         ],
     )?;
@@ -136,7 +155,7 @@ pub fn create(conn: &rusqlite::Connection, req: &crate::db::models::CreateProvid
         group_name: req.group_name.clone(),
         max_concurrent: req.max_concurrent,
         proxy_enabled: false,
-        display_name: None,
+        display_name: req.display_name.clone(),
         default_model: req.default_model.clone(),
         token_type: None,
         scope: None,
@@ -178,6 +197,25 @@ pub fn update(conn: &rusqlite::Connection, id: &str, updates: &serde_json::Value
             let data_str = serde_json::to_string(&data)?;
             conn.execute("UPDATE provider_connections SET provider_specific_data = ?1, updated_at = ?2 WHERE id = ?3", params![data_str, now, id])?;
         }
+    }
+    // displayName / apiProtocol：列与 JSON 双写。列给列表展示，JSON 给代理层读取。
+    let mut dirty_extra: Option<serde_json::Value> = None;
+    if let Some(dn) = updates.get("displayName").and_then(|v| v.as_str()) {
+        conn.execute("UPDATE provider_connections SET display_name = ?1, updated_at = ?2 WHERE id = ?3", params![dn, now, id])?;
+    }
+    if updates.get("displayName").map(|v| v.is_null()).unwrap_or(false) {
+        conn.execute("UPDATE provider_connections SET display_name = NULL, updated_at = ?1 WHERE id = ?2", params![now, id])?;
+    }
+    if let Some(ap) = updates.get("apiProtocol").and_then(|v| v.as_str()) {
+        let existing = get_by_id(conn, id, enc_key)?;
+        if let Some(mut p) = existing {
+            let mut data = p.provider_specific_data.as_object_mut().cloned().unwrap_or_default();
+            data.insert("apiProtocol".to_string(), serde_json::Value::String(ap.to_string()));
+            dirty_extra = Some(serde_json::Value::Object(data));
+        }
+    }
+    if let Some(data) = dirty_extra {
+        conn.execute("UPDATE provider_connections SET provider_specific_data = ?1, updated_at = ?2 WHERE id = ?3", params![data.to_string(), now, id])?;
     }
 
     get_by_id(conn, id, enc_key)

@@ -9,6 +9,14 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
     let masked_key = c.api_key.as_deref().map(|k| {
         if k.len() > 8 { format!("{}{}", "*".repeat(k.len()-4), &k[k.len()-4..]) } else { "*".repeat(k.len()) }
     });
+    // 自定义提供方扩展字段：从 provider_specific_data 提取 baseUrl / apiProtocol / customId，
+    // 这样前端不必理解 JSON 结构直接读平铺字段。
+    let empty_obj = serde_json::json!({});
+    let obj = c.provider_specific_data.as_object().unwrap_or(empty_obj.as_object().unwrap());
+    let base_url = obj.get("baseUrl").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let api_protocol = obj.get("apiProtocol").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let custom_id = obj.get("customId").and_then(|v| v.as_str()).map(|s| s.to_string());
+
     json!({
         "id": c.id,
         "provider": c.provider,
@@ -33,6 +41,9 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
         "proxyEnabled": c.proxy_enabled,
         "displayName": c.display_name,
         "defaultModel": c.default_model,
+        "baseUrl": base_url,
+        "apiProtocol": api_protocol,
+        "customProviderId": custom_id,
         "providerSpecificData": c.provider_specific_data,
         "createdAt": c.created_at,
         "updatedAt": c.updated_at,

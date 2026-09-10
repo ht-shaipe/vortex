@@ -7,7 +7,7 @@ export type UpdateStatus =
   | 'available'
   | 'up-to-date'
   | 'downloading'
-  | 'installing'
+  | 'ready'
   | 'error'
 
 interface UpdateInfo {
@@ -89,13 +89,19 @@ async function downloadAndInstall(): Promise<void> {
           break
         case 'Finished':
           downloadProgress.value = 100
-          status.value = 'installing'
           break
       }
     })
 
-    status.value = 'installing'
+    status.value = 'ready'
+  } catch (e) {
+    status.value = 'error'
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+  }
+}
 
+async function relaunchApp(): Promise<void> {
+  try {
     const { relaunch } = await import('@tauri-apps/plugin-process')
     await relaunch()
   } catch (e) {
@@ -112,7 +118,7 @@ async function checkOnStartup(): Promise<void> {
       const { ElNotification } = await import('element-plus')
       ElNotification({
         title: `发现新版本 v${updateInfo.value.version}`,
-        message: '点击"检查更新"页面查看详情并安装',
+        message: '点击"关于"页面查看详情并安装',
         type: 'info',
         duration: 8000,
         position: 'bottom-right',
@@ -132,6 +138,7 @@ export function useUpdater() {
     currentVersion: readonly(currentVersion),
     checkForUpdate,
     downloadAndInstall,
+    relaunchApp,
     checkOnStartup,
   }
 }

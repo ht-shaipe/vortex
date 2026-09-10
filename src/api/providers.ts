@@ -36,8 +36,13 @@ export async function createProvider(params: {
   name: string
   apiKey?: string
   authType?: string
+  baseUrl?: string
   priority?: number
   defaultModel?: string
+  groupName?: string
+  displayName?: string
+  apiProtocol?: string
+  customProviderId?: string
 }) {
   const { data } = await api.post('/providers', params)
   return data as ProviderConnection

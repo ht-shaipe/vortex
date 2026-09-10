@@ -7,13 +7,65 @@
         <div class="app-mark">V</div>
         <div class="about-info">
           <div class="about-name">Vortex</div>
-          <div class="about-meta mono">v0.1.0 · MIT License · Tauri 2 + Rust + Vue 3</div>
+          <div class="about-meta mono">v{{ currentVersion || '0.1.0' }} · MIT License · Tauri 2 + Rust + Vue 3</div>
           <p class="about-desc">统一的 AI 网关桌面应用，将 21+ 个 AI 提供商聚合为 OpenAI 兼容 API。支持 17 种路由策略、组合模型、API 密钥管理与用量统计。</p>
           <div class="about-links">
             <a class="btn" href="https://v2.tauri.app" target="_blank" rel="noopener">Tauri 文档</a>
             <a class="btn" href="https://element-plus.org" target="_blank" rel="noopener">Element Plus</a>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 检查更新 -->
+    <div class="card section">
+      <div class="card-head">
+        <div>
+          <div class="card-title">检查更新</div>
+          <div class="card-sub">从 GitHub Releases 拉取最新版本</div>
+        </div>
+        <StatusBadge :tone="statusTone" :label="statusLabel" />
+      </div>
+      <div class="card-body">
+        <template v-if="status === 'idle'">
+          <p class="para">点击下方按钮检查是否有新版本。</p>
+          <button type="button" class="btn primary" @click="checkForUpdate()">检查更新</button>
+        </template>
+        <template v-else-if="status === 'checking'">
+          <p class="para">正在检查更新…</p>
+          <button type="button" class="btn" disabled>检查中…</button>
+        </template>
+        <template v-else-if="status === 'up-to-date'">
+          <p class="para">当前已是最新版本。</p>
+          <button type="button" class="btn primary" @click="checkForUpdate()">重新检查</button>
+        </template>
+        <template v-else-if="status === 'available' && updateInfo">
+          <p class="para">
+            发现新版本 <strong>v{{ updateInfo.version }}</strong>
+            <span v-if="updateInfo.date"> · {{ updateInfo.date.slice(0, 10) }}</span>
+          </p>
+          <div v-if="updateInfo.body" class="release-notes">
+            <pre>{{ updateInfo.body }}</pre>
+          </div>
+          <div class="btn-row">
+            <button type="button" class="btn primary" @click="downloadAndInstall()">下载并安装</button>
+            <button type="button" class="btn" @click="checkForUpdate()">重新检查</button>
+          </div>
+        </template>
+        <template v-else-if="status === 'downloading'">
+          <p class="para">正在下载更新… {{ downloadProgress }}%</p>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: downloadProgress + '%' }" />
+          </div>
+        </template>
+        <template v-else-if="status === 'ready'">
+          <p class="para">更新已下载完成，重启应用以完成安装。</p>
+          <button type="button" class="btn primary" @click="relaunchApp()">重启应用</button>
+        </template>
+        <template v-else-if="status === 'error'">
+          <p class="para error-text">{{ errorMsg || '检查更新失败' }}</p>
+          <button type="button" class="btn primary" @click="checkForUpdate()">重试</button>
+        </template>
       </div>
     </div>
 
@@ -33,7 +85,51 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { useUpdater } from '@/composables/useUpdater'
+
+const {
+  status,
+  updateInfo,
+  errorMsg,
+  downloadProgress,
+  currentVersion,
+  checkForUpdate,
+  downloadAndInstall,
+  relaunchApp,
+} = useUpdater()
+
+const statusTone = computed(() => {
+  switch (status.value) {
+    case 'up-to-date': return 'ok'
+    case 'available': return 'warn'
+    case 'downloading': return 'info'
+    case 'ready': return 'ok'
+    case 'error': return 'err'
+    default: return 'neutral'
+  }
+})
+
+const statusLabel = computed(() => {
+  switch (status.value) {
+    case 'idle': return '未检查'
+    case 'checking': return '检查中'
+    case 'up-to-date': return '已是最新'
+    case 'available': return '有新版本'
+    case 'downloading': return '下载中'
+    case 'ready': return '待重启'
+    case 'error': return '出错'
+    default: return '未知'
+  }
+})
+
+onMounted(() => {
+  if (status.value === 'idle') {
+    checkForUpdate(true)
+  }
+})
 </script>
 
 <style scoped>
@@ -56,4 +152,22 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 .about-links { display: flex; gap: var(--gap-sm); }
 .para { font-size: 13px; color: var(--ink-2); line-height: 1.75; margin: 0 0 10px; }
 .para:last-child { margin-bottom: 0; }
+.error-text { color: var(--err); }
+.btn-row { display: flex; gap: 8px; }
+.release-notes {
+  margin: 8px 0 12px; padding: 10px 12px;
+  background: var(--surface-3); border: 1px solid var(--line);
+  border-radius: var(--r-sm); max-height: 200px; overflow-y: auto;
+}
+.release-notes pre {
+  font-size: 12px; color: var(--ink-2); line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word; margin: 0;
+}
+.progress-bar {
+  height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 0.2s ease;
+}
 </style>

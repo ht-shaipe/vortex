@@ -55,6 +55,9 @@ pub async fn add_provider(
         group_name: None,
         max_concurrent: None,
         default_model: None,
+        display_name: None,
+        api_protocol: None,
+        custom_provider_id: None,
         provider_specific_data: None,
     };
     let created = db_providers::create(&conn, &req, &state.encryption_key).map_err(|e| e.to_string())?;

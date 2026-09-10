@@ -12,28 +12,16 @@ pub async fn chat_completions(
     let body_inner = body.into_inner();
     let request = match parse_chat_request(&body_inner, &req) {
         Ok(r) => r,
-        Err(e) => return HttpResponse::BadRequest().json(json!({"error": {"message": e.to_string(), "type": "invalid_request_error"}})),
+        Err(e) => return super::openai_error_response(&e),
     };
 
     let engine = state.proxy_engine.read();
     match engine.handle_request(&state, request).await {
-        Ok(response) => response,
-        Err(e) => {
-            let status = match &e {
-                crate::error::AppError::Unauthorized(_) => actix_web::http::StatusCode::UNAUTHORIZED,
-                crate::error::AppError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
-                crate::error::AppError::Provider(_) => actix_web::http::StatusCode::BAD_GATEWAY,
-                crate::error::AppError::Routing(_) => actix_web::http::StatusCode::NOT_FOUND,
-                _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            HttpResponse::build(status).json(json!({
-                "error": {
-                    "message": e.to_string(),
-                    "type": format!("{:?}", status),
-                    "code": status.as_u16(),
-                }
-            }))
+        Ok(crate::proxy::engine::ProxyOutput::Response(response)) => response,
+        Ok(crate::proxy::engine::ProxyOutput::Stream(stream)) => {
+            crate::proxy::sse::sse_http_response(stream)
         }
+        Err(e) => super::openai_error_response(&e),
     }
 }
 

@@ -17,13 +17,29 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 
 ## 快速开始
 
+### 直接下载
+
+预编译安装包发布在 [GitHub Releases](https://github.com/ht-shaipe/vortex/releases/latest)：
+
+| 平台 | 产物 |
+|---|---|
+| Windows 10 / 11 · x64 | `Vortex_<版本>_x64-setup.exe`（NSIS）、`Vortex_<版本>_x64_en-US.msi` |
+| macOS · Apple 芯片 | `Vortex_<版本>_aarch64.dmg` |
+| macOS · Intel | `Vortex_<版本>_x64.dmg` |
+| Linux · x64 | `Vortex_<版本>_amd64.AppImage`、`Vortex_<版本>_amd64.deb` |
+
+产物由 `.github/workflows/release.yml` 在推送 `v*` tag（或手动触发 workflow_dispatch）时构建并发布。
+官网的下载区会在运行时拉取最新 Release，把按钮直接指向上述文件，因此**文件名带版本号不需要手工维护**。
+
+> macOS 产物未做 Apple 公证，首次打开需右键 → 打开；Windows 若弹 SmartScreen 提示，选「更多信息 → 仍要运行」。
+
 ### 环境要求
 
 - [Rust](https://rustup.rs/) 1.70+ (stable)
 - [Bun](https://bun.sh/)（仓库带 `bun.lock`，推荐）或 [Node.js](https://nodejs.org/) 20.19+ / 22.12+
 - [Tauri 2 CLI](https://v2.tauri.app/) 前置依赖（参见 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/)）
 
-### 安装与运行
+### 从源码安装与运行
 
 ```bash
 # 安装前端依赖
@@ -252,8 +268,15 @@ open website/index.html
 python3 -m http.server 8080 --directory website
 ```
 
-页面结构：Hero → 数据概览 → 提供商墙 → 特性 → 界面预览 → 快速开始 → 请求流程 → 构建指引 → FAQ。
+页面结构：Hero → 数据概览 → 接入范围 → 特性 → 界面预览 → 快速开始 → 请求流程 → 下载安装 → FAQ。
 截图位于 `website/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
+
+> 下载区的按钮由 `assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
+> 静态 HTML 里只放「指向 Releases 页面」的兜底链接 —— 因为安装包文件名带版本号，写死必然过期。
+> 三种状态都已验证：有发布（直链各平台产物）、部分平台缺产物（该卡片降级为「到 Releases 查看」）、
+> 尚无发布（显示「尚未发布预编译版本」并引导去源码构建）。
+
+> 官网刻意不逐个列出上游平台的厂商名：站点只讲接入能力（云端 API / 聚合中转 / 本地推理 / 自定义端点）与协议兼容性，具体清单以应用内「订阅」页和本 README 的「内置提供商」表为准，避免站点与注册表脱节。
 
 ## 许可证
 

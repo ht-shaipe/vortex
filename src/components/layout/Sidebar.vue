@@ -58,7 +58,7 @@ import {
   ChatDotRound,
   Histogram,
   Connection,
-  Refresh,
+
   Setting,
   InfoFilled,
   Document,
@@ -89,13 +89,13 @@ const providerCount = ref(0)
 const mainItems = computed<NavItem[]>(() => [
   { to: '/guide', label: '接入指南', icon: Reading },
   { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: 'ok' },
-  { to: '/subscriptions', label: '订阅', icon: Key, badge: providerCount.value > 0 ? String(providerCount.value) : null },
-  { to: '/free-tokens', label: '免费 Token', icon: Present },
+  { to: '/subscriptions', label: '订阅管理', icon: Key, badge: providerCount.value > 0 ? String(providerCount.value) : null },
+  { to: '/statistics', label: '数据统计', icon: Histogram },
+  { to: '/sync', label: '配置同步', icon: Connection },
   { to: '/request-logs', label: '请求日志', icon: Document },
-  { to: '/statistics', label: '统计', icon: Histogram },
-  { to: '/sync', label: '同步', icon: Connection },
+  { to: '/free-tokens', label: '薅羊毛', icon: Present },
   { to: '/chat', label: '对话', icon: ChatDotRound },
-  { to: '/updates', label: '检查更新', icon: Refresh },
+
 ])
 
 const bottomItems: NavItem[] = [

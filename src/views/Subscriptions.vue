@@ -1,9 +1,12 @@
 <template>
   <div>
-    <PageHeader title="订阅" sub="管理各 AI 提供商的连接与 API 密钥">
+    <PageHeader title="订阅管理" sub="管理各 AI 提供商的连接与 API 密钥">
       <template #actions>
-        <router-link to="/subscriptions/new" class="btn primary">
-          <el-icon :size="14"><Plus /></el-icon>添加订阅
+        <router-link to="/subscriptions/new" class="btn">
+          <el-icon :size="14"><Plus /></el-icon>添加提供方
+        </router-link>
+        <router-link to="/subscriptions/custom" class="btn primary">
+          <el-icon :size="14"><Connection /></el-icon>添加自定义提供方
         </router-link>
       </template>
     </PageHeader>
@@ -13,8 +16,11 @@
     </div>
 
     <div v-else-if="connections.length === 0" class="card">
-      <EmptyState title="还没有订阅" desc="添加一个提供商连接，开始使用 AI 网关">
-        <router-link to="/subscriptions/new" class="btn primary">添加订阅</router-link>
+      <EmptyState title="还没有订阅" desc="从内置提供商列表中添加一个连接，或填写自定义端点接入 OpenAI 兼容服务">
+        <div class="empty-actions">
+          <router-link to="/subscriptions/new" class="btn">添加提供方</router-link>
+          <router-link to="/subscriptions/custom" class="btn primary">添加自定义提供方</router-link>
+        </div>
       </EmptyState>
     </div>
 
@@ -59,7 +65,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Loading, Plus } from '@element-plus/icons-vue'
+import { Loading, Plus, Connection } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -112,4 +118,5 @@ onMounted(async () => {
 .prov-cell { display: flex; align-items: center; gap: 10px; }
 .prov-name { font-size: 13px; font-weight: 500; color: var(--ink); }
 .prov-id { font-size: 11px; color: var(--ink-4); }
+.empty-actions { display: flex; gap: 8px; }
 </style>

@@ -54,6 +54,12 @@ pub struct CreateProviderRequest {
     pub group_name: Option<String>,
     pub max_concurrent: Option<i32>,
     pub default_model: Option<String>,
+    /// 列表里展示给用户的名字。自定义提供方场景必填，用于在已有内置 provider 中区分。
+    pub display_name: Option<String>,
+    /// API 协议（openai / anthropic / gemini / cloudflare / cohere）。仅自定义提供方使用。
+    pub api_protocol: Option<String>,
+    /// 用户填的 Provider ID（如 `acme-gateway`）。仅自定义提供方使用，写入 `provider_specific_data.customId`。
+    pub custom_provider_id: Option<String>,
     pub provider_specific_data: Option<serde_json::Value>,
 }
 
