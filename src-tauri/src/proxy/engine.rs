@@ -1,10 +1,9 @@
-use crate::db::models::{ProxyRequest, ResolvedComboTarget, RoutingContext, UsageEntry};
-use crate::db::{core as db_core, providers as db_providers, usage as db_usage, combos as db_combos};
+use crate::db::models::{ProxyRequest, UsageEntry};
+use crate::db::{core as db_core, providers as db_providers, usage as db_usage};
 use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::ExecutorFactory;
 use crate::proxy::retry::RetryPolicy;
-use crate::routing::RoutingEngine;
 use crate::AppState;
 use std::sync::Arc;
 use std::time::Instant;
@@ -52,16 +51,13 @@ impl ProxyEngine {
             }
         }
 
-        let (provider_def, connection, model, resolved_targets) =
-            self.resolve_route(&conn, &state.provider_registry, &state.routing_engine, &request, &state.encryption_key)?;
+        let (provider_def, connection, model) =
+            self.resolve_route(&conn, &state.provider_registry, &request, &state.encryption_key)?;
 
-        let result = if let Some(targets) = resolved_targets {
-            self.handle_combo_request(state, &conn, &request, &targets, start).await
-        } else {
-            let def = provider_def.ok_or_else(|| AppError::Provider("No provider definition".into()))?;
-            let conn_obj = connection.ok_or_else(|| AppError::Provider("No active connection".into()))?;
-            self.handle_single_with_retry(state, &conn, &request, &def, &conn_obj, &model, start).await
-        };
+        let conn_obj = connection.ok_or_else(|| AppError::Provider("No active connection".into()))?;
+        let result = self
+            .handle_single_with_retry(state, &conn, &request, &provider_def, &conn_obj, &model, start)
+            .await;
 
         match &result {
             Ok(_) => {}
@@ -85,7 +81,6 @@ impl ProxyEngine {
                     error_code: Some(format!("{}", e)),
                     latency_ms: Some(latency),
                     ttft_ms: None,
-                    combo_strategy: None,
                     cost: 0.0,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
@@ -100,21 +95,13 @@ impl ProxyEngine {
         &self,
         conn: &rusqlite::Connection,
         registry: &ProviderRegistry,
-        engine: &RoutingEngine,
         request: &ProxyRequest,
         enc_key: &[u8],
-    ) -> Result<(Option<crate::providers::types::ProviderDef>, Option<crate::db::models::ProviderConnection>, String, Option<Vec<ResolvedComboTarget>>)> {
-        let combo_result = db_combos::get_by_name(conn, &request.model)?;
-        if let Some(combo) = combo_result {
-            let context = RoutingContext::default();
-            let targets = crate::routing::combo::resolve_combo(conn, &combo, &context, engine, enc_key)?;
-            return Ok((None, None, request.model.clone(), Some(targets)));
-        }
-
+    ) -> Result<(crate::providers::types::ProviderDef, Option<crate::db::models::ProviderConnection>, String)> {
         if let Some((provider_id, def, model)) = registry.resolve_model_provider(&request.model) {
             let connections = db_providers::list_by_provider(conn, &provider_id, enc_key)?;
             let connection = connections.into_iter().next();
-            return Ok((Some(def.clone()), connection, model, None));
+            return Ok((def.clone(), connection, model));
         }
 
         Err(AppError::Routing(format!("Cannot resolve model: {}", request.model)))
@@ -169,7 +156,6 @@ impl ProxyEngine {
                             error_code: None,
                             latency_ms: Some(latency),
                             ttft_ms: None,
-                            combo_strategy: None,
                             cost,
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         };
@@ -206,75 +192,6 @@ impl ProxyEngine {
         }
 
         Err(last_err.unwrap_or_else(|| AppError::Provider("All retries exhausted".into())))
-    }
-
-    async fn handle_combo_request(
-        &self,
-        state: &Arc<AppState>,
-        conn: &rusqlite::Connection,
-        request: &ProxyRequest,
-        targets: &[ResolvedComboTarget],
-        start: Instant,
-    ) -> Result<actix_web::HttpResponse> {
-        let mut last_error = None;
-
-        for target in targets {
-            let provider_def = state.provider_registry.get(&target.provider_id);
-            if provider_def.is_none() {
-                continue;
-            }
-            let def = provider_def.unwrap();
-
-            let connection = if let Some(ref cid) = target.connection_id {
-                db_providers::get_by_id(conn, cid, &state.encryption_key)?
-            } else {
-                db_providers::list_by_provider(conn, &target.provider_id, &state.encryption_key)?.into_iter().next()
-            };
-
-            if connection.is_none() {
-                continue;
-            }
-            let conn_obj = connection.unwrap();
-
-            match self.handle_single_with_retry(state, conn, request, &def, &conn_obj, &target.model_str, start).await {
-                Ok(response) => {
-                    let status = response.status();
-                    let body_bytes = actix_web::body::to_bytes(response.into_body()).await.unwrap_or_default();
-                    let (tokens_in, tokens_out, cost) = extract_usage_from_response(&body_bytes, def.api_format.as_str());
-                    let latency = start.elapsed().as_millis() as i64;
-                    let entry = UsageEntry {
-                        id: 0,
-                        provider: Some(def.id.clone()),
-                        model: Some(target.model_str.clone()),
-                        connection_id: Some(conn_obj.id.clone()),
-                        api_key_id: request.api_key.clone(),
-                        api_key_name: None,
-                        tokens_input: tokens_in,
-                        tokens_output: tokens_out,
-                        tokens_cache_read: 0,
-                        tokens_cache_creation: 0,
-                        tokens_reasoning: 0,
-                        service_tier: "standard".to_string(),
-                        status: "success".to_string(),
-                        success: true,
-                        error_code: None,
-                        latency_ms: Some(latency),
-                        ttft_ms: None,
-                        combo_strategy: Some(target.step_id.clone()),
-                        cost,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                    };
-                    let _ = db_usage::record(conn, &entry);
-                    return Ok(actix_web::HttpResponseBuilder::new(status).body(body_bytes.to_vec()));
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| AppError::Routing("All targets failed".into())))
     }
 }
 

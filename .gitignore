@@ -43,3 +43,4 @@ src-tauri/gen/
 # CodeArts local workspace
 .codeartsdoer/
 .deveco
+.workbuddy

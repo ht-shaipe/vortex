@@ -3,6 +3,8 @@ use crate::error::Result;
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001", include_str!("migrations/001_initial.sql")),
+    ("002", include_str!("migrations/002_free_token_sites.sql")),
+    ("003", include_str!("migrations/003_free_token_web_only.sql")),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {

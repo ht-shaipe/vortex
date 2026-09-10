@@ -21,7 +21,6 @@ const healthStatus = ref('ok')
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/providers': 'Providers',
-  '/combos': 'Combos',
   '/keys': 'API Keys',
   '/usage': 'Usage',
   '/settings': 'Settings',

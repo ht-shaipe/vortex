@@ -17,6 +17,12 @@ function apply(): void {
   document.documentElement.classList.toggle('dark', dark)
 }
 
+apply()
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (mode.value === 'system') apply()
+})
+
 watchEffect(apply)
 
 export function useTheme() {

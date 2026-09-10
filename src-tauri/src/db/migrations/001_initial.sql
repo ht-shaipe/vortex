@@ -38,23 +38,12 @@ CREATE TABLE IF NOT EXISTS provider_connections (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS combos (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    data TEXT NOT NULL DEFAULT '{}',
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    context_cache_protection INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS api_keys (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     key TEXT NOT NULL UNIQUE,
     machine_id TEXT,
     allowed_models TEXT DEFAULT '[]',
-    allowed_combos TEXT DEFAULT '[]',
     allowed_connections TEXT DEFAULT '[]',
     allowed_endpoints TEXT DEFAULT '[]',
     no_log INTEGER NOT NULL DEFAULT 0,
@@ -84,7 +73,6 @@ CREATE TABLE IF NOT EXISTS usage_history (
     error_code TEXT,
     latency_ms INTEGER,
     ttft_ms INTEGER,
-    combo_strategy TEXT,
     cost REAL DEFAULT 0.0,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -98,5 +86,3 @@ CREATE TABLE IF NOT EXISTS key_value (
 
 INSERT OR IGNORE INTO key_value (namespace, key, value) VALUES
     ('settings', 'general', '{"port":20128,"requireApiKey":false,"theme":"dark"}');
-INSERT OR IGNORE INTO key_value (namespace, key, value) VALUES
-    ('settings', 'routing', '{"defaultStrategy":"priority","autoComboEnabled":true}');

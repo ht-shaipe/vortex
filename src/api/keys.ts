@@ -7,7 +7,6 @@ export interface ApiKey {
   isActive: boolean
   isBanned: boolean
   allowedModels: unknown
-  allowedCombos: unknown
   rateLimits: unknown
   usageLimits: unknown
   createdAt: string
@@ -18,7 +17,7 @@ export async function listKeys() {
   return data as { keys: ApiKey[] }
 }
 
-export async function createKey(params: { name: string; allowedModels?: unknown; allowedCombos?: unknown }) {
+export async function createKey(params: { name: string; allowedModels?: unknown }) {
   const { data } = await api.post('/keys', params)
   return data as ApiKey
 }

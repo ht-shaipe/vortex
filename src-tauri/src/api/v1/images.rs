@@ -76,7 +76,7 @@ pub async fn create_images(
                 tokens_cache_creation: 0, tokens_reasoning: 0,
                 service_tier: "standard".to_string(), status: "success".to_string(),
                 success: true, error_code: None, latency_ms: Some(latency), ttft_ms: None,
-                combo_strategy: None, cost: 0.0, timestamp: chrono::Utc::now().to_rfc3339(),
+                cost: 0.0, timestamp: chrono::Utc::now().to_rfc3339(),
             };
             let _ = db_core::get_conn(&state.db_pool).ok().and_then(|c| crate::db::usage::record(&c, &entry).ok());
 

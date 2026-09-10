@@ -9,19 +9,19 @@ mod api;
 mod tauri_cmds;
 
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer, middleware as actix_mw};
-use std::sync::Arc;
-use tokio::sync::oneshot;
+use actix_web::{dev::ServerHandle, web, App, HttpServer, middleware as actix_mw};
+use std::sync::{mpsc, Arc};
 
 pub struct AppState {
     pub db_pool: db::core::DbPool,
     pub config: config::AppConfig,
     pub provider_registry: providers::ProviderRegistry,
-    pub routing_engine: routing::RoutingEngine,
     pub proxy_engine: parking_lot::RwLock<proxy::engine::ProxyEngine>,
     pub resilience_manager: routing::resilience::ResilienceManager,
     pub http_client: reqwest::Client,
     pub encryption_key: Vec<u8>,
+    pub proxy_handle: parking_lot::Mutex<Option<ServerHandle>>,
+    pub proxy_port: u16,
 }
 
 pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> {
@@ -29,7 +29,6 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
     db::core::run_migrations(&db_pool)?;
 
     let provider_registry = providers::ProviderRegistry::new();
-    let routing_engine = routing::RoutingEngine::new();
     let proxy_engine = proxy::engine::ProxyEngine::new();
     let resilience_manager = routing::resilience::ResilienceManager::new();
     let http_client = reqwest::Client::builder()
@@ -42,23 +41,26 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
 
     let encryption_key = cfg.encryption_key_bytes();
 
+    let proxy_port = cfg.port;
+
     Ok(Arc::new(AppState {
         db_pool,
         config: cfg,
         provider_registry,
-        routing_engine,
         proxy_engine: parking_lot::RwLock::new(proxy_engine),
         resilience_manager,
         http_client,
         encryption_key,
+        proxy_handle: parking_lot::Mutex::new(None),
+        proxy_port,
     }))
 }
 
 pub fn start_api_server(
     state: Arc<AppState>,
     port: u16,
-) -> oneshot::Receiver<()> {
-    let (tx, rx) = oneshot::channel();
+) -> ServerHandle {
+    let (handle_tx, handle_rx) = mpsc::channel();
 
     std::thread::spawn(move || {
         let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
@@ -90,11 +92,6 @@ pub fn start_api_server(
                             .route("/providers/{id}", web::patch().to(api::management::providers::update_provider))
                             .route("/providers/{id}", web::delete().to(api::management::providers::delete_provider))
                             .route("/providers/{id}/test", web::post().to(api::management::providers::test_provider))
-                            .route("/combos", web::get().to(api::management::combos::list_combos))
-                            .route("/combos", web::post().to(api::management::combos::create_combo))
-                            .route("/combos/{id}", web::get().to(api::management::combos::get_combo))
-                            .route("/combos/{id}", web::patch().to(api::management::combos::update_combo))
-                            .route("/combos/{id}", web::delete().to(api::management::combos::delete_combo))
                             .route("/keys", web::get().to(api::management::keys::list_keys))
                             .route("/keys", web::post().to(api::management::keys::create_key))
                             .route("/keys/{id}", web::get().to(api::management::keys::get_key))
@@ -103,19 +100,25 @@ pub fn start_api_server(
                             .route("/usage/stats", web::get().to(api::management::usage::get_stats))
                             .route("/settings", web::get().to(api::management::settings::get_settings))
                             .route("/settings", web::patch().to(api::management::settings::update_settings))
+                            .route("/free-tokens", web::get().to(api::management::free_tokens::list_sites))
+                            .route("/free-tokens", web::post().to(api::management::free_tokens::create_site))
+                            .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
                             .route("/health", web::get().to(api::management::health::health_check))
                     )
             })
             .bind(format!("0.0.0.0:{}", port))
             .expect("Failed to bind server");
 
-            let _ = tx.send(());
-            server.run().await.expect("Server error");
+            let srv = server.run();
+            let handle = srv.handle();
+            let _ = handle_tx.send(handle);
+            srv.await.expect("Server error");
         });
     });
 
-    rx
+    handle_rx.recv().expect("Failed to receive server handle")
 }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -123,50 +126,81 @@ pub fn run() {
     let state = create_app_state(cfg.clone()).expect("Failed to initialize app state");
 
     let port = cfg.port;
-    start_api_server(state.clone(), port);
+    let handle = start_api_server(state.clone(), port);
+    *state.proxy_handle.lock() = Some(handle);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             tauri_cmds::provider_cmds::list_providers,
             tauri_cmds::provider_cmds::add_provider,
             tauri_cmds::provider_cmds::test_provider,
-            tauri_cmds::combo_cmds::list_combos,
-            tauri_cmds::combo_cmds::save_combo,
-            tauri_cmds::combo_cmds::delete_combo,
             tauri_cmds::settings_cmds::get_settings,
             tauri_cmds::settings_cmds::update_settings,
+            tauri_cmds::proxy_cmds::start_proxy,
+            tauri_cmds::proxy_cmds::stop_proxy,
         ])
         .setup(|app| {
+            use tauri::Emitter;
             use tauri::Manager;
-            use tauri::tray::TrayIconBuilder;
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
+            use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-            let show_item = MenuItemBuilder::with_id("show", "Open Dashboard").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
+            let start_item = MenuItemBuilder::with_id("start_proxy", "启动代理").build(app)?;
+            let stop_item = MenuItemBuilder::with_id("stop_proxy", "停止代理").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
             let menu = MenuBuilder::new(app)
-                .item(&show_item)
-                .separator()
-                .item(&quit_item)
+                .item(&show)
+                .item(&start_item)
+                .item(&stop_item)
+                .item(&quit)
                 .build()?;
 
-            let _tray = TrayIconBuilder::new()
+            let mut builder = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Vortex AI Gateway")
-                .on_menu_event(move |app, event| {
-                    match event.id().as_ref() {
-                        "quit" => app.exit(0),
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "quit" => app.exit(0),
+                    "show" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
                         }
-                        _ => {}
                     }
+                    "start_proxy" => {
+                        let _ = app.emit("tray-action", "start");
+                    }
+                    "stop_proxy" => {
+                        let _ = app.emit("tray-action", "stop");
+                    }
+                    _ => {}
                 })
-                .build(app)?;
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                builder = builder.icon(icon);
+            }
+
+            let _tray = builder.build(app)?;
 
             Ok(())
         })

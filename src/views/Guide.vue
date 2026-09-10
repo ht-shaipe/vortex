@@ -16,8 +16,15 @@
         </div>
       </div>
       <div class="card-body">
-        <p class="para">Vortex 在本地启动一个 OpenAI 兼容的 API 服务器，默认监听：</p>
-        <CopyableBlock :text="baseUrl" variant="inline">{{ baseUrl }}</CopyableBlock>
+        <p class="para">Vortex 在本地启动 API 服务器，对外提供 OpenAI 兼容与 Anthropic 兼容两种协议：</p>
+        <div class="url-row">
+          <span class="url-label">OpenAI</span>
+          <CopyableBlock :text="openaiBaseUrl" variant="inline">{{ openaiBaseUrl }}</CopyableBlock>
+        </div>
+        <div class="url-row">
+          <span class="url-label">Anthropic</span>
+          <CopyableBlock :text="anthropicBaseUrl" variant="inline">{{ anthropicBaseUrl }}</CopyableBlock>
+        </div>
         <p class="para">在管理界面「订阅」页添加提供商连接与 API 密钥后即可使用。</p>
       </div>
     </div>
@@ -32,15 +39,17 @@
       <div class="card-body">
         <template v-if="active === 'openai'">
           <p class="para">使用 OpenAI Python SDK：</p>
-          <CopyableBlock :text="openaiSnippet">{{ openaiSnippet }}</CopyableBlock>
-        </template>
-        <template v-else-if="active === 'curl'">
-          <p class="para">使用 cURL：</p>
-          <CopyableBlock :text="curlSnippet">{{ curlSnippet }}</CopyableBlock>
+          <CopyableBlock :text="openaiSdkSnippet" lang="python" />
+          <p class="para" style="margin-top: 16px">使用 cURL：</p>
+          <CopyableBlock :text="openaiCurlSnippet" lang="bash" />
         </template>
         <template v-else>
-          <p class="para">在 Claude Code 设置中将 API 端点指向 Vortex：</p>
-          <CopyableBlock :text="claudeSnippet">{{ claudeSnippet }}</CopyableBlock>
+          <p class="para">使用 Anthropic Python SDK：</p>
+          <CopyableBlock :text="anthropicSdkSnippet" lang="python" />
+          <p class="para" style="margin-top: 16px">使用 Claude Code（设置环境变量）：</p>
+          <CopyableBlock :text="claudeSnippet" lang="bash" />
+          <p class="para" style="margin-top: 16px">使用 cURL：</p>
+          <CopyableBlock :text="anthropicCurlSnippet" lang="bash" />
         </template>
       </div>
     </div>
@@ -60,7 +69,6 @@
           <tbody>
             <tr><td class="mono">provider/model</td><td class="mono">openai/gpt-4o</td><td>显式指定提供商与模型</td></tr>
             <tr><td class="mono">别名前缀</td><td class="mono">ds-deepseek-chat</td><td>使用提供商别名</td></tr>
-            <tr><td class="mono">组合名</td><td class="mono">my-combo</td><td>使用预定义组合模型</td></tr>
           </tbody>
         </table>
       </div>
@@ -73,18 +81,19 @@ import { ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 
-const baseUrl = 'http://localhost:20128/v1'
+const openaiBaseUrl = 'http://localhost:20128/v1'
+const anthropicBaseUrl = 'http://localhost:20128/anthropic/v1'
+
 const tabs = [
-  { id: 'openai', label: 'OpenAI SDK' },
-  { id: 'curl', label: 'cURL' },
-  { id: 'claude', label: 'Claude Code' },
+  { id: 'openai', label: 'OpenAI 协议' },
+  { id: 'anthropic', label: 'Anthropic 协议' },
 ]
 const active = ref('openai')
 
-const openaiSnippet = `from openai import OpenAI
+const openaiSdkSnippet = `from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:20128/v1",
+    base_url="${openaiBaseUrl}",
     api_key="your-vortex-api-key",
 )
 
@@ -93,17 +102,38 @@ resp = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}],
 )`
 
-const curlSnippet = `curl http://localhost:20128/v1/chat/completions \\
+const openaiCurlSnippet = `curl ${openaiBaseUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer your-vortex-api-key" \\
   -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`
 
+const anthropicSdkSnippet = `from anthropic import Anthropic
+
+client = Anthropic(
+    base_url="${anthropicBaseUrl}",
+    api_key="your-vortex-api-key",
+)
+
+resp = client.messages.create(
+    model="anthropic/claude-sonnet-4-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+)`
+
+const anthropicCurlSnippet = `curl ${anthropicBaseUrl}/messages \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: your-vortex-api-key" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -d '{"model":"anthropic/claude-sonnet-4-20250514","max_tokens":1024,"messages":[{"role":"user","content":"Hi"}]}'`
+
 const claudeSnippet = `# 设置环境变量
-export ANTHROPIC_BASE_URL=http://localhost:20128
+export ANTHROPIC_BASE_URL=${anthropicBaseUrl}
 export ANTHROPIC_API_KEY=your-vortex-api-key`
 </script>
 
 <style scoped>
 .section { margin-bottom: var(--gap-lg); }
 .para { font-size: 13px; color: var(--ink-2); line-height: 1.7; margin: 0 0 12px; }
+.url-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.url-label { width: 90px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 </style>

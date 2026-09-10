@@ -8,6 +8,7 @@ import router from './router'
 import 'virtual:uno.css'
 import './styles/cc-theme.css'
 import './styles/cc-components.css'
+import '@/composables/useTheme'
 
 const app = createApp(App)
 const pinia = createPinia()

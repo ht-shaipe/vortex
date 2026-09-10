@@ -58,56 +58,12 @@ pub struct CreateProviderRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Combo {
-    pub id: String,
-    pub name: String,
-    pub data: ComboData,
-    pub sort_order: i32,
-    pub context_cache_protection: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ComboData {
-    pub strategy: String,
-    pub models: Vec<ComboStep>,
-    #[serde(default)]
-    pub config: serde_json::Value,
-    #[serde(default)]
-    pub system_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ComboStep {
-    #[serde(rename = "modelStr")]
-    pub model_str: String,
-    pub provider: String,
-    #[serde(default)]
-    pub weight: f64,
-    #[serde(default)]
-    pub label: Option<String>,
-    #[serde(default)]
-    pub connection_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateComboRequest {
-    pub name: String,
-    pub strategy: Option<String>,
-    pub models: Option<Vec<ComboStep>>,
-    pub config: Option<serde_json::Value>,
-    pub system_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
     pub id: String,
     pub name: String,
     pub key: String,
     pub machine_id: Option<String>,
     pub allowed_models: serde_json::Value,
-    pub allowed_combos: serde_json::Value,
     pub allowed_connections: serde_json::Value,
     pub allowed_endpoints: serde_json::Value,
     pub no_log: bool,
@@ -123,7 +79,6 @@ pub struct ApiKey {
 pub struct CreateApiKeyRequest {
     pub name: String,
     pub allowed_models: Option<serde_json::Value>,
-    pub allowed_combos: Option<serde_json::Value>,
     pub rate_limits: Option<serde_json::Value>,
     pub usage_limits: Option<serde_json::Value>,
 }
@@ -147,7 +102,6 @@ pub struct UsageEntry {
     pub error_code: Option<String>,
     pub latency_ms: Option<i64>,
     pub ttft_ms: Option<i64>,
-    pub combo_strategy: Option<String>,
     pub cost: f64,
     pub timestamp: String,
 }
@@ -166,28 +120,6 @@ pub struct UsageStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResolvedComboTarget {
-    pub step_id: String,
-    pub model_str: String,
-    pub provider: String,
-    pub provider_id: String,
-    pub connection_id: Option<String>,
-    pub weight: f64,
-    pub label: Option<String>,
-    pub traffic_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RoutingContext {
-    pub usage_stats: Option<UsageStats>,
-    pub quota_state: serde_json::Value,
-    pub cost_catalog: serde_json::Value,
-    pub latency_history: serde_json::Value,
-    pub last_good_target: Option<String>,
-    pub request_tokens: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyRequest {
     pub model: String,
     pub messages: serde_json::Value,
@@ -198,5 +130,64 @@ pub struct ProxyRequest {
     pub api_key: Option<String>,
     pub source_format: String,
     pub extra: serde_json::Value,
+}
+
+/// 免费 Token 站点目录条目。
+/// 请求与响应统一使用 camelCase，避免前后端命名不一致导致的字段丢失。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeTokenSite {
+    pub id: String,
+    pub name: String,
+    pub home_url: String,
+    pub apply_url: String,
+    pub api_supported: bool,
+    pub api_base: Option<String>,
+    pub api_format: Option<String>,
+    pub free_quota: String,
+    pub region: String,
+    pub requires_card: bool,
+    pub requires_verify: bool,
+    pub tags: serde_json::Value,
+    pub note: Option<String>,
+    pub provider_id: Option<String>,
+    pub source: String,
+    pub submitter: Option<String>,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 用户提交的站点推荐。仅 `name` 为必填，其余字段留空时由后端补默认值。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFreeTokenSiteRequest {
+    pub name: String,
+    #[serde(default)]
+    pub home_url: Option<String>,
+    #[serde(default)]
+    pub apply_url: Option<String>,
+    #[serde(default)]
+    pub api_supported: Option<bool>,
+    #[serde(default)]
+    pub api_base: Option<String>,
+    #[serde(default)]
+    pub api_format: Option<String>,
+    #[serde(default)]
+    pub free_quota: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+    #[serde(default)]
+    pub requires_card: Option<bool>,
+    #[serde(default)]
+    pub requires_verify: Option<bool>,
+    #[serde(default)]
+    pub tags: Option<serde_json::Value>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub provider_id: Option<String>,
+    #[serde(default)]
+    pub submitter: Option<String>,
 }
 

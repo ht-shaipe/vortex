@@ -2,7 +2,7 @@ import api from './client'
 
 export async function getSettings() {
   const { data } = await api.get('/settings')
-  return data as { general: Record<string, unknown>; routing: Record<string, unknown> }
+  return data as { general: Record<string, unknown> }
 }
 
 export async function updateSettings(updates: Record<string, unknown>) {

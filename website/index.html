@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-page-node-id="2QUdsTFbVERFy2iJH2Biqd">
+<head data-page-node-id="ugCLnISTx5jHZCvJ97ryel">
+<meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
+<title>Vortex — 本地 AI 网关，把 21+ 家模型聚合成一个 OpenAI 兼容接口</title>
+<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入 OpenAI、Anthropic、Gemini、DeepSeek 等 21+ 家提供商，支持协议转换、熔断重试、密钥加密与用量统计。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
+<meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
+<meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
+<meta property="og:description" content="把 21+ 家 AI 提供商聚合成一个 OpenAI 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
+<meta property="og:type" content="website" data-page-node-id="HnKa5HRuAW4mZpIhDJgQlM">
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg" data-page-node-id="WifbOoNY32Xup5fuGCaREA">
+<link rel="stylesheet" href="assets/styles.css" data-page-node-id="1Y0KUkecn98ol1OUZvP2Xg">
+</head>
+<body data-page-node-id="qz2o0CxXZFyQ8xeu7EB20p">
+
+<!-- ========== 导航 ========== -->
+<nav class="nav" id="nav" data-page-node-id="vxfXnNCAR566BRtiRmVOY1">
+  <div class="container nav-inner" data-page-node-id="YjoZHgQxkDLa6pbGW6DDEd">
+    <a class="brand" href="#top" data-page-node-id="suVWxr0HCZXvaqzxkSNP4G">
+      <span class="brand-mark" data-page-node-id="AiTA7jdP3AmZOj1G608rsJ">V</span>
+      <span data-page-node-id="wmSGY4eULRgnHgTHLxKSwV">
+        <span class="brand-name" data-page-node-id="KmssOgHgBDlRl8GKWfgWM0">Vortex</span>
+        <span class="brand-tag" data-page-node-id="lf6UmF5GCSoWDM9y36asnD">AI GATEWAY</span>
+      </span>
+    </a>
+
+    <div class="nav-links" id="navLinks" data-page-node-id="ueaPBIoQIz2WrwDSWsanxz">
+      <a href="#features" data-page-node-id="Y28HAQh4ocEXeBl1KzBasT">特性</a>
+      <a href="#providers" data-page-node-id="UirayKEXubDhEOcycCM0vZ">提供商</a>
+      <a href="#preview" data-page-node-id="lpcyXbIVNpuwuSNkeR0tqI">界面预览</a>
+      <a href="#start" data-page-node-id="8SWnhVTE7F4kgjpFSqKAbM">快速开始</a>
+      <a href="#faq" data-page-node-id="RG2ly8yGRgHvwlyzWroqkJ">常见问题</a>
+    </div>
+
+    <div class="nav-right" data-page-node-id="EYMQ9PhjaiJyBqIZBArCXC">
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="切换主题" data-page-node-id="QuYUtkYyWqBIC6Ovn3ktPZ">
+        <svg class="only-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-page-node-id="OusB6BbMyZ62pNO5snitX9"><circle cx="12" cy="12" r="4" data-page-node-id="3BccIoaAbAzoza3A66ryMH"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" data-page-node-id="UZ2M34wl8IldvdZ4eBsTDq"/></svg>
+        <svg class="only-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="NFC0HPFy72CcCqlV8Qk1Kt"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" data-page-node-id="qrsKDhQFhPZ9Ps6jje04bt"/></svg>
+      </button>
+      <a class="btn btn--sm btn--hide-sm" href="https://github.com/ht-shaipe/vortex" target="_blank" rel="noopener" data-page-node-id="XEOzqOyauWBKaDQ5Guzk4Z">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-page-node-id="z8EwwTZ9xNPF4JPduU0aQU"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z" data-page-node-id="1nKyLaUx5WXDXZumV1GtaC"/></svg>
+        GitHub
+      </a>
+      <a class="btn btn--sm btn--primary" href="#start" data-page-node-id="emdwyVCaGqp8vknz6RVW6J">开始使用</a>
+      <button class="icon-btn nav-burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" data-page-node-id="xwmosd9FBByr3JvDo4Q32b">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" data-page-node-id="32QLFi5cV8p7tWN3rt1sqY"><path d="M3 6h18M3 12h18M3 18h18" data-page-node-id="eNy5VUZLItBap1gvXYyh89"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ========== Hero ========== -->
+<header class="hero" id="top" data-page-node-id="Ae33LCbIkjH1hvJGs5nTnw">
+  <div class="container" data-page-node-id="0YFwUOhR7b1PYYEgjCZ1XJ">
+    <div class="hero-grid" data-page-node-id="a0x9Xfj8VKXN5S6G8EKOZT">
+
+      <div data-page-node-id="fJsyBwF43CFEUrg4luBf4F">
+        <span class="eyebrow" data-page-node-id="F2zBYdMGI4qWyAMIxbyckg"><span class="dot" data-page-node-id="iKq4laAYUOQqDczAUrgw8Y"></span>v0.1.0 · MIT 开源 · 桌面应用</span>
+
+        <h1 data-page-node-id="R6RYyo02B0BBG3M42KywPg">一个本地网关<br data-page-node-id="EzFXecoU279R7Y1IsW77Wy">接通 <span class="grad" data-page-node-id="8nKWpDH0fmDFCXHNKOKOae">21+ 家</span> AI 提供商</h1>
+
+        <p class="hero-lead" data-page-node-id="X8jTFCxDku85Ae5QxdIDax">
+          Vortex 在你自己的机器上启动一个 <strong data-page-node-id="5qg2XVuNYTM9AwbW2XLetW">OpenAI 兼容的 API 服务器</strong>，
+          把 OpenAI、Anthropic、Gemini、DeepSeek 等上游统一成一个入口。
+          <strong data-page-node-id="WLvF2xA8dZ3lRTnumiqCIm">改一行 <code data-page-node-id="JK8eEscPpQHQToRvUBTu3Q">base_url</code></strong>，客户端代码不用动。
+        </p>
+
+        <div class="hero-cta" data-page-node-id="LvH3ZdBejqeC1Gpk33gwJm">
+          <a class="btn btn--primary btn--lg" href="#start" data-page-node-id="oPX46qwhuZ47KWon8S99pE">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="8yzCZNSWdvC18eJiYGP1lG"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" data-page-node-id="NmEQH2ex4TSdVvTZFWrNA8"/></svg>
+            快速开始
+          </a>
+          <a class="btn btn--lg" href="https://github.com/ht-shaipe/vortex" target="_blank" rel="noopener" data-page-node-id="Tilc9hoIOonF3ZDWIHEk17">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-page-node-id="OmTDkRHDAKtMl2Jo4CvT2D"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z" data-page-node-id="pIrb1EIMvZLZHuAFZUrHJo"/></svg>
+            查看源码
+          </a>
+        </div>
+
+        <div class="hero-meta" data-page-node-id="3AyRxue92UDXWRdGyDRiDG">
+          <span data-page-node-id="W8oVSrz6hUnIophVf3jZk6">Rust 后端 · Actix-Web</span><span class="sep" data-page-node-id="dyX8pZTu645GklOz6d7Vn4"></span>
+          <span data-page-node-id="8xDOafomfReJFS7s0SZFPb">Vue 3 管理界面</span><span class="sep" data-page-node-id="T049JTdrqz0BtEaqeaVdZ1"></span>
+          <span data-page-node-id="UUpEYcMxGh4zPrzF7GEZpx">AES-256-GCM 本地加密</span><span class="sep" data-page-node-id="RsClNhTalLPtF8I5ZHKCCD"></span>
+          <span data-page-node-id="DQHGKx1FbT47nIQb2pCYgH">Windows / macOS / Linux</span>
+        </div>
+      </div>
+
+      <!-- 终端演示 -->
+      <div class="term" data-page-node-id="T3BsNpFeoGYsDsUgWXu5Di">
+        <div class="term-bar" data-page-node-id="O1Qqp00FOZTWw3NEhTLBHb">
+          <span class="term-dots" data-page-node-id="WYjyBIMqI4JwuKgS5fJrX3"><i data-page-node-id="Yngc8Z7inxKTEkbcBxkjcq"></i><i data-page-node-id="Mc4NVAnAt1Sk18oa4GZE54"></i><i data-page-node-id="lGAyO62kPP0SH9My4jBTZU"></i></span>
+          <span class="term-title" data-page-node-id="JfdgeGTW7OwEFY6YzgHfAv">~/vortex</span>
+        </div>
+        <div class="term-body" data-page-node-id="3jDkAdQ30nSDHu8hBceI0F">
+          <div class="ln" data-page-node-id="yvFyJp3ZzYBwPn1GSKCBUj"><span class="pr" data-page-node-id="4FrSA8tWRqB5t24813aLuD">$</span><span class="tk-cmd" data-page-node-id="HebAXvLhxoytRLG8grTS75">curl http://localhost:20128/v1/chat/completions \</span></div>
+          <div class="ln" data-page-node-id="PlNG4lL2WO3Dy4wNTexR3d"><span class="pr" data-page-node-id="6ykIeAEkDBDQmGuNkpNrsA"></span><span class="tk-dim" data-page-node-id="IkZZgxjAEDWX2Rhwxz8KiI">  -H </span><span class="tk-str" data-page-node-id="quYqEZc6MoDpwU0CXtDhWR">"Authorization: Bearer zp-3q…"</span><span class="tk-dim" data-page-node-id="6nxB3nz8wmVK4KGnc386QS"> \</span></div>
+          <div class="ln" data-page-node-id="ZbbQwMxvAz8AWNpn33mz1Z"><span class="pr" data-page-node-id="hm0tBdNZ03vzrHjev30i8B"></span><span class="tk-dim" data-page-node-id="6bqgyvhAC6YvmtX5cR1Bg1">  -d </span><span class="tk-str" data-page-node-id="j7zL8bdHBGR5BCqKfLEAQB">'{"model":"deepseek/deepseek-chat",…}'</span></div>
+          <div class="ln" data-page-node-id="4FHCCuEjL5IFv1I8gEubT6"><span class="pr" data-page-node-id="UnQujNj4yeqHI2jrJjtKDY"></span><span class="tk-dim" data-page-node-id="BRyz3WKoWGzDjukDTRCn0G">&nbsp;</span></div>
+          <div class="ln" data-page-node-id="oiH07R8w93uXQruwW4aSf4"><span class="pr" data-page-node-id="hVU8s6IxHd5MOvuKZa7MR0"></span><span class="tk-pun" data-page-node-id="GPcVY7arboVK9DgNWRVj58">{</span></div>
+          <div class="ln" data-page-node-id="dhtPzJ9bx4ndXRtpG0WVB8"><span class="pr" data-page-node-id="aAat9IxKFSEpsENjKO4zhA"></span><span class="tk-key" data-page-node-id="GEEmjyBWFhOCuEyIS9w1Qf">&nbsp;&nbsp;"id"</span><span class="tk-pun" data-page-node-id="oTejxQIBJHOC4Ld5ArkKLH">:</span><span class="tk-str" data-page-node-id="aLGGSb1VkbtvTBj3bq8V5W">"chatcmpl-9x2f…"</span><span class="tk-pun" data-page-node-id="LVpwnDCcbeRAevsrVoK6ma">,</span></div>
+          <div class="ln" data-page-node-id="SwXGmVC3wbsNm8Fg4STgN5"><span class="pr" data-page-node-id="m2x2FVF1brIXRCxWtM66Kf"></span><span class="tk-key" data-page-node-id="0PYN0d2gtDRsYzIAPvCO8z">&nbsp;&nbsp;"model"</span><span class="tk-pun" data-page-node-id="J7CIGPbCdi0HNJ3mRYdffR">:</span><span class="tk-str" data-page-node-id="ipeEvImISpH4uCrO2YBZnx">"deepseek/deepseek-chat"</span><span class="tk-pun" data-page-node-id="5f31j1kE0AHMofnN4LV1Rh">,</span></div>
+          <div class="ln" data-page-node-id="4joF2vnUilLyvfXnt82bsR"><span class="pr" data-page-node-id="ANA0qCoDrLWk1l3AoX1xBf"></span><span class="tk-key" data-page-node-id="vx5kQG1QED8jvyhcNDcZNJ">&nbsp;&nbsp;"usage"</span><span class="tk-pun" data-page-node-id="olfUOyQNoRIBojEHEhNsmM">: { </span><span class="tk-key" data-page-node-id="QI4ZHaP0i8RguKPL8YHTtl">"total_tokens"</span><span class="tk-pun" data-page-node-id="yZWWSGMAUZwWojfuDGQ9Cb">: </span><span class="tk-num" data-page-node-id="E2XPjRTYwQljEgKm3zEXcM">39</span><span class="tk-pun" data-page-node-id="0EDGcoJWijvXJP0tgtjSwW"> }</span></div>
+          <div class="ln" data-page-node-id="HGzdx2E2tFV82UGA4vF4vG"><span class="pr" data-page-node-id="JNmTA6enorDgEup6ArhKty"></span><span class="tk-pun" data-page-node-id="0ZzjArJUMiGYMVSMnHWQFf">}</span></div>
+        </div>
+        <div class="term-foot" data-page-node-id="A0W1iDNJHDgb5DoOaD6sWL">
+          <span class="live-dot" data-page-node-id="DVwXVTh9LsiCqgtPnTGabo"></span>
+          <span data-page-node-id="jTXMB7EAaC2XWAAVU9z6MT">网关运行中 · 0.0.0.0:20128 · 6 个上游已连接</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</header>
+
+<!-- ========== 数据条 ========== -->
+<section class="section section--tight" data-page-node-id="ZACUmjxV0ckKEJARobyBDR">
+  <div class="container" data-page-node-id="gcDRbMpVuJjwTzZMXxIL3G">
+    <div class="stats reveal" data-page-node-id="A2K28wtYDikWYAp2CGN01M">
+      <div class="stat" data-page-node-id="TcwpGpaF9PANVqeSdWsCC0"><div class="stat-num" data-page-node-id="BEPHt8mI1jVJnEJyd7PzJp">21<em data-page-node-id="hDb5UQDbDebzrHfTeze4Fx">+</em></div><div class="stat-label" data-page-node-id="nmzzSGYmjd49HEKCoTg6HT">内置 AI 提供商</div></div>
+      <div class="stat" data-page-node-id="7Gf2vXWv3VAvFxFgXnH1m7"><div class="stat-num" data-page-node-id="KkW8EhRGAQYiey9t8Jz4y1">4</div><div class="stat-label" data-page-node-id="sYFHeOsYVX7fadoEaTKg77">OpenAI 兼容端点</div></div>
+      <div class="stat" data-page-node-id="GRDrm3XSB3gIIXAtWadQNC"><div class="stat-num" data-page-node-id="2R0sGqrD6oQc8ymrYfQl3X">43</div><div class="stat-label" data-page-node-id="5ufZDfg1WInoQSJuB4GZrD">免费 Token 站点目录</div></div>
+      <div class="stat" data-page-node-id="Ksxp3djFmURpeWHuhQeExi"><div class="stat-num" data-page-node-id="ugAfUkGzwKavncO3jlEe7q">100<em data-page-node-id="z1ArR9oogh4h8Stept4VPl">%</em></div><div class="stat-label" data-page-node-id="AHED719z6Y0UhQcVkuBcU1">密钥本地加密存储</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 提供商 ========== -->
+<section class="section" id="providers" data-page-node-id="KM0qNMVPh4gd4fkDywv9cE">
+  <div class="container" data-page-node-id="Io17EOV27cOEP7WFwvY4PT">
+    <div class="sec-head reveal" data-page-node-id="ZnI0JVBgO69tPVKD9aggdU">
+      <span class="eyebrow" data-page-node-id="GGgU4Q8ZGnhtk379NGbgBk"><span class="dot" data-page-node-id="A05dlxF1N5F2mWd9fdAxya"></span>Providers</span>
+      <h2 class="sec-title" data-page-node-id="rhS1BDmeHCAP4kcDJ8B2GV">一次接入，<span class="grad" data-page-node-id="T3ZCY3dVQaA78doYTinbmG">全都要</span></h2>
+      <p class="sec-sub" data-page-node-id="9gXbDwqF9CLJVSgJXYFlPQ">21 家内置提供商 + 任意 OpenAI 兼容的自定义端点。带 <span class="pill pill--ok" style="padding:2px 7px" data-page-node-id="XxPz1QIGH6lj47F0WXX1O3">免费</span> 标记的平台可申请免费额度。</p>
+    </div>
+  </div>
+
+  <div class="marquee reveal" data-page-node-id="x5RuTKQwhv5PcTSxUIThCG">
+    <div class="marquee-track" id="mq1" data-page-node-id="O52y8IEztBwWgkZcs32Ofa"></div>
+  </div>
+  <div class="marquee reveal mt-30" style="margin-top:12px" data-page-node-id="mSKdBpSDTIYAnfU5vzQVwh">
+    <div class="marquee-track rev" id="mq2" data-page-node-id="BTyrluy3QQdIXtDNoWdrrh"></div>
+  </div>
+</section>
+
+<!-- ========== 特性 ========== -->
+<section class="section" id="features" data-page-node-id="SNm1ZWqraj4Ls84H1BqtM7">
+  <div class="container" data-page-node-id="XndRQiaokmMCiH9KQSuVen">
+    <div class="sec-head reveal" data-page-node-id="Y0j1G9UsKgGUc17Yia7fHL">
+      <span class="eyebrow" data-page-node-id="iCZXQA35uEoOMTuhgAosaC"><span class="dot" data-page-node-id="xH5U21UTizBCVOgbKxHYrN"></span>Features</span>
+      <h2 class="sec-title" data-page-node-id="Se4Mxypdy9srimA4lV5BRx">它到底解决了什么</h2>
+      <p class="sec-sub" data-page-node-id="U9xuSTHJWJzqOd6MynA7Mr">不是又一个代理工具 —— 而是把「多供应商、多协议、多密钥」这团乱麻，收成一个你自己的本地服务。</p>
+    </div>
+
+    <div class="feat-grid" data-page-node-id="DfLg3pAYUYNm2YisyXchO6">
+      <div class="card feat reveal" data-page-node-id="SpH8g3ssYTdBLkBzAay9YA">
+        <span class="feat-ico" data-page-node-id="PAI85SYMGWWd7AvMa3SPPN"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="HGAKwF0ZPzBFG3H9DADfIO"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" data-page-node-id="I5HurvaQ3inwMK405nW9jS"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" data-page-node-id="umwj0wNGzQbMOOxVjNJ8Sj"/></svg></span>
+        <h3 data-page-node-id="SoBwr01ZO1vXcbI12h5dNX">21 家提供商开箱即用</h3>
+        <p data-page-node-id="OY7GEYsbArQiLZtCfWFpEN">OpenAI、Anthropic、Gemini、DeepSeek、Groq、Cerebras、Cloudflare、Ollama、SiliconFlow、Qwen 等预置注册表，填个 Key 就能用。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="QRhXjMR95xjBGQlvLnvO7n">
+        <span class="feat-ico" data-page-node-id="CodzNaDOJGeeqHhPmG7ik7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="MgS0ehhavoajhNiU45Fu0f"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2" data-page-node-id="ZAuZBU48ChD3NT58mteBjk"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2" data-page-node-id="HeSOHVsW5Smqa8knwaYl47"/></svg></span>
+        <h3 data-page-node-id="RhP19n3jMjh5FZP1aJisso">OpenAI 兼容，改一行就走</h3>
+        <p data-page-node-id="wm0WvWZd1J7D0pUoPLPC83">把客户端的 <code data-page-node-id="6TZ9o4mUTBILnSBzPytZwd">base_url</code> 指向 <code data-page-node-id="PmqQscnjGpI6EYx4geLBUH">http://localhost:20128/v1</code>，其余代码零改动。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="jeWouF9BfkmqDjfLU4xCnv">
+        <span class="feat-ico" data-page-node-id="Gx1fUHggQefluviWzusKGD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="2H1dg2EZB6AlqtGQCNXdqr"><path d="M4 8h11M4 8l3-3M4 8l3 3" data-page-node-id="xCkPhKHvcPRAaHlN1aieoj"/><path d="M20 16H9M20 16l-3-3M20 16l-3 3" data-page-node-id="66q3TOa7F2nDWLtFBYaKDL"/></svg></span>
+        <h3 data-page-node-id="WEGM0oD5CI9lgg0r4AxhR1">跨协议自动转换</h3>
+        <p data-page-node-id="OzcFTW3v85vLia604RVPMi">Anthropic、Gemini 的原生格式与 OpenAI 格式互转，包含 SSE 流式响应 —— 上游换协议，下游无感知。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="irf1RNRZ3cz8xix26wbJy0">
+        <span class="feat-ico" data-page-node-id="mD8sy1FABM6JuiHQ4Qjyb0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6nIjHtvUIr6AxLZFRdyvqS"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" data-page-node-id="SujP4OFgJRXsg9UZtergNK"/><path d="M9.5 12l1.8 1.8 3.4-3.6" data-page-node-id="LvkHTlNt8dwovGthzGVvSz"/></svg></span>
+        <h3 data-page-node-id="iyJhFMrlGUiSXB4zsexi2X">熔断 + 指数退避重试</h3>
+        <p data-page-node-id="Ochrki34508dHD3nzDR1GW">上游抖动时不把你的请求打光。失败端点自动熔断，恢复后自动放量，保障整体可用性。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="oNUGS0yFXv5AxIoAieLS1i">
+        <span class="feat-ico" data-page-node-id="qMqUVf0Tqcckh3UmwNVGrQ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qFe1W38Sdr9I13FwXimndf"><rect x="4" y="10" width="16" height="10" rx="2" data-page-node-id="mkHanwRuwn8FD8s7GaZAM1"/><path d="M8 10V7a4 4 0 0 1 8 0v3" data-page-node-id="e5Ade6AnJl8pFB4KXrEaAR"/></svg></span>
+        <h3 data-page-node-id="6BuwVn98X22PANlQyZ8nw9">密钥 AES-256-GCM 加密</h3>
+        <p data-page-node-id="K2hVEFZexz3tWpIfnDbi8q">所有 API Key 加密落盘在本地 SQLite，加密密钥由本机生成，不经过任何第三方服务器。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="PbJJZnOweSdlQ8xBDPWIj0">
+        <span class="feat-ico" data-page-node-id="36Mc7zYLItQYtil9aJ5ahm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="2NJnA2ePYiHOWVQHKKLuYq"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" data-page-node-id="7dQrdVURboyKVVuK0rwuxB"/></svg></span>
+        <h3 data-page-node-id="62V0PyEU12Hw2BQkPJhTuD">用量统计到每一 token</h3>
+        <p data-page-node-id="XOvrfaDCGB58aDjXeakR0v">按提供商、模型、时间维度记录请求数、Token 用量与成本，热力图与趋势图一眼看清花费去向。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="nijqZnQ2nfLGsREBfeueS7">
+        <span class="feat-ico" data-page-node-id="Tvudb4ZZWgJVqeL6qCl6xd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6YmnwJnIUcomq2rZS3XQw9"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8L12 3z" data-page-node-id="3sfabEDziAK5Hi9kozocoF"/></svg></span>
+        <h3 data-page-node-id="4UIMkCN71foAOEuey3NYFk">免费 Token 站点目录</h3>
+        <p data-page-node-id="3j1fMTaEhbo1ZX4HSJCC3P">内置 43 个可申请免费额度的 AI 平台，标注是否支持 API、是否需绑卡与实名，还能自己提交推荐。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="AXcIqThUrq12DEZupkK2rp">
+        <span class="feat-ico" data-page-node-id="SWq45aFL7CDFTWZTi1bFxz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="r7h1xToOAOosE62Hl1MJ6I"><rect x="3" y="4" width="18" height="14" rx="2" data-page-node-id="6kC0s1H7GHFWSaQ44SZRlG"/><path d="M3 19h18M8 22h8" data-page-node-id="6BCLanm3KYrQGWEvatzsF0"/></svg></span>
+        <h3 data-page-node-id="O8HXramwrwXBAOyhuXGL1Z">桌面应用 + 托盘常驻</h3>
+        <p data-page-node-id="GQsRSnULLchLZfJiubm1oH">系统托盘一键启停代理，Vue 3 图形界面管理连接、日志、统计与配置，不必守着终端。</p>
+      </div>
+
+      <div class="card feat reveal" style="background:linear-gradient(180deg,var(--accent-bg),var(--surface));border-color:var(--accent-line)" data-page-node-id="VGSQI0NN0ThtwiSa8RvzeC">
+        <span class="feat-ico" data-page-node-id="E5uepS3OEu4aDE0OTiwcIR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="XA0VYXIucaP54oynpwZPH6"><path d="M4 17l6-6-6-6" data-page-node-id="vM4ek57CpCS4fheIp2mMFC"/><path d="M12 19h8" data-page-node-id="7HeTRhoU4mEsiuj8ZidIei"/></svg></span>
+        <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">数据全在自己机器上</h3>
+        <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">请求日志、密钥、配置都存本地 SQLite。这是一个跑在你本机的进程，不是托管服务 —— 没有中间人。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 界面预览 ========== -->
+<section class="section" id="preview" data-page-node-id="ZqmrM8qv7u6335GSvMAU5k">
+  <div class="container" data-page-node-id="DjUsPVOhfd1tYzODg2NIfZ">
+    <div class="sec-head reveal" data-page-node-id="5d0WoMhRhfe78Es0x4DDsA">
+      <span class="eyebrow" data-page-node-id="DRhOPmHTz4eh8H2fUFjKdd"><span class="dot" data-page-node-id="zouYs498Kf2sg7HD7B4Hdq"></span>Screenshots</span>
+      <h2 class="sec-title" data-page-node-id="kx1pzAJ09JXFQEcBf4jssr">界面预览</h2>
+      <p class="sec-sub" data-page-node-id="irg0HUEquVKPahvJLEVb66">以下均为应用真实运行截图（暗色主题），非设计稿。</p>
+    </div>
+
+    <div class="shots reveal" data-page-node-id="9ZXpaJw26awW2MBdEDMX5D">
+      <div class="shot-tabs" id="shotTabs" data-page-node-id="qTdH7iDaXYryPCbRPRNXJC">
+        <button class="shot-tab active" data-shot="free-tokens" type="button" data-page-node-id="PtUlEe0UsSITZRm5K659Rf">
+          <span class="shot-tab-name" data-page-node-id="MzTEWNgdAnRKjXkwR3brkH"><i data-page-node-id="C3j7m31wzuX3MgSKHnTTkR"></i>免费 Token</span>
+          <span class="shot-tab-desc" data-page-node-id="OEUTwJ0g1MJoyx1WVQWV30">43 个可申请免费额度的平台</span>
+        </button>
+        <button class="shot-tab" data-shot="live-routing" type="button" data-page-node-id="1wgZleIRsyVRzlGFh7SFrB">
+          <span class="shot-tab-name" data-page-node-id="MXJvkxXY1KNQlZwvHucD8C"><i data-page-node-id="TEKvkaWOwfr7JZxtmec0wx"></i>实时路由</span>
+          <span class="shot-tab-desc" data-page-node-id="0lcJlVZ7EJycszioUwJOGZ">网关拓扑、Base URL 与端点一览</span>
+        </button>
+        <button class="shot-tab" data-shot="statistics" type="button" data-page-node-id="HdbEBuRImCDy1mavBLCTlT">
+          <span class="shot-tab-name" data-page-node-id="K2URKpE9nO6qSlL5wkAqZ4"><i data-page-node-id="vguSDP2KHei6cxr8N1uTR0"></i>统计</span>
+          <span class="shot-tab-desc" data-page-node-id="plcC0hk6zYT3BhbAAvyAWj">调用热力图与 Token 用量趋势</span>
+        </button>
+        <button class="shot-tab" data-shot="guide" type="button" data-page-node-id="byN6dQcfNW6TwajJqGJh0U">
+          <span class="shot-tab-name" data-page-node-id="DJWw75mJqCy6AFwMmB3aUH"><i data-page-node-id="CZ6ZbHNzUO3MiIPIuY6dJx"></i>接入指南</span>
+          <span class="shot-tab-desc" data-page-node-id="jsM8DAGeWjYGKQMiPgKkFh">各客户端接入示例</span>
+        </button>
+      </div>
+
+      <div data-page-node-id="ZH5Mjd45AeomSih37HsLhE">
+        <div class="shot-view" data-page-node-id="9gMuHw9cE7CjY2L80h2NzL">
+          <div class="shot-view-bar" data-page-node-id="S3Um2artSK6knzjr2HQAoW">
+            <span class="term-dots" data-page-node-id="GmmSX7bAmFRcMLIA7YSDgg"><i data-page-node-id="Ixz4VjlZaxHhctsKChGoav"></i><i data-page-node-id="9mvGWzTpEqH5HdWMJWdj1V"></i><i data-page-node-id="xI6fKpDH4FT2PXP0S351lZ"></i></span>
+            <span class="url" id="shotUrl" data-page-node-id="bumZlQyaIopAOTSyUYW8EU">vortex — 免费 Token</span>
+          </div>
+          <img class="shot-img" data-shot="free-tokens" src="assets/screens/free-tokens.png" alt="免费 Token 页面：站点卡片、免费额度与申请入口" loading="lazy" data-page-node-id="XwGcplwkBE1woU0BbzyhKH">
+          <img class="shot-img" data-shot="live-routing" src="assets/screens/live-routing.png" alt="实时路由页面：客户端经 Vortex 网关连接多个上游提供商" loading="lazy" hidden data-page-node-id="2KZdHzEJxrQK1ddC3dhuLv">
+          <img class="shot-img" data-shot="statistics" src="assets/screens/statistics.png" alt="统计页面：调用热力图与 Token 用量趋势" loading="lazy" hidden data-page-node-id="8CFpH8SgLRxoFL7s7GmRpx">
+          <img class="shot-img" data-shot="guide" src="assets/screens/guide.png" alt="接入指南页面：OpenAI SDK 与 cURL 接入示例" loading="lazy" hidden data-page-node-id="diyHNLbqMvxAPv4RaFqrVX">
+        </div>
+        <p class="shot-hint" data-page-node-id="HcXdJdKmyYqTRMuCQ6NxaF">截图来自本机开发实例（<code data-page-node-id="I9dQMpxd2ySKoYo2aZM9jB">localhost:1420</code>），数据为真实运行状态。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 快速开始 ========== -->
+<section class="section" id="start" data-page-node-id="D8OClyBAiz5cvwFyFMDxzo">
+  <div class="container" data-page-node-id="eNTJzMf7E0drGnLzPGvxsW">
+    <div class="sec-head sec-head--left reveal" style="margin-bottom:40px" data-page-node-id="DNNM4tqR25djiwLfUDZJ6C">
+      <span class="eyebrow" data-page-node-id="UHnenqqBcTcrdP0szDZmPY"><span class="dot" data-page-node-id="CKycMIMlh6t2FSAq3wZpnF"></span>Quick Start</span>
+      <h2 class="sec-title" data-page-node-id="m8YNvt5VrbE2G6uX1XCBVf">三分钟跑起来</h2>
+      <p class="sec-sub" data-page-node-id="DFNR02KIDblfaFFxKXZlGc">需要 Rust 1.70+、Bun（或 Node 20.19+ / 22.12+）与 Tauri 2 的系统依赖。</p>
+    </div>
+
+    <div class="quick" data-page-node-id="3jEgftZkxBvIIpAxzdhUnh">
+      <div class="steps reveal" data-page-node-id="AQEGR7hmJrDjqZAjslttRe">
+        <div class="step" data-page-node-id="7jLwBD0atCHEkcspXreSRA">
+          <span class="step-n" data-page-node-id="j7LE5pnj1SsSYsnNziWvu1">1</span>
+          <div data-page-node-id="GwdLfqk4aPZAxsQ0sAm5vM">
+            <h4 data-page-node-id="iSxwaZSGQFaN2IkEOaUqAE">准备环境</h4>
+            <p data-page-node-id="btIgYv8NU1BJaxY4LJJFXW">安装 <a href="https://rustup.rs/" target="_blank" rel="noopener" style="color:var(--accent-ink)" data-page-node-id="Jn9kT7VWvgC67r1dkK8wDd">Rust</a> 与 <a href="https://bun.sh/" target="_blank" rel="noopener" style="color:var(--accent-ink)" data-page-node-id="k95ruE1KnUw6OTFMHbP0uV">Bun</a>，再按 <a href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener" style="color:var(--accent-ink)" data-page-node-id="ih4xCebUKPch88y09ZUpIc">Tauri 官方文档</a>装好各平台构建依赖。</p>
+          </div>
+        </div>
+        <div class="step" data-page-node-id="x3tSVvftL0tJoCKA6ub4yD">
+          <span class="step-n" data-page-node-id="c8EAZaZxrEQSAHwo6F35xG">2</span>
+          <div data-page-node-id="gC3MbT6FHJneUmJcc53xsN">
+            <h4 data-page-node-id="NUjnJEYyjHW7W3xsEehzZY">拉取并安装依赖</h4>
+            <p data-page-node-id="zuBGPdPsk58NUwmXDzo7vR">仓库自带 <code data-page-node-id="AhYTOOA8PldJyvxcQ5NsYj">bun.lock</code>，用 Bun 安装最省事。</p>
+          </div>
+        </div>
+        <div class="step" data-page-node-id="DRWQvGwzjHRXvemHqzvr6Z">
+          <span class="step-n" data-page-node-id="1VGPwi6fxR6Cm7rRv2hxcw">3</span>
+          <div data-page-node-id="ATkNRKFei0GGf94G9Oo9Jz">
+            <h4 data-page-node-id="OPY5UcO3TnGudoPils2miR">开发模式启动</h4>
+            <p data-page-node-id="Lodf885u84d5Xxy2Q6Csh5">一条命令同时拉起前端与 Rust 后端。界面在 <code data-page-node-id="1bDmHqJ1BuQg0y0yniJ1T6">localhost:1420</code>，网关在 <code data-page-node-id="o86WRCcJjNCrkS6lVBjmZQ">localhost:20128</code>。</p>
+          </div>
+        </div>
+        <div class="step" data-page-node-id="RjeqIqE9UrbCJQniuqZniO">
+          <span class="step-n" data-page-node-id="MPDXWCDqS9eLUAlnlt5kX7">4</span>
+          <div data-page-node-id="uguRwMMvgYiV2c8spEO2Em">
+            <h4 data-page-node-id="203uaVjEbeYIHVUe2tMVmi">添加提供商，改 base_url</h4>
+            <p data-page-node-id="N3xKI6DO4Om2Igm8CpJzyD">在「订阅」页填入上游 API Key，然后把任意 OpenAI 客户端的 <code data-page-node-id="873S4QpAJcVsNjmrt6mF6B">base_url</code> 指向 <code data-page-node-id="27M8SyhOhNtu9ntl4JtYMW">http://localhost:20128/v1</code>。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal" data-page-node-id="6k9sdPGMsrpIZIvDHEq3qH">
+        <div class="code" data-page-node-id="ERS8qvYjr6G7WF8H2Cg5Cu">
+          <div class="code-head" data-page-node-id="DECQK4LthJ8x86fHDvxjdI">
+            <div class="code-tabs" id="codeTabs" data-page-node-id="80Goe2kZCvQ74Y3yxG864J">
+              <button class="code-tab active" data-code="bash" type="button" data-page-node-id="Sbil0GSf4VNmTKZ9mqFMYI">Bash</button>
+              <button class="code-tab" data-code="python" type="button" data-page-node-id="BYVsxCa9sAeSniCj6axuUX">Python</button>
+              <button class="code-tab" data-code="node" type="button" data-page-node-id="lEUeFYVey5unQU67EnYysr">Node.js</button>
+            </div>
+            <button class="code-copy" id="copyBtn" type="button" data-page-node-id="A915CogC8RqQuv5Lcz6jDr">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="mD3nK6qeO0zy0uriGBRadk"><rect x="9" y="9" width="11" height="11" rx="2" data-page-node-id="JMX8JU6A5Ws71kMs58mx1p"/><path d="M5 15V5a2 2 0 0 1 2-2h8" data-page-node-id="4Zxq1aqTBvlLSDZwHxMVmQ"/></svg>
+              <span data-page-node-id="wpWzL5VzyD1tY3aD3aJsYE">复制</span>
+            </button>
+          </div>
+
+<pre id="pre-bash" data-page-node-id="z6noc9Olk8Xa1XgzMJaRz8"># 安装依赖
+bun install
+
+# 开发模式（前端 + Rust 后端）
+bun run tauri dev
+
+# 构建生产版本
+bun run tauri build
+
+# 网关默认监听
+#   http://localhost:20128/v1</pre>
+
+<pre id="pre-python" hidden data-page-node-id="75SbLaNO1zMj3VBiV1gg2G">from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:20128/v1",
+    api_key="vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40",  # 由 POST /api/keys 创建
+)
+
+resp = client.chat.completions.create(
+    model="openai/gpt-4o",          # provider/model 格式
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(resp.choices[0].message.content)</pre>
+
+<pre id="pre-node" hidden data-page-node-id="cIEE3iu4fTzOrONN3deoCS">import OpenAI from 'openai'
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:20128/v1',
+  apiKey: 'vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40',
+})
+
+const stream = await client.chat.completions.create({
+  model: 'deepseek/deepseek-chat',
+  messages: [{ role: 'user', content: 'Hello!' }],
+  stream: true,
+})
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? '')
+}</pre>
+        </div>
+
+        <div class="mt-30" data-page-node-id="QG10ZsCD3UFrN7DgTmoOoF">
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);font-weight:650;margin-bottom:11px" data-page-node-id="Wx8FNXLbI3nA9UyLraDAdz">OpenAI 兼容端点</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px" data-page-node-id="C6IRmlWuSLweKCT5fHkAOz">
+            <span class="pill" data-page-node-id="U60bnScCAXacqKi8H8Fhui"><code data-page-node-id="Nab6AOjs4ZFDbk0JDE6nJs">POST /v1/chat/completions</code></span>
+            <span class="pill" data-page-node-id="9XFIkomlnPdZUKlQMdCGdM"><code data-page-node-id="qlKgnYFrqq2aqDFKUnBHAq">GET /v1/models</code></span>
+            <span class="pill" data-page-node-id="VnnU8vj4ADUi0V77BypnY0"><code data-page-node-id="IFFf3oQ92FjaJwAgqHwmhk">POST /v1/embeddings</code></span>
+            <span class="pill" data-page-node-id="O7DquCrqh8I6GKaBockvMW"><code data-page-node-id="CZHf3O1H7xsTbI65yoBQDK">POST /v1/images/generations</code></span>
+          </div>
+
+          <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);font-weight:650;margin:24px 0 11px" data-page-node-id="0FyfWzCcnLLXAEbc2jh7ZE">模型指定方式</div>
+          <div style="display:flex;flex-direction:column;gap:8px" data-page-node-id="EDqAwirWEVQ3TS3ikYLXbv">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap" data-page-node-id="g72Hcl8BsuIbIOJv5DxLrw">
+              <span class="pill pill--accent" data-page-node-id="PUpImKqVFgPk0picXtK3CI">provider/model</span>
+              <code style="font-size:12.5px;color:var(--ink-3)" data-page-node-id="f7bhw6IeeBS9EqJ1IdrgCs">openai/gpt-4o</code>
+              <span style="font-size:12.5px;color:var(--ink-4)" data-page-node-id="Cu2rBFrxOnbiCmwOqzmhRE">显式指定提供商与模型</span>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap" data-page-node-id="4BSxUbL9zbGyLNPG617NlE">
+              <span class="pill pill--accent" data-page-node-id="1CjCRkikjTuU7fX77zEN8t">别名前缀</span>
+              <code style="font-size:12.5px;color:var(--ink-3)" data-page-node-id="KlecGpr7Or76PrdH7ku0Fv">ds-deepseek-chat</code>
+              <span style="font-size:12.5px;color:var(--ink-4)" data-page-node-id="M52PsSYr2daBD1dvw9DvOC">用提供商别名缩写</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 请求流程 ========== -->
+<section class="section section--tight" data-page-node-id="Bna42wU8SDejuPZQEPv17G">
+  <div class="container" data-page-node-id="JTG58XoTqnKgKDNGYNxjsA">
+    <div class="sec-head reveal" data-page-node-id="2aPDc72RxCl9etfQQDfZqV">
+      <span class="eyebrow" data-page-node-id="GpoSn6fQna1Aji1DBIcD7q"><span class="dot" data-page-node-id="Ec5XFHWD3RdPnc4pD42UBS"></span>Pipeline</span>
+      <h2 class="sec-title" data-page-node-id="saXNXynkf1TBBbFcF8eHwn">一次请求的旅程</h2>
+      <p class="sec-sub" data-page-node-id="UqGhxGouxBq2E8b3DtQnuB">从客户端发出到上游返回，中间发生了什么。</p>
+    </div>
+
+    <div class="flow reveal" data-page-node-id="baEpDltR6oXEbZUXEQhQH3">
+      <div class="flow-node" data-page-node-id="fouStFaSuCy3GVXhcnCPXV">
+        <div class="flow-step" data-page-node-id="EGo94uHVNaqmLsGZGk7iCM">STEP 01</div>
+        <h4 data-page-node-id="zlZ9YkwPam5DyswvOAhmcl">接入</h4>
+        <p data-page-node-id="iBRxnNj65zWy2uYuWCx7dX">客户端把 <code data-page-node-id="pkGyVrubRGfXk4ob4ixMho">base_url</code> 指向本地网关，发出标准 OpenAI 请求。</p>
+      </div>
+      <div class="flow-node" data-page-node-id="yYTydwiPN5hqReTANfLTls">
+        <div class="flow-step" data-page-node-id="eglj4vZkoKo9leHiNYOc85">STEP 02</div>
+        <h4 data-page-node-id="e4g1qp8v9u9nlMdQP9gxlY">解析路由</h4>
+        <p data-page-node-id="KE82xkysJVvUwTHgd8zKdg">解析 <code data-page-node-id="h79TWj8BIBvfD5DcW5Y7dW">provider/model</code>，定位到对应的提供商连接与密钥。</p>
+      </div>
+      <div class="flow-node" data-page-node-id="mjZVtWMLIOjcCVC5JdB0BL">
+        <div class="flow-step" data-page-node-id="HcjHh8xiaXF1OGStjj8gwz">STEP 03</div>
+        <h4 data-page-node-id="VBczneWCBFMvHHkeR12fxR">协议转换</h4>
+        <p data-page-node-id="EEKy8yR85OwIEpp9PQdYRC">按上游格式重写请求体，Anthropic / Gemini 与 OpenAI 互转。</p>
+      </div>
+      <div class="flow-node" data-page-node-id="hjcGhK5FohOBhfJDqXrNlf">
+        <div class="flow-step" data-page-node-id="mrjaC7l211gqFbxAWpK3X8">STEP 04</div>
+        <h4 data-page-node-id="piHeTwls7GVCJghqId9aJP">弹性调度</h4>
+        <p data-page-node-id="YREoia7kilyVgPCRQJSrGl">熔断器判断端点健康度，失败则指数退避重试。</p>
+      </div>
+      <div class="flow-node" data-page-node-id="lF7TqpTP8PXr9AxZaO2DUu">
+        <div class="flow-step" data-page-node-id="vFex6AC9ClN9aNW0mYjlMQ">STEP 05</div>
+        <h4 data-page-node-id="cVZbAo6dFj2ataJTbyHP7l">上游调用</h4>
+        <p data-page-node-id="Rt8vlEtnzhODDKkVKRbK4t">转发请求，回传响应（含 SSE 流）并写入用量记录。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 获取 / 构建 ========== -->
+<section class="section section--tight" data-page-node-id="EeYrRJYII4ewGxsTaWTeeH">
+  <div class="container" data-page-node-id="EWd5bNNgbh6UihHMh1z3iQ">
+    <div class="sec-head reveal" data-page-node-id="8WkDK1l7GumwWvAYNHBbkX">
+      <span class="eyebrow" data-page-node-id="awqcD6krchph5AWH5J5QuM"><span class="dot" data-page-node-id="gKsvUSA7lTGE0x3h9vYM2D"></span>Get Vortex</span>
+      <h2 class="sec-title" data-page-node-id="lUhwYLeP4V4gMjDyzl5TZ2">在你自己的机器上构建</h2>
+      <p class="sec-sub" data-page-node-id="xlynbJOLczXLaTFRrHyQSE">Vortex 目前以源码形式分发。预编译安装包将在后续版本发布到 GitHub Releases。</p>
+    </div>
+
+    <div class="dl-grid reveal" data-page-node-id="xBzB4nJvfyQM0ArFH1AMMM">
+      <div class="card dl" data-page-node-id="WkUG0hrrHKLXMiynTZPoNT">
+        <span class="dl-ico" data-page-node-id="tvassHZJoJOsDAlm07m2KA"><svg viewBox="0 0 24 24" fill="currentColor" data-page-node-id="n1PEbnCdxUmoO3dyamyuNY"><path d="M3 5.5L10 4.6v7.1H3V5.5zm0 13v-6.4h7v7.1L3 18.5zM11 4.4L21 3v8.7h-10V4.4zm0 15.2V12h10V21l-10-1.4z" data-page-node-id="FIS592BEK5TTzV1TEFjZr3"/></svg></span>
+        <h3 data-page-node-id="oNb8DFJbjHmODDLDwJDYyA">Windows</h3>
+        <p data-page-node-id="qWRYnoeRn6RRHztjk39Boa">需要 MSVC 工具链与 WebView2</p>
+        <code class="dl-code" data-page-node-id="TjwsZzTC27NHrxGEmxpeLZ">bun run tauri build</code>
+        <a class="btn btn--sm" href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener" data-page-node-id="VIA9m7JEUaWBJuZPTgu8dH">构建依赖说明</a>
+      </div>
+
+      <div class="card dl" data-page-node-id="uCA3YY1bFNyu1CoynBulSh">
+        <span class="dl-ico" data-page-node-id="Ded7fBoHwrHgDZcLgqHYt5"><svg viewBox="0 0 24 24" fill="currentColor" data-page-node-id="6DYre1j6FFORHM4J6dLfCW"><path d="M16.4 12.8c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8c-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.8 1.1 9 .8 1.1 1.6 2.3 2.8 2.3s1.5-.7 2.9-.7 1.7.7 2.9.7 2-1.1 2.7-2.2c.9-1.3 1.2-2.5 1.2-2.6 0 0-2.3-.9-2.4-3.6zM14.2 5.9c.6-.7 1-1.7.9-2.7-.9.1-1.9.6-2.5 1.3-.6.6-1 1.6-.9 2.6 1 0 1.9-.5 2.5-1.2z" data-page-node-id="80Pcuh26iudX8AMTDXhmny"/></svg></span>
+        <h3 data-page-node-id="sta7XZ1HEAwdOR3qOK63v6">macOS</h3>
+        <p data-page-node-id="c1imeDSzzy2FGAktz9GDN3">需要 Xcode Command Line Tools</p>
+        <code class="dl-code" data-page-node-id="fzfrRDEiQ5B9dMrKQQeiE1">bun run tauri build</code>
+        <a class="btn btn--sm" href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener" data-page-node-id="pHz82kpsaGTDF9fmrQB0Va">构建依赖说明</a>
+      </div>
+
+      <div class="card dl" data-page-node-id="BnOplAvBH2vqO8tvhEn6yo">
+        <span class="dl-ico" data-page-node-id="C8R0OIoeFFNYpsQWvXFMH4"><svg viewBox="0 0 24 24" fill="currentColor" data-page-node-id="YBs0NS7RAUYIITBGmfEE9C"><path d="M12 2c-1.9 0-3 .9-3 2.3 0 .9.5 1.6 1.4 2-1.2.2-2.3.5-3.2 1-1.7.9-2.6 2.2-3 3.8-.3 1.4-.4 3.6-.2 5.2.2 1.7 1 2.7 2.4 3 .9.2 1.7 0 2.4-.7.6-.6 1.3-.9 2.1-.9.5 0 1 .1 1.4.3.4.2.8.4 1.2.7 1.3 1 2.7 1.2 4 .5 1.3-.6 2.1-1.9 2.4-3.8.3-1.7.3-3.8-.1-5.3-.5-2-1.9-3.3-4.1-3.8-.8-.2-1.9-.3-3.1-.2.9-.3 1.4-1 1.4-2C15 2.9 13.9 2 12 2zm-2.6 5.4c.6 0 1 .4 1 1s-.4 1-1 1-1-.4-1-1 .4-1 1-1zm5.2 0c.6 0 1 .4 1 1s-.4 1-1 1-1-.4-1-1 .4-1 1-1z" data-page-node-id="HKy5UCBjkXB1vOsDIRGxVQ"/></svg></span>
+        <h3 data-page-node-id="Pr7oeUSl81DWxwhlQgD4D5">Linux</h3>
+        <p data-page-node-id="9zInTgd7BUzfmXojWi7E4B">需要 webkit2gtk / appindicator 等</p>
+        <code class="dl-code" data-page-node-id="SyJaWoxSCRAowR5xLXZsUX">bun run tauri build</code>
+        <a class="btn btn--sm" href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener" data-page-node-id="QDNArKZInHapOTaUzdVHJ5">构建依赖说明</a>
+      </div>
+    </div>
+
+    <p class="center mt-30" style="font-size:13.5px;color:var(--ink-4)" data-page-node-id="OmSQeCqWYmMRZUTgjMj75V">
+      想第一时间拿到安装包？在
+      <a href="https://github.com/ht-shaipe/vortex" target="_blank" rel="noopener" style="color:var(--accent-ink)" data-page-node-id="7mUCiIaXbtTUnCdoHFKgQ8">GitHub 仓库</a>
+      点 Watch → Releases only。
+    </p>
+  </div>
+</section>
+
+<!-- ========== FAQ ========== -->
+<section class="section" id="faq" data-page-node-id="qf1So7jUsorOo70L3w2fFZ">
+  <div class="container" data-page-node-id="KJRYGGLXtuEeBZoTD0RFo0">
+    <div class="sec-head reveal" data-page-node-id="tlKPd5xKcdHExdvliXJAFs">
+      <span class="eyebrow" data-page-node-id="aYZp84fEMb7kTXoO8aluVI"><span class="dot" data-page-node-id="XgwhHjlFjzbwc4uD4vx2oA"></span>FAQ</span>
+      <h2 class="sec-title" data-page-node-id="cRYU9A5QWr83PaPToKMaSD">常见问题</h2>
+    </div>
+
+    <div class="faq reveal" data-page-node-id="UN4WBRkdbZJxw5OtTtWFUM">
+      <details class="qa" open data-page-node-id="aGZzA1OY0W0xlqgn4p9167">
+        <summary data-page-node-id="SpjrLYsFM4XIHLAy6FGoiG">Vortex 和直接用官方 SDK 有什么区别？</summary>
+        <div class="qa-body" data-page-node-id="6IKOaOsU2upnzr4ftITb8W">
+          官方 SDK 让你绑定单一供应商。Vortex 在中间加了一层本地网关：同一份客户端代码可以随时切到任意上游（改 <code data-page-node-id="Uprw775mOKbECkEFCP9PTB">model</code> 前缀即可），还能叠加熔断重试、统一用量统计与密钥集中管理。所有请求仍然直连上游，不经过第三方中转。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="uCY4XakytTieQKrtcYW1i9">
+        <summary data-page-node-id="tm5lQDzChwOKRwezMSqBq5">我的 API Key 会被上传吗？</summary>
+        <div class="qa-body" data-page-node-id="sxQ7iJYNBEbG2hMvgsdg5W">
+          不会。Vortex 是一个跑在你本机的进程，密钥使用 AES-256-GCM 加密后存入本地 SQLite 数据库，加密密钥由本机生成（可用 <code data-page-node-id="NiqQkx7I0QtgGGEyyXVEw2">VORTEX_ENCRYPTION_KEY</code> 指定）。没有云端账号，也没有遥测上报。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="xS9yPQyTghbY7Wk0AmtOCa">
+        <summary data-page-node-id="p6UhYnayAi72ilF1bEv4WU">支持流式输出（SSE）吗？</summary>
+        <div class="qa-body" data-page-node-id="3qj0kiAAV8JgTc0xizzHYC">
+          支持。<code data-page-node-id="WjPHFq3hxxyZIGyoNw4edS">/v1/chat/completions</code> 同时支持流式与非流式；协议转换层会在流式路径上逐块重写事件格式，因此即使上游是 Anthropic 或 Gemini，下游也能拿到标准的 OpenAI SSE 流。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="lN30kVNPLYycweew4mCdDH">
+        <summary data-page-node-id="vpYmvOWdBG7UJg50IzevIn">怎么指定用哪家模型？</summary>
+        <div class="qa-body" data-page-node-id="EY5NaDz74WUEbsyh90OWCR">
+          两种写法：<code data-page-node-id="GPkhBCo3bm5xboKr6uhATL">provider/model</code>（如 <code data-page-node-id="2C6MGM8HmchDEckl7dGnOo">openai/gpt-4o</code>）显式指定提供商；或使用提供商别名前缀，如 <code data-page-node-id="J1T1KZkj5DMBfgad6NpNsN">ds-deepseek-chat</code> 走 DeepSeek。完整别名表见 README。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="4v0Txe17Dl0sIvs0V4bGjb">
+        <summary data-page-node-id="YllvRqlRZj6kJUEFmY3Yko">能接入任意 OpenAI 兼容服务吗？</summary>
+        <div class="qa-body" data-page-node-id="krtjkXGJFqGsEqXz9liFRT">
+          可以。内置「Custom」提供商类型，填上自建或第三方的 OpenAI 兼容 <code data-page-node-id="XKWiz49XADF3QxSSWVPc8r">base_url</code> 与 Key 即可，它与内置提供商一样参与路由、熔断与统计。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="sOHECh9Zaj5hNalyQsHH0t">
+        <summary data-page-node-id="FlEECGuMCWLAODOE6KzD4g">网关端口可以改吗？</summary>
+        <div class="qa-body" data-page-node-id="pBVqNSTBnAt6C5EsFFO4kr">
+          可以。默认 <code data-page-node-id="qvjcRb0SnOtOHfRtIx7JVV">20128</code>，通过环境变量 <code data-page-node-id="7lSnVEaiCriWdNt1VIbK7E">VORTEX_PORT</code> 修改。另外还支持 <code data-page-node-id="8ihlIyOxWZXCMLS2f7yS6k">VORTEX_DATA_DIR</code>（数据目录）、<code data-page-node-id="1GuuyxYXS6mbqvkdneebCo">VORTEX_REQUIRE_API_KEY</code>（是否强制校验客户端密钥）、<code data-page-node-id="86eBYSBe0aJdHUpijSkRJZ">VORTEX_LOG_LEVEL</code>（日志级别）。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="tP3ZScMRGdCSWfvfIkexeE">
+        <summary data-page-node-id="PS9O8kEoPYN0bKNfHnAjFj">免费 Token 目录里的信息准确吗？</summary>
+        <div class="qa-body" data-page-node-id="MyO8HRkpavvEozFm1vWiOY">
+          目录汇总了各平台公开的免费额度政策，但平台政策会随时调整，页面内也标注了「请以各平台官网为准」。你也可以在应用内提交自己的推荐，数据仅保存在本地，不会上传。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="QJzw3kGzreHzyn3CZNgrkS">
+        <summary data-page-node-id="yRFv8uDf9Bk3kNZKEEVmYM">开源协议是什么？可以商用吗？</summary>
+        <div class="qa-body" data-page-node-id="xgoOyDvsETUyKZ0SusJaHV">
+          基于 <a href="https://github.com/ht-shaipe/vortex/blob/main/LICENSE" target="_blank" rel="noopener" data-page-node-id="HBNA8X2gQqzsT7FGSaca5u">MIT 许可证</a> 开源，可以自由使用、修改、分发与商用，只需保留版权声明与许可证文本。
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ========== CTA ========== -->
+<section class="section section--tight" data-page-node-id="xZYAb3BQYq0n48N1557ekj">
+  <div class="container" data-page-node-id="2UoArbbEljX1oSFw0TWRzX">
+    <div class="cta-band reveal" data-page-node-id="YCfj5u6dvUU8EU1JZwmIiB">
+      <h2 data-page-node-id="pMWeMgEkGe67yRF0S7AUEL">把模型选择权，拿回自己手里</h2>
+      <p data-page-node-id="6c9TU6G2PRSKgEe2pVO69Z">本地运行 · 密钥自持 · 上游随意换</p>
+      <div class="hero-cta" data-page-node-id="vsy1TtTiKRHTJrMHlj4XNK">
+        <a class="btn btn--primary btn--lg" href="https://github.com/ht-shaipe/vortex" target="_blank" rel="noopener" data-page-node-id="w333DDp2hr9GEbBR51GzCs">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-page-node-id="2dviMRvno2f0MNkoLJBMot"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z" data-page-node-id="dGyrk5uvX0cCnHYiqMDW1m"/></svg>
+          去 GitHub 看看
+        </a>
+        <a class="btn btn--lg" href="#start" data-page-node-id="hB4Qu6vUObdIyuVMtDIVuz">重新看一遍快速开始</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 页脚 ========== -->
+<footer class="foot" data-page-node-id="ZVEZIziftV7fZ9RyvvaF1B">
+  <div class="container" data-page-node-id="VGDST2ShacPAjPH4rfUWv3">
+    <div class="foot-grid" data-page-node-id="uIbrStysNrG8otBRqq9caJ">
+      <div class="foot-about" data-page-node-id="dlIDC8QCrs5Dx0W2pPUI4y">
+        <div class="brand" data-page-node-id="oZKF4zRwL1v1nbfcZh5Vjh">
+          <span class="brand-mark" data-page-node-id="8KkqweSxDX2MuYl3ZPQsQU">V</span>
+          <span data-page-node-id="LrMhHziHccp7HKDcKU2cqL">
+            <span class="brand-name" data-page-node-id="sudGtsL4Y3aSECJdfOsCoD">Vortex</span>
+            <span class="brand-tag" data-page-node-id="k0ADHfrep7puwJkt7nmsuG">AI GATEWAY</span>
+          </span>
+        </div>
+        <p data-page-node-id="7b0e2C2GVAFUy41G8AmRGL">基于 Tauri 2 构建的本地 AI 网关桌面应用：把 21+ 家提供商聚合成一个 OpenAI 兼容接口。</p>
+      </div>
+
+      <div data-page-node-id="vdu8oR5CgSjmXv1z93B9xM">
+        <h5 data-page-node-id="RiYBeEVRk77WDJPDxD5qTk">产品</h5>
+        <div class="foot-links" data-page-node-id="KQHEXpdBHFljyNzCo9PYw5">
+          <a href="#features" data-page-node-id="j6bOvGJ3O8jKVIZuIPGplk">特性</a>
+          <a href="#providers" data-page-node-id="xCHGE8Vh4gD0crDEcynYc0">提供商</a>
+          <a href="#preview" data-page-node-id="tsx8x6dxnjzvCViiUzlmPS">界面预览</a>
+          <a href="#faq" data-page-node-id="EPGNHBBut9LpNud8T2H1P5">常见问题</a>
+        </div>
+      </div>
+
+      <div data-page-node-id="cFWoqCITb4j6e1PwfTk66H">
+        <h5 data-page-node-id="RQkfe6suf66mWinJkTPdcf">开发</h5>
+        <div class="foot-links" data-page-node-id="lwyaB7zU4DGruAbIzaNOjG">
+          <a href="#start" data-page-node-id="YKROMDwk6bxbbyQIVPN6Mr">快速开始</a>
+          <a href="https://github.com/ht-shaipe/vortex" target="_blank" rel="noopener" data-page-node-id="ML5LSE8NVBhQhGHn0NqwAk">GitHub 仓库</a>
+          <a href="https://github.com/ht-shaipe/vortex/blob/main/README.md" target="_blank" rel="noopener" data-page-node-id="mAn2C1dg3siJa6DF681S6D">README</a>
+          <a href="https://github.com/ht-shaipe/vortex/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener" data-page-node-id="aYYlqEhAzjLpoaPlvYtjXG">架构文档</a>
+        </div>
+      </div>
+
+      <div data-page-node-id="XsOMdUiuiPi4gKaNv4zH6b">
+        <h5 data-page-node-id="LkOWz9Dm1pRecBgxIWa0Q9">资源</h5>
+        <div class="foot-links" data-page-node-id="OpzVxyS5LLINxeWkgo7dPR">
+          <a href="https://v2.tauri.app/" target="_blank" rel="noopener" data-page-node-id="dQkNNyIPAXoFIGFErGil2V">Tauri</a>
+          <a href="https://rustup.rs/" target="_blank" rel="noopener" data-page-node-id="FASSKHg7nd6TomgOms7jjj">Rust</a>
+          <a href="https://github.com/ht-shaipe/vortex/blob/main/LICENSE" target="_blank" rel="noopener" data-page-node-id="BWR7HQgTHnuR2LknpldWXc">MIT 许可证</a>
+          <a href="https://github.com/ht-shaipe/vortex/issues" target="_blank" rel="noopener" data-page-node-id="VdAjYKmbh75M26Gse2Gvi2">反馈问题</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot-bottom" data-page-node-id="AltKUxUkDI0kuHtpcwXyZj">
+      <span data-page-node-id="OF3pexaIWN7v5FEdBFghMT">© 2026 Vortex · MIT License</span>
+      <span data-page-node-id="6pHyOBQ7KIGBx1OMJvq6I3">本站为 Vortex 项目官网 · 应用数据全部保存在你的本机</span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

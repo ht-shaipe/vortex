@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse};
-use crate::db::{core as db_core, combos as db_combos, providers as db_providers};
+use crate::db::{core as db_core, providers as db_providers};
 use crate::AppState;
 use serde_json::json;
 use std::sync::Arc;
@@ -34,16 +34,6 @@ pub async fn list_models(
                 }
             }
         }
-    }
-
-    for combo in db_combos::list(&conn).unwrap_or_default() {
-        models.push(json!({
-            "id": combo.name,
-            "object": "model",
-            "created": 0,
-            "owned_by": "vortex",
-            "permission": [],
-        }));
     }
 
     HttpResponse::Ok().json(json!({

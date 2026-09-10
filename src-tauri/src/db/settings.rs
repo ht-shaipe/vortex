@@ -28,19 +28,14 @@ pub fn set(conn: &rusqlite::Connection, namespace: &str, key: &str, value: &serd
 
 pub fn get_settings(conn: &rusqlite::Connection) -> Result<serde_json::Value> {
     let general = get(conn, "settings", "general")?.unwrap_or(serde_json::json!({}));
-    let routing = get(conn, "settings", "routing")?.unwrap_or(serde_json::json!({}));
     Ok(serde_json::json!({
         "general": general,
-        "routing": routing,
     }))
 }
 
 pub fn update_settings(conn: &rusqlite::Connection, updates: &serde_json::Value) -> Result<serde_json::Value> {
     if let Some(general) = updates.get("general") {
         set(conn, "settings", "general", general)?;
-    }
-    if let Some(routing) = updates.get("routing") {
-        set(conn, "settings", "routing", routing)?;
     }
     get_settings(conn)
 }

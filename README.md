@@ -2,39 +2,38 @@
 
 > 统一的 AI 网关桌面应用 — 将 21+ 个 AI 提供商聚合为 OpenAI 兼容 API
 
-Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求智能路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持 17 种路由策略、组合模型、API 密钥管理和用量统计。
+Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持弹性重试、API 密钥管理和用量统计。
 
 ## 特性
 
 - **21 个内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、Qwen、MiniMax，以及自定义 OpenAI 兼容端点
-- **17 种路由策略** — 从简单的优先级/轮询到 9 因子自动评分、P2C 负载均衡、成本优化等
-- **组合模型** — 将多个模型/提供商组合为虚拟模型，按策略自动调度
 - **OpenAI 兼容 API** — 无需修改客户端代码，直接替换 `base_url` 即可
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 熔断器 + 指数退避重试，保障上游故障时的可用性
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本
-- **桌面应用** — 系统托盘后台运行，Vue 3 管理界面
+- **免费 Token 目录** — 内置 43 个可申请免费额度的 AI 平台（国内 / 海外 / 本地部署），标注是否支持 API、是否需绑卡与实名，支持自行提交推荐并保存到本地
+- **桌面应用** — 系统托盘常驻（显示窗口 / 启动代理 / 停止代理 / 退出），Vue 3 管理界面
 
 ## 快速开始
 
 ### 环境要求
 
 - [Rust](https://rustup.rs/) 1.70+ (stable)
-- [Node.js](https://nodejs.org/) 18+ 或 [Bun](https://bun.sh/)
+- [Bun](https://bun.sh/)（仓库带 `bun.lock`，推荐）或 [Node.js](https://nodejs.org/) 20.19+ / 22.12+
 - [Tauri 2 CLI](https://v2.tauri.app/) 前置依赖（参见 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/)）
 
 ### 安装与运行
 
 ```bash
 # 安装前端依赖
-npm install        # 或 bun install
+bun install        # 或 npm install / pnpm install
 
 # 开发模式（同时启动前端和 Rust 后端）
-npm run tauri dev
+bun run tauri dev
 
 # 构建生产版本
-npm run tauri build
+bun run tauri build
 ```
 
 开发模式下：
@@ -56,7 +55,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:20128/v1",
-    api_key="your-vortex-api-key"  # 在管理界面创建的密钥
+    api_key="vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40"  # 通过 POST /api/keys 创建的网关密钥
 )
 
 response = client.chat.completions.create(
@@ -70,7 +69,7 @@ response = client.chat.completions.create(
 ```bash
 curl http://localhost:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-vortex-api-key" \
+  -H "Authorization: Bearer vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40" \
   -d '{
     "model": "deepseek/deepseek-chat",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -83,29 +82,6 @@ curl http://localhost:20128/v1/chat/completions \
 |------|------|------|
 | `provider/model` | `openai/gpt-4o` | 显式指定提供商和模型 |
 | `alias-model` | `ds-deepseek-chat` | 使用提供商别名前缀 |
-| 组合名 | `my-combo` | 使用预定义的组合模型 |
-
-## 路由策略
-
-| 策略 | 说明 |
-|------|------|
-| `priority` | 按顺序尝试，使用第一个可用的 |
-| `fill_first` | 填满每个目标的配额再切换 |
-| `weighted` | 按权重随机选择 |
-| `round_robin` | 轮询 |
-| `p2c` | Power of Two Choices 随机负载均衡 |
-| `least_used` | 选择当前负载最低的 |
-| `random` | 均匀随机选择（去重） |
-| `strict_random` | 随机打乱全部 |
-| `cost_optimized` | 按实时定价最小化成本 |
-| `headroom` | 选择剩余配额最多的 |
-| `reset_window` | 优先配额重置最快的 |
-| `reset_aware` | 综合剩余配额和重置窗口评分 |
-| `context_relay` | 按上下文窗口大小和成本评分 |
-| `context_optimized` | 根据请求 token 数选择最佳上下文窗口 |
-| `lkgp` | Last-Known-Good-Path 粘性路由 |
-| `auto` | 9 因子综合评分（权重、LKGP、配额、重置窗口、成本、延迟等） |
-| `fusion` | 扇出到多个模型 + 评判合成 |
 
 ## 内置提供商
 
@@ -148,14 +124,23 @@ curl http://localhost:20128/v1/chat/completions \
 
 ### 管理界面
 
-打开桌面应用可访问以下管理页面：
+打开桌面应用可访问以下页面（左侧导航，从上到下）：
 
-- **Dashboard** — 总览统计和状态
-- **Providers** — 提供商连接管理（添加 API Key、测试连接）
-- **Combos** — 组合模型管理（创建/编辑路由策略和模型步骤）
-- **API Keys** — 网关 API 密钥管理
-- **Usage** — 用量统计和成本分析
-- **Settings** — 通用设置和路由配置
+| 页面 | 路由 | 说明 |
+|------|------|------|
+| 接入指南 | `/guide` | 客户端接入示例与模型指定方式 |
+| 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
+| 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 编辑子页 |
+| 免费 Token | `/free-tokens` | 免费额度站点目录 —— 卡片 / 表格双视图、按区域与「是否支持 API」筛选、提交与删除本地推荐 |
+| 请求日志 | `/request-logs` | 请求流水与用量明细 |
+| 统计 | `/statistics` | 端点统计（KPI / 热力图 / 趋势 / 端点表）、用量统计（应用来源 / 日模型明细） |
+| 同步 | `/sync` | cc-switch 迁移、WebDAV 云备份、本地配置导出与导入 |
+| 对话 | `/chat` | 内置对话客户端 —— 会话分支树、模型选择、流式输出 |
+| 检查更新 | `/updates` | 版本更新检查 |
+| 设置 | `/settings` | 通用设置 / 高级设置 |
+| 关于 | `/about` | 版本与项目信息 |
+
+> **同步页现状**：cc-switch 迁移与本地配置导出 / 导入已可用；WebDAV 的测试、备份、恢复与云端备份列表需要后端命令支持，当前 UI 已就绪，调用会提示「后端未接入」。适配层位于 `src/api/sync.ts`，接入后只需替换其中的桩函数。
 
 ## API 端点
 
@@ -175,16 +160,16 @@ curl http://localhost:20128/v1/chat/completions \
 | GET/POST | `/api/providers` | 提供商连接列表/创建 |
 | GET/PATCH/DELETE | `/api/providers/{id}` | 单个提供商连接操作 |
 | POST | `/api/providers/{id}/test` | 测试提供商连接 |
-| GET/POST | `/api/combos` | 组合列表/创建 |
-| GET/PATCH/DELETE | `/api/combos/{id}` | 单个组合操作 |
 | GET/POST | `/api/keys` | API 密钥列表/创建 |
 | GET/DELETE | `/api/keys/{id}` | 单个 API 密钥操作 |
 | GET | `/api/usage` | 用量记录 |
 | GET | `/api/usage/stats` | 用量统计 |
 | GET/PATCH | `/api/settings` | 设置 |
+| GET/POST | `/api/free-tokens` | 免费 Token 站点列表 / 提交推荐 |
+| DELETE | `/api/free-tokens/{id}` | 删除用户提交的推荐（内置条目不可删） |
 | GET | `/api/health` | 健康检查 |
 
-详细 API 文档参见 [API.md](./API.md)。
+详细架构与内部实现参见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
 ## 技术栈
 
@@ -197,11 +182,12 @@ curl http://localhost:20128/v1/chat/completions \
 - tokio — 异步运行时
 
 ### 前端 (Vue 3)
-- Vue 3.5 + TypeScript — UI 框架
+- Vue 3.5 + TypeScript (strict) — UI 框架
 - Element Plus — UI 组件库
+- UnoCSS — 原子化 CSS
 - Pinia — 状态管理
-- Vue Router — 路由
-- ECharts — 图表可视化
+- Vue Router — 路由（Web 端 hash / Tauri 端 history 模式）
+- ECharts 6 + vue-echarts — 图表可视化
 - Vite — 构建工具
 
 ## 项目结构
@@ -209,21 +195,25 @@ curl http://localhost:20128/v1/chat/completions \
 ```
 vortex/
 ├── src/                    # 前端源代码 (Vue 3 + TypeScript)
-│   ├── api/                # API 请求层
-│   ├── components/         # Vue 组件
+│   ├── api/                # 请求层与适配层 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens)
+│   ├── components/         # Vue 组件 (layout / chat / stats / sync / ui)
+│   ├── composables/        # 组合式函数 (useTheme / useThemeColors)
+│   ├── lib/                # 工具函数 (range / dateRange / format / usageChart / runtime)
 │   ├── router/             # 路由配置
 │   ├── stores/             # Pinia 状态管理
+│   ├── styles/             # 设计系统 (cc-theme.css / cc-components.css)
 │   ├── types/              # 类型定义
 │   └── views/              # 页面视图
 ├── src-tauri/              # 后端源代码 (Rust + Tauri)
 │   └── src/
-│       ├── api/            # HTTP API 端点
-│       ├── db/             # 数据库操作
+│       ├── api/            # HTTP API 端点 (v1 OpenAI 兼容 + management 管理接口)
+│       ├── db/             # 数据库操作与迁移
 │       ├── providers/      # 提供商注册表
-│       ├── proxy/          # 代理引擎
-│       ├── routing/        # 路由策略引擎
+│       ├── proxy/          # 代理引擎 (engine / executor / retry / sse)
+│       ├── routing/        # 熔断器等弹性组件
 │       ├── tauri_cmds/     # Tauri IPC 命令
 │       └── translator/     # 响应格式转换器
+├── website/                # 项目官网（独立静态站点，原生 HTML/CSS/JS 零依赖）
 ├── package.json            # 前端配置
 └── src-tauri/Cargo.toml    # 后端配置
 ```
@@ -234,8 +224,9 @@ vortex/
 
 ```bash
 # 前端开发
-npm run dev          # Vite 开发服务器
-npm run build        # 类型检查 + 构建
+bun run dev          # Vite 开发服务器 (http://localhost:1420)
+bun run build        # 类型检查 (vue-tsc) + 构建
+bun run preview      # 预览构建产物
 
 # 后端开发
 cd src-tauri
@@ -244,8 +235,25 @@ cargo test           # 运行测试
 cargo clippy         # 代码检查
 
 # 完整开发模式
-npm run tauri dev
+bun run tauri dev
 ```
+
+> **类型检查的已知问题**：`bun run build` 会先跑 `vue-tsc --noEmit`。当前 `typescript@7` 与 `vue-tsc@3` 组合会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED: './lib/tsc' is not defined by "exports"`，属于依赖版本兼容问题而非代码错误。需要验证构建产物时直接执行 `npx vite build`（跳过类型检查）。
+
+## 官网
+
+`website/` 是项目的独立静态落地页，原生 HTML/CSS/JS 实现、零构建依赖，配色沿用应用主题（`src/styles/cc-theme.css`）的深紫强调色。
+
+```bash
+# 直接打开
+open website/index.html
+
+# 或起一个本地静态服务
+python3 -m http.server 8080 --directory website
+```
+
+页面结构：Hero → 数据概览 → 提供商墙 → 特性 → 界面预览 → 快速开始 → 请求流程 → 构建指引 → FAQ。
+截图位于 `website/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
 
 ## 许可证
 

@@ -11,10 +11,10 @@
         <div class="card topo-card">
           <div class="topo">
             <div class="topo-col">
-              <div class="topo-title">客户端</div>
-              <div class="rf-client" v-for="c in clients" :key="c">
-                <span class="rf-win-dots"><i /><i /><i /></span>
-                <span class="rf-name mono">{{ c }}</span>
+              <div class="topo-title">对外协议</div>
+              <div class="rf-proto" v-for="p in protocols" :key="p.name">
+                <span class="rf-proto-icon" :class="p.cls">{{ p.tag }}</span>
+                <span class="rf-proto-name">{{ p.name }}</span>
               </div>
             </div>
             <div class="topo-mid">
@@ -24,11 +24,14 @@
             </div>
             <div class="topo-col">
               <div class="topo-title">上游提供商</div>
-              <div class="rf-up" v-for="p in upstreams" :key="p">
-                <ProviderLogo :name="p" :size="16" />
-                <span class="rf-up-name mono">{{ p }}</span>
-              </div>
-              <div v-if="upstreams.length === 0" class="topo-empty">暂无提供商连接</div>
+              <template v-if="upstreams.length > 0">
+                <div class="rf-up" v-for="p in upstreams" :key="p.id">
+                  <ProviderLogo :name="p.provider" :size="16" />
+                  <span class="rf-up-name">{{ p.name }}</span>
+                  <span class="rf-up-badge">{{ p.model || '默认' }}</span>
+                </div>
+              </template>
+              <div v-else class="topo-empty">暂无活跃连接，请先在订阅页添加</div>
             </div>
           </div>
         </div>
@@ -42,9 +45,9 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="access-row">
-              <span class="access-label">Base URL</span>
-              <CopyableBlock :text="baseUrl" variant="inline">{{ baseUrl }}</CopyableBlock>
+            <div class="access-row" v-for="e in endpoints" :key="e.label">
+              <span class="access-label">{{ e.label }}</span>
+              <CopyableBlock :text="e.url" variant="inline">{{ e.url }}</CopyableBlock>
             </div>
           </div>
         </div>
@@ -54,12 +57,12 @@
           <div class="card-head">
             <div>
               <div class="card-title">API 端点</div>
-              <div class="card-sub">OpenAI 兼容 + 管理接口</div>
+              <div class="card-sub">OpenAI 兼容 + Anthropic 兼容 + 管理接口</div>
             </div>
           </div>
           <div class="card-body api-list">
             <div v-for="a in apis" :key="a.method + a.path" class="api-row">
-              <span class="api-method mono">{{ a.method }}</span>
+              <span class="api-method mono" :class="a.group">{{ a.method }}</span>
               <span class="api-path mono">{{ a.path }}</span>
               <span class="api-desc">{{ a.desc }}</span>
             </div>
@@ -77,28 +80,53 @@ import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import { listProviders } from '@/api/providers'
 
-const baseUrl = 'http://localhost:20128/v1'
-const clients = ['OpenAI SDK', 'Claude Code', 'curl', '自定义客户端']
+const baseHost = 'http://localhost:20128'
 const running = ref(false)
-const upstreams = ref<string[]>([])
+
+const protocols = [
+  { name: 'OpenAI 协议', tag: 'OAI', cls: 'oai' },
+  { name: 'Anthropic 协议', tag: 'ANT', cls: 'ant' },
+]
+
+const endpoints = [
+  { label: 'OpenAI', url: `${baseHost}/v1` },
+  { label: 'Anthropic', url: `${baseHost}/anthropic/v1` },
+]
+
+interface Upstream {
+  id: string
+  provider: string
+  name: string
+  model?: string
+}
+
+const upstreams = ref<Upstream[]>([])
 
 const apis = [
-  { method: 'POST', path: '/v1/chat/completions', desc: '聊天补全（流式）' },
-  { method: 'GET', path: '/v1/models', desc: '模型列表' },
-  { method: 'POST', path: '/v1/embeddings', desc: '文本嵌入' },
-  { method: 'POST', path: '/v1/images/generations', desc: '图像生成' },
-  { method: 'GET', path: '/api/health', desc: '健康检查' },
+  { method: 'POST', path: '/v1/chat/completions', desc: 'OpenAI 聊天补全（流式）', group: 'oai' },
+  { method: 'GET', path: '/v1/models', desc: 'OpenAI 模型列表', group: 'oai' },
+  { method: 'POST', path: '/v1/embeddings', desc: 'OpenAI 文本嵌入', group: 'oai' },
+  { method: 'POST', path: '/v1/images/generations', desc: 'OpenAI 图像生成', group: 'oai' },
+  { method: 'POST', path: '/anthropic/v1/messages', desc: 'Anthropic Messages（流式）', group: 'ant' },
+  { method: 'GET', path: '/api/health', desc: '健康检查', group: 'mgmt' },
 ]
 
 onMounted(async () => {
   try {
     const data = await listProviders()
-    upstreams.value = (data.providers ?? []).map((p) => p.id)
+    upstreams.value = (data.connections ?? [])
+      .filter((c) => c.isActive)
+      .map((c) => ({
+        id: c.id,
+        provider: c.provider,
+        name: c.name,
+        model: c.defaultModel,
+      }))
   } catch {
     /* ignore */
   }
   try {
-    const res = await fetch('http://localhost:20128/api/health')
+    const res = await fetch(`${baseHost}/api/health`)
     const d = await res.json()
     running.value = d.status === 'ok'
   } catch {
@@ -114,7 +142,7 @@ onMounted(async () => {
 
 .topo-card { padding: var(--pad-card); margin-bottom: var(--gap-lg); }
 .topo { display: flex; align-items: center; justify-content: center; gap: 24px; }
-.topo-col { display: flex; flex-direction: column; gap: 8px; min-width: 150px; }
+.topo-col { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
 .topo-title { font-size: 11px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
 .topo-mid { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .rf-hub {
@@ -129,22 +157,41 @@ onMounted(async () => {
   border: 1px solid var(--accent-line);
 }
 .rf-flow-line { width: 2px; height: 24px; background: var(--line-2); border-radius: 1px; }
-.rf-client {
+
+.rf-proto {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: 13px;
 }
-.rf-win-dots { display: flex; gap: 3px; }
-.rf-win-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-5); }
+.rf-proto-icon {
+  display: grid; place-items: center;
+  width: 28px; height: 20px;
+  border-radius: 4px;
+  font-size: 10px; font-weight: 700;
+  flex-shrink: 0;
+}
+.rf-proto-icon.oai { background: oklch(0.90 0.05 150); color: oklch(0.40 0.12 150); }
+.rf-proto-icon.ant { background: oklch(0.88 0.08 280); color: oklch(0.40 0.15 280); }
+.rf-proto-name { color: var(--ink-2); }
+
 .rf-up { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
-.rf-up-name { font-size: 12px; }
+.rf-up-name { font-size: 12px; color: var(--ink-2); }
+.rf-up-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--ink-4);
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
 .topo-empty { font-size: 12px; color: var(--ink-4); padding: 8px; }
 
 .section { margin-bottom: var(--gap-lg); }
-.access-row { display: flex; align-items: center; gap: 12px; }
+.access-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
 .access-label { width: 90px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 
 .api-list { display: flex; flex-direction: column; }
@@ -157,7 +204,10 @@ onMounted(async () => {
   border-bottom: 1px solid var(--line);
 }
 .api-row:last-child { border-bottom: none; }
-.api-method { font-size: 11px; font-weight: 700; color: var(--accent-ink); }
+.api-method { font-size: 11px; font-weight: 700; }
+.api-method.oai { color: oklch(0.45 0.12 150); }
+.api-method.ant { color: oklch(0.50 0.15 280); }
+.api-method.mgmt { color: var(--ink-4); }
 .api-path { font-size: 12.5px; color: var(--ink-2); }
 .api-desc { font-size: 12px; color: var(--ink-3); }
 </style>
