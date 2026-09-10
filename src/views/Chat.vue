@@ -192,9 +192,17 @@ async function loadMessages(): Promise<void> {
 
 /**
  * 加载可用模型分组，并在未选中时默认选第一个。
+ * 首次加载失败时自动重试（后端可能尚未就绪）。
  */
 async function loadModels(): Promise<void> {
   modelGroups.value = await listModelGroups()
+  if (modelGroups.value.length === 0) {
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 1500))
+      modelGroups.value = await listModelGroups()
+      if (modelGroups.value.length > 0) break
+    }
+  }
   if (!selectedKey.value) {
     const first = modelGroups.value[0]
     if (first?.models[0]) selectedKey.value = modelKey(first.id, first.models[0])
@@ -605,8 +613,15 @@ function goConfigure(): void {
   gap: 12px;
   flex-shrink: 0;
   padding: 9px 16px;
+  padding-top: calc(38px + 9px);
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  -webkit-app-region: drag;
+}
+.chat-head .btn,
+.chat-head .model-selector,
+.chat-head [class*="model"] {
+  -webkit-app-region: no-drag;
 }
 .head-left { display: flex; align-items: center; gap: 8px; }
 .chat-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }

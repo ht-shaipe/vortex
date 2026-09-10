@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src-tauri/icons/logo.png" width="120" alt="Vortex Logo" />
+</p>
+
 # Vortex AI Gateway
 
 > 统一的 AI 网关桌面应用 — 将 21+ 个 AI 提供商聚合为 OpenAI 兼容 API

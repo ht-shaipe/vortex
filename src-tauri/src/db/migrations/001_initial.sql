@@ -85,4 +85,4 @@ CREATE TABLE IF NOT EXISTS key_value (
 );
 
 INSERT OR IGNORE INTO key_value (namespace, key, value) VALUES
-    ('settings', 'general', '{"port":20128,"requireApiKey":false,"theme":"dark"}');
+    ('settings', 'general', '{"port":10168,"requireApiKey":false,"theme":"dark"}');

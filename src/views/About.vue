@@ -6,7 +6,7 @@
     <!-- 应用信息卡片：图标、版本、简介与相关链接 -->
     <div class="card section">
       <div class="card-body about-hero">
-        <div class="app-mark">V</div>
+        <img class="app-mark" src="@/images/logo.png" alt="Vortex" />
         <div class="about-info">
           <div class="about-name">Vortex</div>
           <div class="about-meta mono">v{{ currentVersion || '0.1.0' }} · MIT License · Tauri 2 + Rust + Vue 3</div>
@@ -177,12 +177,7 @@ onMounted(() => {
 .app-mark {
   width: 56px; height: 56px;
   border-radius: 14px;
-  background: var(--ink);
-  color: var(--accent);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 26px;
+  object-fit: cover;
   flex-shrink: 0;
 }
 .about-name { font-size: 20px; font-weight: 700; }

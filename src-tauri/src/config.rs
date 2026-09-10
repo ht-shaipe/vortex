@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// 该结构体可被序列化/反序列化，用于在 Tauri 命令与前端之间传递配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    /// API 服务器监听端口，默认 `20128`。
+    /// API 服务器监听端口，默认 `10168`。
     pub port: u16,
     /// 数据存储目录路径，用于 SQLite 数据库与加密密钥文件。
     pub data_dir: PathBuf,
@@ -37,7 +37,7 @@ impl AppConfig {
     /// |--------|------|--------|
     /// | `VORTEX_DATA_DIR` | 数据目录 | 系统数据目录下的 `vortex` 子目录 |
     /// | `VORTEX_ENCRYPTION_KEY` | 加密密钥 | 自动生成并持久化到数据目录 |
-    /// | `VORTEX_PORT` | 服务端口 | `20128` |
+    /// | `VORTEX_PORT` | 服务端口 | `10168` |
     /// | `VORTEX_REQUIRE_API_KEY` | 是否要求 API Key | `false` |
     /// | `VORTEX_LOG_LEVEL` | 日志级别 | `info` |
     /// | `VORTEX_FREE_TOKENS_REMOTE` | 免费 Token 远程服务地址 | `https://hub.htui.cc/api/edge/free_tokens` |
@@ -69,11 +69,11 @@ impl AppConfig {
             });
 
         Self {
-            // 解析端口，失败时使用默认端口 20128
+            // 解析端口，失败时使用默认端口 10168
             port: std::env::var("VORTEX_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
-                .unwrap_or(20128),
+                .unwrap_or(10168),
             data_dir,
             encryption_key,
             // 判断是否要求 API Key：值为 "true" 或 "1" 时为真

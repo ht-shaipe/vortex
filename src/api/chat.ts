@@ -15,9 +15,10 @@
  * 后端补齐 chat 表后，替换本文件的 CRUD 实现即可，组件层无需改动。
  */
 import { listKeys } from './keys'
+import { listProviders, type ProviderConnection } from './providers'
 
 const STORAGE_KEY = 'vortex-chat-v1'
-const GATEWAY_BASE = 'http://localhost:20128'
+const GATEWAY_BASE = 'http://localhost:10168'
 
 /** 消息流式状态 */
 export type ChatMessageStatus = 'pending' | 'streaming' | 'success' | 'error'
@@ -580,8 +581,99 @@ export function parseModelKey(key: string): { endpointId: string; model: string 
   return { endpointId, model }
 }
 
-/** 从网关 `GET /v1/models` 读取可用模型，按 `owned_by` 分组。带 5s 超时，网关无响应时快速降级为空列表。 */
+/**
+ * 内置常见提供商的默认模型兜底列表。
+ * 当用户已配置连接但未手动挂载模型、也未设置 default_model 时使用，
+ * 保证对话页至少有模型可选。模型名为各提供商官方常用 ID，发送时网关按前缀路由。
+ */
+const PROVIDER_DEFAULT_MODELS: Record<string, string[]> = {
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-haiku-4-20250414', 'claude-opus-4-20250514'],
+  gemini: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  groq: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768', 'llama-3.1-8b-instant'],
+  xai: ['grok-beta', 'grok-2'],
+  mistral: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],
+  openrouter: ['openai/gpt-4o', 'anthropic/claude-sonnet-4', 'meta-llama/llama-3.3-70b-instruct'],
+  cohere: ['command-r-plus', 'command-r', 'command-light'],
+  together: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
+  fireworks: ['accounts/fireworks/models/llama-v3p1-70b-instruct', 'accounts/fireworks/models/mixtral-8x7b-instruct'],
+  cerebras: ['llama3.3-70b', 'llama3.1-8b'],
+  nvidia: ['meta/llama-3.3-70b-instruct', 'mistralai/mixtral-8x7b-instruct-v0.1'],
+  ollama: ['llama3.2', 'qwen2.5', 'deepseek-r1'],
+  siliconflow: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-R1'],
+  huggingface: ['meta-llama/Llama-3.2-3B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3'],
+  pollinations: ['openai/gpt-4o-mini', 'meta-llama/Llama-3.3-70B-Instruct'],
+  perplexity: ['sonar-pro', 'sonar', 'sonar-reasoning'],
+  qwen: ['qwen-plus', 'qwen-turbo', 'qwen-max'],
+  minimax: ['abab6.5s-chat', 'abab6.5-chat'],
+}
+
+/** 从单个连接提取模型 ID 列表：优先 models 数组，回退 defaultModel。 */
+function modelIdsFromConnection(c: ProviderConnection): string[] {
+  const ids: string[] = []
+  if (c.models && c.models.length > 0) {
+    for (const m of c.models) {
+      if (m.id && !ids.includes(m.id)) ids.push(m.id)
+    }
+  }
+  if (c.defaultModel && !ids.includes(c.defaultModel)) {
+    ids.push(c.defaultModel)
+  }
+  return ids
+}
+
+/**
+ * 从已配置连接构造模型分组（fallback 路径）。
+ * 遍历所有活跃连接，提取 models / defaultModel；
+ * 若连接两者都为空，使用内置默认模型列表兜底。
+ */
+async function modelGroupsFromConnections(): Promise<ModelOptionGroup[]> {
+  try {
+    const data = await listProviders()
+    const connections = data.connections ?? []
+    const groups = new Map<string, ModelOptionGroup>()
+
+    for (const c of connections) {
+      if (!c.isActive) continue
+      const providerId = c.provider
+      if (!providerId) continue
+
+      let ids = modelIdsFromConnection(c)
+      // 连接未挂载任何模型时，用内置默认模型兜底
+      if (ids.length === 0) {
+        ids = PROVIDER_DEFAULT_MODELS[providerId] ?? []
+      }
+      if (ids.length === 0) continue
+
+      let g = groups.get(providerId)
+      if (!g) {
+        g = { id: providerId, name: providerId, models: [] }
+        groups.set(providerId, g)
+      }
+      for (const id of ids) {
+        // 与后端 /v1/models 保持一致的完整 ID 格式：{provider_id}/{model_id}
+        const full = `${providerId}/${id}`
+        if (!g.models.includes(full)) g.models.push(full)
+      }
+    }
+
+    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 获取可用模型分组，三级降级：
+ * 1. 网关 `GET /v1/models`（本地已挂载模型，瞬时返回）
+ * 2. 从已配置连接的 models / defaultModel 提取
+ * 3. 内置常见提供商默认模型兜底
+ *
+ * 保证用户只要配置了活跃连接，对话页就有模型可选。
+ */
 export async function listModelGroups(): Promise<ModelOptionGroup[]> {
+  // 第一级：网关 /v1/models
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), 5000)
   try {
@@ -589,24 +681,29 @@ export async function listModelGroups(): Promise<ModelOptionGroup[]> {
     const headers: Record<string, string> = {}
     if (key) headers.Authorization = `Bearer ${key}`
     const res = await fetch(`${GATEWAY_BASE}/v1/models`, { headers, signal: controller.signal })
-    if (!res.ok) return []
-    const body = (await res.json()) as { data?: { id?: string; owned_by?: string }[] }
-    const groups = new Map<string, ModelOptionGroup>()
-    for (const m of body.data ?? []) {
-      const id = m.id
-      if (!id) continue
-      const owner = m.owned_by || 'unknown'
-      let g = groups.get(owner)
-      if (!g) {
-        g = { id: owner, name: owner, models: [] }
-        groups.set(owner, g)
+    if (res.ok) {
+      const body = (await res.json()) as { data?: { id?: string; owned_by?: string }[] }
+      const groups = new Map<string, ModelOptionGroup>()
+      for (const m of body.data ?? []) {
+        const id = m.id
+        if (!id) continue
+        const owner = m.owned_by || 'unknown'
+        let g = groups.get(owner)
+        if (!g) {
+          g = { id: owner, name: owner, models: [] }
+          groups.set(owner, g)
+        }
+        if (!g.models.includes(id)) g.models.push(id)
       }
-      if (!g.models.includes(id)) g.models.push(id)
+      const result = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
+      if (result.length > 0) return result
     }
-    return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
   } catch {
-    return []
+    /* 降级到 fallback */
   } finally {
     window.clearTimeout(timer)
   }
+
+  // 第二级 + 第三级：从已配置连接提取，内置默认模型兜底
+  return modelGroupsFromConnections()
 }

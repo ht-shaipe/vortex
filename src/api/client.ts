@@ -8,7 +8,7 @@ import axios from 'axios'
 
 // 创建 axios 实例，统一配置基础路径、超时与请求头
 const api = axios.create({
-  baseURL: 'http://localhost:20128/api', // 后端 API 基础地址
+  baseURL: 'http://localhost:10168/api', // 后端 API 基础地址
   timeout: 30000, // 请求超时时间：30 秒
   headers: {
     'Content-Type': 'application/json', // 默认 JSON 请求体

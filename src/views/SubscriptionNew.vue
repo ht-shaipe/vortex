@@ -55,23 +55,6 @@
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
           </div>
-          <el-select
-            v-model="selIds"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            :reserve-contaminant="true"
-            placeholder="选择或输入模型（可多选）"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="m in availableModels"
-              :key="m"
-              :label="m"
-              :value="m"
-            />
-          </el-select>
           <!-- 已选模型列表：第一个为默认模型 -->
           <div v-if="selectedModels.length" class="model-list">
             <div class="model-row" v-for="(m, i) in selectedModels" :key="m.id">
@@ -82,12 +65,26 @@
             </div>
           </div>
           <div v-else class="model-line">尚未选择模型</div>
-          <div class="model-hint">
-            点击「获取可用模型」会基于上方 API 密钥与地址直接拉取，<b>无需先保存连接</b>；可多选，并为每个模型设置自定义名称。列表中<b>第一个</b>模型作为默认模型用于路由回退。
+          <div class="model-actions">
+            <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
+              选择模型
+            </button>
+            <span class="model-hint-inline">
+              点击「获取可用模型」从远程加载，再通过弹窗勾选；首个即默认模型。
+            </span>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 模型选择对话框 -->
+    <ModelSelectDialog
+      v-model:visible="modelDialogVisible"
+      :models="availableModels"
+      :selected="selIds"
+      :loading="fetchingModels"
+      @confirm="onModelConfirm"
+    />
 
     <!-- 底部操作按钮 -->
     <div class="wizard-actions">
@@ -109,6 +106,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { listProviders, createProvider, previewModels, type ProviderDef } from '@/api/providers'
 
 const router = useRouter()
@@ -120,6 +118,8 @@ const saving = ref(false)
 const fetchingModels = ref(false)
 // 拉取到的可用模型列表
 const availableModels = ref<string[]>([])
+// 模型选择对话框可见性
+const modelDialogVisible = ref(false)
 
 /** 已选模型（含自定义名称），为提交与展示的真相来源 */
 const selectedModels = ref<{ id: string; name: string }[]>([])
@@ -191,7 +191,8 @@ async function fetchModels() {
     })
     if (res.models && res.models.length) {
       availableModels.value = res.models
-      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请勾选需要的模型`)
+      modelDialogVisible.value = true
+      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请在弹窗中勾选`)
     } else {
       availableModels.value = []
       ElMessage.warning(res.warning || '未返回模型列表，可手动输入模型 ID')
@@ -210,6 +211,19 @@ async function fetchModels() {
  */
 function removeModel(id: string) {
   selectedModels.value = selectedModels.value.filter((m) => m.id !== id)
+}
+
+/**
+ * 模型选择对话框确认回调：更新已选模型列表，保留已有自定义名称。
+ * @param ids 选中的模型 ID 列表（有序）
+ */
+function onModelConfirm(ids: string[]) {
+  const next: { id: string; name: string }[] = []
+  for (const id of ids) {
+    const existing = selectedModels.value.find((m) => m.id === id)
+    next.push(existing ? { ...existing } : { id, name: '' })
+  }
+  selectedModels.value = next
 }
 
 /**
@@ -366,6 +380,16 @@ watch(() => form.provider, () => resetForm())
   background: transparent;
 }
 .btn.sm.ghost:hover { color: var(--err); border-color: var(--err); }
+.model-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.model-hint-inline {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
 .model-hint {
   font-size: 11.5px;
   color: var(--ink-4);

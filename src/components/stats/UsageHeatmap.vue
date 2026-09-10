@@ -113,10 +113,18 @@ const activeTotals = computed(() =>
   tooltip.value ? props.totals.get(tooltip.value.cell.date) : undefined,
 ) // 当前悬停格子的每日总量
 
-/** 显示 tooltip：记录格子信息与定位坐标。 */
+/** 显示 tooltip：记录格子信息与定位坐标，做屏幕边界检测避免被裁剪。 */
+const TIP_WIDTH = 172 // 与 CSS min-width 保持一致
 function showTip(cell: HeatmapCell, ev: MouseEvent): void {
   const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect()
-  tooltip.value = { cell, x: rect.left + rect.width / 2, y: rect.top }
+  // 以格子水平中心为基准
+  let x = rect.left + rect.width / 2
+  const half = TIP_WIDTH / 2
+  // 左边界保护
+  if (x - half < 4) x = 4 + half
+  // 右边界保护
+  if (x + half > window.innerWidth - 4) x = window.innerWidth - 4 - half
+  tooltip.value = { cell, x, y: rect.top }
 }
 </script>
 
@@ -162,19 +170,34 @@ function showTip(cell: HeatmapCell, ev: MouseEvent): void {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   box-shadow: var(--shadow-md);
-  padding: 8px 11px;
+  padding: 9px 12px;
   font-size: var(--fs-sm);
   color: var(--ink);
+  min-width: 168px;
+  max-width: 240px;
 }
-.heat-tip-date { margin: 0; font-weight: 600; }
+.heat-tip-date {
+  margin: 0 0 2px;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--ink);
+}
 .heat-tip-grid {
   margin-top: 4px;
   display: grid;
-  grid-template-columns: auto auto;
-  column-gap: 14px;
-  row-gap: 2px;
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  row-gap: 3px;
   color: var(--ink-3);
+  font-size: 12.5px;
 }
-.heat-tip-grid span:nth-child(even) { text-align: right; color: var(--ink); }
-.heat-tip-empty { margin: 4px 0 0; color: var(--ink-4); }
+.heat-tip-grid span { white-space: nowrap; }
+.heat-tip-grid span:nth-child(even) {
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.heat-tip-empty { margin: 4px 0 0; color: var(--ink-4); white-space: nowrap; }
 </style>

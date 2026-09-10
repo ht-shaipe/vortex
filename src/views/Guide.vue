@@ -94,9 +94,9 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 
 // OpenAI 兼容协议的本地接入地址
-const openaiBaseUrl = 'http://localhost:20128/v1'
+const openaiBaseUrl = 'http://localhost:10168/v1'
 // Anthropic 兼容协议的本地接入地址
-const anthropicBaseUrl = 'http://localhost:20128/anthropic/v1'
+const anthropicBaseUrl = 'http://localhost:10168/anthropic/v1'
 
 // 协议切换标签定义
 const tabs = [

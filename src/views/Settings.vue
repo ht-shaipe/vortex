@@ -196,7 +196,7 @@ const loading = ref(true)
 
 // 表单状态
 const form = reactive({
-  proxy_port: 20128,
+  proxy_port: 10168,
   openai_ua: '',
   anthropic_ua: '',
   security: {

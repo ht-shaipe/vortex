@@ -37,7 +37,7 @@ const pageTitle = computed(() => pageTitles[route.path] || 'Vortex')
 /** 轮询后端健康检查接口，更新健康状态。 */
 async function checkHealth() {
   try {
-    const res = await fetch('http://localhost:20128/api/health')
+    const res = await fetch('http://localhost:10168/api/health')
     const data = await res.json()
     healthStatus.value = data.status
   } catch {

@@ -57,7 +57,7 @@
             <!-- 提供商图标与名称 -->
             <td>
               <div class="prov-cell">
-                <ProviderLogo :name="conn.provider" :color="provColor(conn.provider)" :size="24" />
+                <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :color="provColor(conn.provider)" :size="24" />
                 <div class="prov-meta">
                   <div class="prov-name" :title="conn.name">{{ conn.name }}</div>
                   <div class="prov-id mono" :title="conn.provider">{{ conn.provider }}</div>

@@ -13,3 +13,6 @@ pub mod settings_cmds;
 
 /// 代理启停相关 Tauri 命令模块。
 pub mod proxy_cmds;
+
+/// 系统运行状态相关 Tauri 命令模块。
+pub mod status_cmds;

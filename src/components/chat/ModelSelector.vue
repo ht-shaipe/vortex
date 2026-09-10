@@ -13,7 +13,8 @@
         :class="{ placeholder: isPlaceholder }"
         :title="triggerTitle"
       >
-        <el-icon :size="14" class="ms-trigger-icon"><Cpu /></el-icon>
+        <img v-if="triggerLogo" :src="triggerLogo" class="ms-trigger-logo" alt="" />
+        <el-icon v-else :size="14" class="ms-trigger-icon"><Cpu /></el-icon>
         <span v-if="selected && !isPlaceholder && groupPrefix" class="ms-group-chip">{{ groupPrefix }}</span>
         <span class="ms-trigger-text">{{ triggerText }}</span>
         <el-icon :size="12" class="ms-caret" :class="{ flipped: open }"><ArrowDown /></el-icon>
@@ -34,7 +35,10 @@
       <el-scrollbar class="ms-list" height="320px">
         <p v-if="filtered.length === 0" class="ms-empty">无匹配模型</p>
         <div v-for="g in filtered" :key="g.id" class="ms-group">
-          <p class="ms-group-name">{{ g.name }}</p>
+          <p class="ms-group-name">
+            <img v-if="groupLogo(g.id)" :src="groupLogo(g.id) || ''" class="ms-group-logo" alt="" />
+            {{ g.name }}
+          </p>
           <ul>
             <li v-for="m in g.models" :key="m">
               <button
@@ -44,6 +48,9 @@
                 @click="pick(g.id, m)"
               >
                 <span v-if="modelKey(g.id, m) === value" class="ms-bar" aria-hidden="true" />
+                <span v-if="groupHasItemLogos(g.id)" class="ms-item-logo">
+                  <img v-if="itemLogo(g.id, m)" :src="itemLogo(g.id, m) || ''" alt="" />
+                </span>
                 <span class="ms-item-text" :title="m">{{ stripPrefix(g.id, m) }}</span>
                 <el-icon v-if="modelKey(g.id, m) === value" :size="13" class="ms-check"><Check /></el-icon>
               </button>
@@ -68,6 +75,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowDown, Check, Cpu, Search, Setting } from '@element-plus/icons-vue'
 import { modelKey, parseModelKey, type ModelOptionGroup } from '@/api/chat'
+import { resolveVendorLogo } from '@/components/ui/vendorLogos'
 
 // Props 定义：value 为当前选中的模型 key，groups 为分组模型列表，configureText 为配置按钮文案
 const props = withDefaults(
@@ -171,6 +179,49 @@ function onConfigure(): void {
   open.value = false
   emit('configure')
 }
+
+// ===== 厂商 Logo 解析 =====
+
+/** 分组/条目级厂商 Logo 缓存（避免模板中重复解析） */
+const logoCache = computed(() => {
+  const groupLogos = new Map<string, string | null>()
+  const itemLogos = new Map<string, string | null>()
+  const hasItemLogos = new Set<string>()
+  for (const g of props.groups) {
+    const gl = resolveVendorLogo(g.id, g.name)
+    groupLogos.set(g.id, gl)
+    for (const m of g.models) {
+      // 条目 Logo 仅在与分组 Logo 不同时展示（如 OpenRouter 内聚合的多家模型）
+      const l = resolveVendorLogo(g.id, m)
+      const il = l && l !== gl ? l : null
+      itemLogos.set(modelKey(g.id, m), il)
+      if (il) hasItemLogos.add(g.id)
+    }
+  }
+  return { groupLogos, itemLogos, hasItemLogos }
+})
+
+/** 触发按钮上的厂商 Logo（按当前选中模型解析，未命中回退 Cpu 图标） */
+const triggerLogo = computed(() => {
+  const s = selected.value
+  if (!s) return null
+  return resolveVendorLogo(s.endpointId, s.model, s.groupName)
+})
+
+/** 分组标题 Logo */
+function groupLogo(groupId: string): string | null {
+  return logoCache.value.groupLogos.get(groupId) ?? null
+}
+
+/** 模型条目 Logo（与分组 Logo 相同时返回 null） */
+function itemLogo(groupId: string, model: string): string | null {
+  return logoCache.value.itemLogos.get(modelKey(groupId, model)) ?? null
+}
+
+/** 分组内是否存在带独立厂商 Logo 的条目（用于对齐占位） */
+function groupHasItemLogos(groupId: string): boolean {
+  return logoCache.value.hasItemLogos.has(groupId)
+}
 </script>
 
 <style scoped>
@@ -193,6 +244,23 @@ function onConfigure(): void {
 .ms-trigger.placeholder { border-style: dashed; color: var(--warn, #b8860b); }
 .ms-trigger.placeholder .ms-trigger-text { color: var(--warn, #b8860b); }
 .ms-trigger-icon { flex-shrink: 0; color: var(--ink-4); }
+.ms-trigger-logo { width: 16px; height: 16px; flex-shrink: 0; object-fit: contain; }
+.ms-group-logo {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  margin-right: 5px;
+  object-fit: contain;
+}
+.ms-item-logo {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ms-item-logo img { width: 100%; height: 100%; object-fit: contain; }
 .ms-group-chip {
   flex-shrink: 0;
   max-width: 96px;

@@ -11,6 +11,12 @@ const router = createRouter({
   history: runtime.kind === 'web' ? createWebHashHistory() : createWebHistory(),
   routes: [
     {
+      // 托盘状态面板：独立布局，无边框透明窗口
+      path: '/status-panel',
+      name: 'status-panel',
+      component: () => import('@/views/StatusPanel.vue'),
+    },
+    {
       // 根布局，所有页面作为子路由渲染在 AppLayout 内
       path: '/',
       component: () => import('@/components/layout/AppLayout.vue'),

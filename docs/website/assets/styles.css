@@ -227,11 +227,8 @@ code, pre, kbd { font-family: var(--font-mono); }
 
 .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .brand-mark {
-  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
-  display: grid; place-items: center;
-  background: var(--ink); color: var(--accent);
-  font-weight: 800; font-size: 15px; letter-spacing: -0.02em;
-  transition: background .25s, color .25s;
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  object-fit: cover; display: block;
 }
 .brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
 .brand-tag { font-size: 10.5px; color: var(--ink-4); letter-spacing: .04em; margin-top: -2px; }

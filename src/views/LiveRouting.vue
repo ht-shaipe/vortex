@@ -30,7 +30,7 @@
               <div class="topo-title">上游提供商</div>
               <template v-if="upstreams.length > 0">
                 <div class="rf-up" v-for="p in upstreams" :key="p.id">
-                  <ProviderLogo :name="p.provider" :size="16" />
+                  <ProviderLogo :name="p.provider" :hint="`${p.name} ${p.baseUrl || ''}`" :size="16" />
                   <span class="rf-up-name">{{ p.name }}</span>
                   <span class="rf-up-badge">{{ p.model || '默认' }}</span>
                 </div>
@@ -90,7 +90,7 @@ import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import { listProviders } from '@/api/providers'
 
 // 网关本地基础地址
-const baseHost = 'http://localhost:20128'
+const baseHost = 'http://localhost:10168'
 // 网关是否正在运行
 const running = ref(false)
 
@@ -112,6 +112,7 @@ interface Upstream {
   provider: string
   name: string
   model?: string
+  baseUrl?: string
 }
 
 // 当前活跃的上游连接列表
@@ -141,6 +142,7 @@ onMounted(async () => {
         provider: c.provider,
         name: c.name,
         model: c.defaultModel,
+        baseUrl: c.baseUrl,
       }))
   } catch {
     /* ignore */

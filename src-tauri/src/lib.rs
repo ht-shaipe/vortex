@@ -241,6 +241,7 @@ pub fn run() {
             tauri_cmds::settings_cmds::update_settings,
             tauri_cmds::proxy_cmds::start_proxy,
             tauri_cmds::proxy_cmds::stop_proxy,
+            tauri_cmds::status_cmds::get_system_status,
         ])
         // 应用初始化回调：创建系统托盘
         .setup(|app| {
@@ -248,6 +249,17 @@ pub fn run() {
             use tauri::Manager;
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+            use tauri::WindowEvent;
+
+            // 状态面板窗口失焦时自动隐藏
+            if let Some(panel) = app.get_webview_window("status-panel") {
+                let panel_clone = panel.clone();
+                panel.on_window_event(move |event| {
+                    if let WindowEvent::Focused(false) = event {
+                        let _ = panel_clone.hide();
+                    }
+                });
+            }
 
             // 构建托盘菜单项
             let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
@@ -290,17 +302,31 @@ pub fn run() {
                 })
                 // 托盘图标点击事件处理
                 .on_tray_icon_event(|tray, event| {
-                    // 左键点击时显示主窗口
+                    // 左键点击时切换状态面板窗口的显示/隐藏
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
+                        position,
                         ..
                     } = event
                     {
-                        if let Some(w) = tray.app_handle().get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.unminimize();
-                            let _ = w.set_focus();
+                        let app = tray.app_handle();
+                        if let Some(panel) = app.get_webview_window("status-panel") {
+                            if panel.is_visible().unwrap_or(false) {
+                                let _ = panel.hide();
+                            } else {
+                                // 将状态面板定位到托盘图标点击位置附近
+                                // macOS 菜单栏图标在右上角，窗口右对齐点击点，避免超出屏幕右边界
+                                let scale_factor = panel.scale_factor().unwrap_or(1.0);
+                                let mut x = position.x / scale_factor - 330.0; // 右对齐，留 10px 边距
+                                let mut y = position.y / scale_factor + 8.0; // 图标下方
+                                // 左边界保护
+                                if x < 4.0 { x = 4.0; }
+                                if y < 4.0 { y = 4.0; }
+                                let _ = panel.set_position(tauri::LogicalPosition::new(x, y));
+                                let _ = panel.show();
+                                let _ = panel.set_focus();
+                            }
                         }
                     }
                 });

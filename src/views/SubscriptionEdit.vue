@@ -36,7 +36,7 @@
                 <div class="setting-desc">底层服务识别符，由创建时决定，不可修改</div>
               </div>
               <div class="row">
-                <ProviderLogo :name="conn.provider" :size="20" />
+                <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :size="20" />
                 <span class="mono">{{ conn.provider }}</span>
                 <span class="auth-tag">{{ authTypeLabel }}</span>
               </div>
@@ -169,19 +169,6 @@
             </button>
           </div>
           <div class="card-body">
-            <el-select
-              v-model="selIds"
-              multiple
-              filterable
-              allow-create
-              default-first-option
-              :reserve-contaminant="true"
-              placeholder="选择或输入模型（可多选）"
-              style="width: 100%"
-              :disabled="!canFetchModels"
-            >
-              <el-option v-for="m in availableModels" :key="m" :label="m" :value="m" />
-            </el-select>
             <!-- 已选模型列表：首位为默认模型 -->
             <div v-if="selectedModels.length" class="model-list">
               <div class="model-row" v-for="(m, i) in selectedModels" :key="m.id">
@@ -192,11 +179,25 @@
               </div>
             </div>
             <div v-else class="empty-tip">尚未选择任何模型，路由时将无法匹配该连接</div>
-            <div class="setting-desc" style="margin-top: 8px">
-              修改默认模型：调整列表顺序即可，首位即默认；自定义名称仅用于本机展示，不影响上游调用。
+            <div class="model-actions">
+              <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
+                选择模型
+              </button>
+              <span class="setting-desc">
+                点击「获取可用模型」从远程加载列表，再通过弹窗勾选；首位即默认模型。
+              </span>
             </div>
           </div>
         </div>
+
+        <!-- 模型选择对话框 -->
+        <ModelSelectDialog
+          v-model:visible="modelDialogVisible"
+          :models="availableModels"
+          :selected="selIds"
+          :loading="fetchingModels"
+          @confirm="onModelConfirm"
+        />
 
         <!-- 路由与限制 -->
         <div class="card section">
@@ -388,6 +389,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
+import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { getProvider, updateProvider, deleteProvider, testProvider, previewModels, type ProviderConnection } from '@/api/providers'
 
 const route = useRoute()
@@ -402,6 +404,8 @@ const testing = ref(false)
 const fetchingModels = ref(false)
 // 拉取到的可用模型列表
 const availableModels = ref<string[]>([])
+// 模型选择对话框可见性
+const modelDialogVisible = ref(false)
 // 最近一次测试结果
 const testResult = ref<{ status: string; latencyMs?: number; error?: string } | null>(null)
 
@@ -554,7 +558,8 @@ async function fetchModels() {
     })
     if (res.models && res.models.length) {
       availableModels.value = res.models
-      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请勾选需要的模型`)
+      modelDialogVisible.value = true
+      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请在弹窗中勾选`)
     } else {
       availableModels.value = []
       ElMessage.warning(res.warning || '未返回模型列表，可手动输入模型 ID')
@@ -573,6 +578,19 @@ async function fetchModels() {
  */
 function removeModel(id: string) {
   selectedModels.value = selectedModels.value.filter((m) => m.id !== id)
+}
+
+/**
+ * 模型选择对话框确认回调：更新已选模型列表，保留已有自定义名称。
+ * @param ids 选中的模型 ID 列表（有序）
+ */
+function onModelConfirm(ids: string[]) {
+  const next: { id: string; name: string }[] = []
+  for (const id of ids) {
+    const existing = selectedModels.value.find((m) => m.id === id)
+    next.push(existing ? { ...existing } : { id, name: '' })
+  }
+  selectedModels.value = next
 }
 
 /**
@@ -751,6 +769,8 @@ onMounted(load)
 .model-name { flex: 1; }
 .model-name :deep(.el-input__inner) { font-size: 12px; }
 .empty-tip { font-size: 12px; color: var(--ink-4); padding: 12px; background: var(--surface-2); border: 1px dashed var(--line); border-radius: var(--r-sm); margin-top: 8px; text-align: center; }
+.model-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.model-actions .setting-desc { font-size: 12px; color: var(--ink-4); }
 
 .btn.sm.ghost {
   border-color: var(--line);

@@ -1,7 +1,7 @@
 <template>
   <aside class="sidebar" :class="{ collapsed }">
     <div class="brand">
-      <div class="brand-mark">V</div>
+      <img class="brand-logo" src="@/images/logo.png" alt="Vortex" />
       <div v-if="!collapsed" class="brand-text">
         <div class="brand-name">Vortex</div>
         <div class="brand-tag">AI Gateway</div>

@@ -179,7 +179,7 @@ html.dark .toggle.on { background: var(--accent); }
 .sidebar {
   border-right: 1px solid var(--line);
   background: var(--surface-2);
-  padding: calc(22px + var(--titlebar-inset)) 10px 12px;
+  padding: calc(38px + var(--titlebar-inset)) 10px 12px;
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -189,7 +189,7 @@ html.dark .toggle.on { background: var(--accent); }
   transition: width 0.2s ease-in-out;
 }
 .sidebar.collapsed {
-  padding: calc(22px + var(--titlebar-inset)) 8px 12px;
+  padding: calc(38px + var(--titlebar-inset)) 8px 12px;
 }
 
 .brand {
@@ -215,6 +215,13 @@ html.dark .toggle.on { background: var(--accent); }
   font-size: 15px;
 }
 .brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brand-logo {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  object-fit: cover;
+  display: block;
+}
 .brand-text { line-height: 1.1; }
 .brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
 .brand-tag { font-size: 11px; color: var(--ink-3); margin-top: 3px; line-height: 1.4; }
@@ -258,7 +265,10 @@ html.dark .toggle.on { background: var(--accent); }
   transition: background 0.12s, color 0.12s;
   text-decoration: none;
 }
-.sidebar.collapsed .nav-item { justify-content: center; padding: 8px 0; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 6px 0; }
+.sidebar.collapsed .nav-item .nav-icon { width: 15px; height: 15px; }
+.sidebar.collapsed .nav-item .nav-icon svg { width: 15px; height: 15px; }
+.sidebar.collapsed .nav-main { gap: 3px; }
 .nav-label { min-width: 0; line-height: 1.35; }
 .nav-item:hover { background: var(--surface-3); color: var(--ink); }
 .nav-item.active { background: var(--accent-bg); color: var(--accent-ink); }
@@ -309,7 +319,7 @@ html.dark .nav-item.active .badge { background: var(--accent-line); color: var(-
   transition: background 0.12s, color 0.12s;
 }
 .collapse-btn:hover { background: var(--surface-3); color: var(--ink); }
-.sidebar.collapsed .collapse-btn { padding: 8px 0; }
+.sidebar.collapsed .collapse-btn { padding: 6px 0; }
 
 .main {
   min-width: 0;
@@ -317,7 +327,7 @@ html.dark .nav-item.active .badge { background: var(--accent-line); color: var(-
   overflow: hidden;
 }
 .main-inner {
-  padding: 22px 28px 36px;
+  padding: 44px 28px 36px;
 }
 .main.flush {
   padding: 0;
@@ -491,3 +501,77 @@ html.dark .nav-item.active .badge { background: var(--accent-line); color: var(-
 }
 .el-dialog__footer .btn { margin-left: 8px; }
 .el-overlay { background: rgba(0, 0, 0, 0.4); }
+
+/* ============ Element Plus 弹出层暗色主题适配 ============ */
+/* tooltip、popover、dropdown 等弹出层 teleport 到 body，需单独适配暗色 */
+html.dark .el-popper,
+html.dark .el-tooltip__popper,
+html.dark .el-popover,
+html.dark .el-dropdown-menu {
+  background: var(--surface-3) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+html.dark .el-tooltip__popper {
+  padding: 8px 12px !important;
+  font-size: 12.5px !important;
+}
+/* tooltip 箭头 */
+html.dark .el-popper__arrow::before {
+  background: var(--surface-3) !important;
+  border: 1px solid var(--line) !important;
+}
+/* popover 内部文字 */
+html.dark .el-popover__title,
+html.dark .el-popover {
+  color: var(--ink) !important;
+}
+/* dropdown 菜单项 */
+html.dark .el-dropdown-menu__item {
+  color: var(--ink-2) !important;
+}
+html.dark .el-dropdown-menu__item:hover {
+  background: var(--surface-2) !important;
+  color: var(--ink) !important;
+}
+/* select 下拉面板 */
+html.dark .el-select-dropdown {
+  background: var(--surface-3) !important;
+  border: 1px solid var(--line) !important;
+}
+html.dark .el-select-dropdown__item {
+  color: var(--ink-2) !important;
+}
+html.dark .el-select-dropdown__item:hover,
+html.dark .el-select-dropdown__item.hover {
+  background: var(--surface-2) !important;
+}
+html.dark .el-select-dropdown__item.selected {
+  color: var(--accent) !important;
+  font-weight: 600 !important;
+}
+/* message 消息提示 */
+html.dark .el-message {
+  background: var(--surface-3) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+}
+/* 日期选择器面板 */
+html.dark .el-picker-panel {
+  background: var(--surface-3) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+}
+html.dark .el-date-table th,
+html.dark .el-picker-panel__icon-btn {
+  color: var(--ink-3) !important;
+}
+html.dark .el-date-table td.in-range div {
+  background: var(--accent-bg) !important;
+}
+html.dark .el-date-table td.start-date div,
+html.dark .el-date-table td.end-date div {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
