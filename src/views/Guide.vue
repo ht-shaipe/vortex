@@ -1,13 +1,16 @@
 <template>
   <div>
+    <!-- 页面头部：标题与副标题 -->
     <PageHeader title="接入指南" sub="如何将客户端接入 Vortex 网关" />
 
+    <!-- 协议切换标签栏：OpenAI / Anthropic -->
     <div class="tabs">
       <button v-for="t in tabs" :key="t.id" class="tab" :class="{ active: active === t.id }" @click="active = t.id">
         {{ t.label }}
       </button>
     </div>
 
+    <!-- 第 1 步：启动网关，展示对外协议的 base_url -->
     <div class="card section">
       <div class="card-head">
         <div>
@@ -29,6 +32,7 @@
       </div>
     </div>
 
+    <!-- 第 2 步：配置客户端，按所选协议展示对应代码示例 -->
     <div class="card section">
       <div class="card-head">
         <div>
@@ -37,12 +41,14 @@
         </div>
       </div>
       <div class="card-body">
+        <!-- OpenAI 协议示例：SDK 与 cURL -->
         <template v-if="active === 'openai'">
           <p class="para">使用 OpenAI Python SDK：</p>
           <CopyableBlock :text="openaiSdkSnippet" lang="python" />
           <p class="para" style="margin-top: 16px">使用 cURL：</p>
           <CopyableBlock :text="openaiCurlSnippet" lang="bash" />
         </template>
+        <!-- Anthropic 协议示例：SDK、Claude Code 环境变量与 cURL -->
         <template v-else>
           <p class="para">使用 Anthropic Python SDK：</p>
           <CopyableBlock :text="anthropicSdkSnippet" lang="python" />
@@ -54,6 +60,7 @@
       </div>
     </div>
 
+    <!-- 第 3 步：模型命名格式说明表 -->
     <div class="card section">
       <div class="card-head">
         <div>
@@ -77,19 +84,29 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 使用指南页面。
+ * 职责：向用户展示如何将客户端接入 Vortex 网关，包括启动网关、配置客户端
+ * base_url、指定模型格式三个步骤，并按 OpenAI / Anthropic 协议切换示例代码。
+ */
 import { ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 
+// OpenAI 兼容协议的本地接入地址
 const openaiBaseUrl = 'http://localhost:20128/v1'
+// Anthropic 兼容协议的本地接入地址
 const anthropicBaseUrl = 'http://localhost:20128/anthropic/v1'
 
+// 协议切换标签定义
 const tabs = [
   { id: 'openai', label: 'OpenAI 协议' },
   { id: 'anthropic', label: 'Anthropic 协议' },
 ]
+// 当前选中的协议标签
 const active = ref('openai')
 
+// OpenAI Python SDK 用法示例
 const openaiSdkSnippet = `from openai import OpenAI
 
 client = OpenAI(
@@ -102,11 +119,13 @@ resp = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}],
 )`
 
+// OpenAI cURL 用法示例
 const openaiCurlSnippet = `curl ${openaiBaseUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer your-vortex-api-key" \\
   -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`
 
+// Anthropic Python SDK 用法示例
 const anthropicSdkSnippet = `from anthropic import Anthropic
 
 client = Anthropic(
@@ -120,12 +139,14 @@ resp = client.messages.create(
     messages=[{"role": "user", "content": "Hello!"}],
 )`
 
+// Anthropic cURL 用法示例
 const anthropicCurlSnippet = `curl ${anthropicBaseUrl}/messages \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: your-vortex-api-key" \\
   -H "anthropic-version: 2023-06-01" \\
   -d '{"model":"anthropic/claude-sonnet-4-20250514","max_tokens":1024,"messages":[{"role":"user","content":"Hi"}]}'`
 
+// Claude Code 环境变量配置示例
 const claudeSnippet = `# 设置环境变量
 export ANTHROPIC_BASE_URL=${anthropicBaseUrl}
 export ANTHROPIC_API_KEY=your-vortex-api-key`

@@ -49,6 +49,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * EndpointStatsPanel.vue — 端点统计面板
+ * 职责：展示端点维度的统计概览（KPI、趋势徽章）、热力图、趋势图、明细表格与请求监控。
+ */
 import { computed, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import DateRangePicker from './DateRangePicker.vue'
@@ -79,6 +83,7 @@ import {
   type StatsOverview,
 } from '@/api/stats'
 
+// 周期定义（今日/昨日/本周/本月）
 const PERIODS = [
   { key: 'today', label: '今日' },
   { key: 'yesterday', label: '昨日' },
@@ -86,9 +91,9 @@ const PERIODS = [
   { key: 'thisMonth', label: '本月' },
 ] as const
 
-type PeriodKey = (typeof PERIODS)[number]['key']
+type PeriodKey = (typeof PERIODS)[number]['key'] // 周期键类型
 
-const DAY_MS = 86_400_000
+const DAY_MS = 86_400_000 // 一天的毫秒数
 
 /** 周期 Tab → 趋势图日期区间（周一为一周起点，与后端周聚合一致）。 */
 function periodRange(period: PeriodKey, todayStartMs: number): RangeValue {
@@ -165,14 +170,14 @@ function aggregateRange(rows: DailyStat[], startDate: string, endDate: string): 
   return totals
 }
 
-const range = ref<RangeValue>({ kind: 'preset', key: 'today' })
-const loading = ref(true)
-const refreshKey = ref(0)
-const overview = ref<StatsOverview | null>(null)
-const historyRows = ref<DailyStat[]>([])
-const hourlyRows = ref<HourlyStat[]>([])
+const range = ref<RangeValue>({ kind: 'preset', key: 'today' }) // 日期范围筛选值
+const loading = ref(true) // 是否正在加载
+const refreshKey = ref(0) // 外部刷新触发键
+const overview = ref<StatsOverview | null>(null) // 统计概览
+const historyRows = ref<DailyStat[]>([]) // 历史按天统计行
+const hourlyRows = ref<HourlyStat[]>([]) // 按小时统计行
 
-const todayStart = startOfTodayMs()
+const todayStart = startOfTodayMs() // 今日零点时间戳
 
 /** 复用分页接口一次拉全（端点×日行数量级为千，无需新接口）。 */
 async function loadBase(): Promise<void> {
@@ -189,9 +194,10 @@ async function loadBase(): Promise<void> {
   }
 }
 
-const trendWin = computed(() => resolveTrendWindow(range.value, todayStart))
-const hourly = computed(() => isHourlyTrend(trendWin.value))
+const trendWin = computed(() => resolveTrendWindow(range.value, todayStart)) // 趋势图时间窗口
+const hourly = computed(() => isHourlyTrend(trendWin.value)) // 是否使用小时粒度趋势
 
+/** 加载按小时数据（仅小时粒度趋势时拉取）。 */
 async function loadHourly(): Promise<void> {
   const w = trendWin.value
   if (!hourly.value || !w) {
@@ -204,6 +210,7 @@ async function loadHourly(): Promise<void> {
   })
 }
 
+/** 刷新：失效缓存并重新加载基础与小时数据。 */
 function reload(): void {
   invalidateStatsCache()
   refreshKey.value += 1
@@ -212,10 +219,11 @@ function reload(): void {
 }
 
 watch(trendWin, () => void loadHourly(), { immediate: true })
-void loadBase()
+void loadBase() // 初始加载
 
-const dayTotals = computed<Map<string, DayTotals>>(() => mergeByDate(historyRows.value))
+const dayTotals = computed<Map<string, DayTotals>>(() => mergeByDate(historyRows.value)) // 按日期合并的总量（热力图用）
 
+// 趋势图数据（小时粒度或天粒度切片）
 const trendData = computed(() => {
   const w = trendWin.value
   if (hourly.value && w) {
@@ -229,6 +237,7 @@ const activePeriod = computed(() =>
   PERIODS.map((p) => p.key).find((k) => rangeValueEquals(range.value, periodRange(k, todayStart))),
 )
 
+// 当前周期统计（命中预设用实时聚合，自定义区间从历史行聚合）
 const stats = computed<PeriodStats | undefined>(() => {
   const p = activePeriod.value
   if (p) return overview.value?.[p]
@@ -236,6 +245,7 @@ const stats = computed<PeriodStats | undefined>(() => {
   return aggregateRange(historyRows.value, ymd(range.value.startMs), ymd(range.value.endMs))
 })
 
+// 是否显示趋势徽章（仅今日周期且有趋势数据时）
 const showTrend = computed(() => activePeriod.value === 'today' && !!overview.value?.trend)
 </script>
 

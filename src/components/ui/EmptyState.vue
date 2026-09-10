@@ -8,8 +8,13 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * EmptyState.vue — 空状态
+ * 职责：展示空数据占位图标、标题、描述及额外插槽内容。
+ */
 import { DataBoard } from '@element-plus/icons-vue'
 
+// Props 定义：icon 为图标组件，title 为标题，desc 为描述文案
 withDefaults(
   defineProps<{ icon?: unknown; title?: string; desc?: string }>(),
   { icon: DataBoard, title: '', desc: '' },

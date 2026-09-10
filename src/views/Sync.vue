@@ -1,7 +1,9 @@
 <template>
   <div class="sync-page">
+    <!-- 页面标题 -->
     <h1 class="page-title">同步</h1>
 
+    <!-- 各同步能力区块：CC Switch 导入、WebDAV、远程备份列表、本地备份 -->
     <CcSwitchImport />
     <WebdavForm />
     <BackupList />
@@ -10,6 +12,11 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 同步页面。
+ * 职责：作为同步能力的容器，依次渲染 CC Switch 导入、WebDAV 配置、
+ * 远程备份列表与本地备份四个子区块，具体逻辑由各子组件实现。
+ */
 import CcSwitchImport from '@/components/sync/CcSwitchImport.vue'
 import WebdavForm from '@/components/sync/WebdavForm.vue'
 import BackupList from '@/components/sync/BackupList.vue'

@@ -12,12 +12,17 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Header.vue — 顶部头部
+ * 职责：显示当前页面标题与后端健康状态标签，定时轮询健康检查接口。
+ */
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 
-const route = useRoute()
-const healthStatus = ref('ok')
+const route = useRoute() // 当前路由对象
+const healthStatus = ref('ok') // 后端健康状态（ok / error）
 
+// 路由路径 → 页面标题映射表
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/providers': 'Providers',
@@ -26,20 +31,22 @@ const pageTitles: Record<string, string> = {
   '/settings': 'Settings',
 }
 
+// 当前页面标题（未匹配时回退为 'Vortex'）
 const pageTitle = computed(() => pageTitles[route.path] || 'Vortex')
 
+/** 轮询后端健康检查接口，更新健康状态。 */
 async function checkHealth() {
   try {
     const res = await fetch('http://localhost:20128/api/health')
     const data = await res.json()
     healthStatus.value = data.status
   } catch {
-    healthStatus.value = 'error'
+    healthStatus.value = 'error' // 请求失败标记为异常
   }
 }
 
-checkHealth()
-setInterval(checkHealth, 30000)
+checkHealth() // 首次检查
+setInterval(checkHealth, 30000) // 每 30 秒轮询一次
 </script>
 
 <style scoped>

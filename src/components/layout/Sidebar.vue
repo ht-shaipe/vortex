@@ -46,6 +46,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * Sidebar.vue — 左侧导航栏
+ * 职责：展示品牌标识、主导航项与底部导航项，支持折叠/展开，定时刷新供应商数量徽章。
+ */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
@@ -65,16 +69,20 @@ import {
 } from '@element-plus/icons-vue'
 import { listProviders } from '@/api/providers'
 
-const route = useRoute()
+const route = useRoute() // 当前路由对象，用于高亮激活项
 
+// 折叠状态的 localStorage 持久化键
 const COLLAPSE_KEY = 'vortex-sidebar-collapsed'
+// 侧边栏是否折叠（从本地存储恢复初始值）
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
 
+/** 切换侧边栏折叠/展开状态，并持久化到 localStorage。 */
 function toggleCollapsed() {
   collapsed.value = !collapsed.value
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
 }
 
+/** 导航项数据结构。 */
 interface NavItem {
   to: string
   label: string
@@ -84,8 +92,9 @@ interface NavItem {
   dotTone?: 'ok' | 'err'
 }
 
-const providerCount = ref(0)
+const providerCount = ref(0) // 已配置的供应商连接数量
 
+// 主导航项列表（含徽章/圆点指示）
 const mainItems = computed<NavItem[]>(() => [
   { to: '/guide', label: '接入指南', icon: Reading },
   { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: 'ok' },
@@ -93,21 +102,25 @@ const mainItems = computed<NavItem[]>(() => [
   { to: '/statistics', label: '数据统计', icon: Histogram },
   { to: '/sync', label: '配置同步', icon: Connection },
   { to: '/request-logs', label: '请求日志', icon: Document },
-  { to: '/free-tokens', label: '薅羊毛', icon: Present },
+  { to: '/free-tokens', label: '薅Token', icon: Present },
   { to: '/chat', label: '对话', icon: ChatDotRound },
 
 ])
 
+// 底部导航项列表（设置、关于）
 const bottomItems: NavItem[] = [
   { to: '/settings', label: '设置', icon: Setting },
   { to: '/about', label: '关于', icon: InfoFilled },
 ]
 
+/** 判断指定路由前缀是否处于激活状态。 */
 function isActive(to: string): boolean {
+  // 实时路由与首页共用激活态
   if (to === '/live-routing') return route.path === '/live-routing' || route.path === '/'
   return route.path.startsWith(to)
 }
 
+/** 加载供应商连接数量，用于订阅管理徽章显示。 */
 async function loadCounts() {
   try {
     const providers = await listProviders()
@@ -118,7 +131,7 @@ async function loadCounts() {
 }
 
 onMounted(() => {
-  loadCounts()
-  setInterval(loadCounts, 10000)
+  loadCounts() // 首次加载
+  setInterval(loadCounts, 10000) // 每 10 秒轮询刷新
 })
 </script>

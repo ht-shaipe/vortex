@@ -56,16 +56,21 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * BackupList.vue — 备份列表
+ * 职责：展示 WebDAV 云端备份文件列表，支持立即备份、恢复与删除操作。
+ */
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Delete, Upload } from '@element-plus/icons-vue'
 import { webdavApi, errMsg, type BackupFile } from '@/api/sync'
 
-const list = ref<BackupFile[]>([])
-const loaded = ref(false)
-const loadError = ref('')
-const backing = ref(false)
+const list = ref<BackupFile[]>([]) // 备份文件列表
+const loaded = ref(false) // 是否已完成首次加载
+const loadError = ref('') // 加载错误信息
+const backing = ref(false) // 是否正在备份
 
+/** 加载云端备份列表。 */
 async function load(): Promise<void> {
   loadError.value = ''
   try {
@@ -76,8 +81,9 @@ async function load(): Promise<void> {
     loaded.value = true
   }
 }
-void load()
+void load() // 初始加载
 
+/** 立即备份到云端。 */
 async function onBackup(): Promise<void> {
   backing.value = true
   try {
@@ -91,6 +97,7 @@ async function onBackup(): Promise<void> {
   }
 }
 
+/** 从指定备份文件恢复。 */
 async function onRestore(filename: string): Promise<void> {
   try {
     await webdavApi.restore(filename)
@@ -100,6 +107,7 @@ async function onRestore(filename: string): Promise<void> {
   }
 }
 
+/** 删除指定备份文件。 */
 async function onDelete(filename: string): Promise<void> {
   try {
     await webdavApi.deleteBackup(filename)

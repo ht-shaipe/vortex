@@ -40,38 +40,42 @@ export interface RawUsageEntry {
 
 /* ============ ccMesh 数据形状 ============ */
 
+/** 单个端点的统计指标 */
 export interface EndpointStat {
-  endpointName: string
-  requests: number
-  errors: number
-  inputTokens: number
-  outputTokens: number
-  cacheCreationTokens: number
-  cacheReadTokens: number
+  endpointName: string // 端点名称
+  requests: number // 请求数
+  errors: number // 错误数
+  inputTokens: number // 输入 Token 数
+  outputTokens: number // 输出 Token 数
+  cacheCreationTokens: number // 缓存创建 Token 数
+  cacheReadTokens: number // 缓存读取 Token 数
 }
 
+/** 某时间段的汇总统计（含按端点拆分） */
 export interface PeriodStats {
-  requests: number
-  errors: number
-  inputTokens: number
-  outputTokens: number
-  cacheCreationTokens: number
-  cacheReadTokens: number
-  endpoints: EndpointStat[]
+  requests: number // 总请求数
+  errors: number // 总错误数
+  inputTokens: number // 总输入 Token 数
+  outputTokens: number // 总输出 Token 数
+  cacheCreationTokens: number // 总缓存创建 Token 数
+  cacheReadTokens: number // 总缓存读取 Token 数
+  endpoints: EndpointStat[] // 按端点拆分的明细
 }
 
+/** 环比趋势对比（百分比） */
 export interface TrendCompare {
-  requestsPct: number
-  inputTokensPct: number
-  outputTokensPct: number
+  requestsPct: number // 请求数环比百分比
+  inputTokensPct: number // 输入 Token 环比百分比
+  outputTokensPct: number // 输出 Token 环比百分比
 }
 
+/** 统计概览：今日 / 昨日 / 本周 / 本月 + 趋势 */
 export interface StatsOverview {
-  today: PeriodStats
-  yesterday: PeriodStats
-  thisWeek: PeriodStats
-  thisMonth: PeriodStats
-  trend: TrendCompare
+  today: PeriodStats // 今日统计
+  yesterday: PeriodStats // 昨日统计
+  thisWeek: PeriodStats // 本周统计
+  thisMonth: PeriodStats // 本月统计
+  trend: TrendCompare // 今日环比昨日趋势
 }
 
 /** 端点 × 日聚合行。 */
@@ -86,9 +90,10 @@ export interface DailyStat {
   cacheReadTokens: number
 }
 
+/** 端点 × 日聚合行分页结果 */
 export interface StatsHistoryPage {
-  items: DailyStat[]
-  total: number
+  items: DailyStat[] // 当前页数据项
+  total: number // 总记录数
 }
 
 /** 按本地小时聚合（跨端点）。`date` 为 `YYYY-MM-DD HH:00`。 */
@@ -126,17 +131,19 @@ export interface RequestLog {
   cost: number
 }
 
+/** 请求明细分页结果 */
 export interface RequestLogPage {
-  items: RequestLog[]
-  total: number
+  items: RequestLog[] // 当前页明细项
+  total: number // 总记录数
 }
 
+/** 请求明细查询参数 */
 export interface RequestLogQuery {
-  startMs?: number
-  endMs?: number
-  endpoint?: string
-  page: number
-  pageSize: number
+  startMs?: number // 起始时间（毫秒，可选）
+  endMs?: number // 截止时间（毫秒，可选）
+  endpoint?: string // 端点名称过滤（可选）
+  page: number // 页码（从 1 开始）
+  pageSize: number // 每页条数
 }
 
 /* ============ 明细拉取与缓存 ============ */
@@ -156,6 +163,11 @@ export function invalidateStatsCache(): void {
   connCache = null
 }
 
+/**
+ * 拉取用量明细并做内存缓存。
+ * 同一 TTL 窗口内复用缓存；并发请求合并为同一个 inflight Promise。
+ * @returns 用量明细数组
+ */
 async function fetchEntries(): Promise<RawUsageEntry[]> {
   const now = Date.now()
   if (entriesCache && now - entriesCache.at < CACHE_TTL_MS) return entriesCache.data
@@ -178,7 +190,10 @@ async function fetchEntries(): Promise<RawUsageEntry[]> {
   return inflight
 }
 
-/** connection_id → 连接名，用于把明细里的 id 显示成可读端点名。 */
+/**
+ * 获取 connection_id → 连接名 的映射，用于把明细里的 id 显示成可读端点名。
+ * @returns 连接 ID 到连接名的 Map
+ */
 let connCache: Map<string, string> | null = null
 async function connNames(): Promise<Map<string, string>> {
   if (connCache) return connCache
@@ -215,6 +230,10 @@ interface NormEntry {
   isError: boolean
 }
 
+/**
+ * 把原始明细行归一化为带毫秒时间与端点名的中间结构。
+ * @returns 归一化后的明细数组
+ */
 async function normalized(): Promise<NormEntry[]> {
   const [entries, names] = await Promise.all([fetchEntries(), connNames()])
   return entries.map((raw) => {
@@ -230,6 +249,7 @@ async function normalized(): Promise<NormEntry[]> {
 
 /* ============ 聚合工具 ============ */
 
+/** 创建一个全零的 PeriodStats 空对象。 */
 function emptyPeriod(): PeriodStats {
   return {
     requests: 0,
@@ -242,6 +262,7 @@ function emptyPeriod(): PeriodStats {
   }
 }
 
+/** 将单条明细累加到目标统计对象上。 */
 function accumulate(target: Omit<PeriodStats, 'endpoints'>, e: NormEntry): void {
   target.requests += 1
   if (e.isError) target.errors += 1
@@ -287,6 +308,7 @@ const DAY_MS = 86_400_000
 
 /* ============ statsApi ============ */
 
+/** statsApi：统计概览、历史、小时聚合与请求明细查询 */
 export const statsApi = {
   /** 四周期实时聚合 + 今日环比昨日趋势。 */
   async getStats(): Promise<StatsOverview> {
@@ -457,13 +479,14 @@ function statusToCode(status: string | null, success: boolean): number | null {
 
 /* ============ usageApi（用量统计面板） ============ */
 
+/** 用量汇总数据结构 */
 export interface UsageSummary {
-  totalRequests: number
-  totalInputTokens: number
-  totalOutputTokens: number
-  totalCacheCreationTokens: number
-  totalCacheReadTokens: number
-  totalCost: number
+  totalRequests: number // 总请求数
+  totalInputTokens: number // 总输入 Token 数
+  totalOutputTokens: number // 总输出 Token 数
+  totalCacheCreationTokens: number // 总缓存创建 Token 数
+  totalCacheReadTokens: number // 总缓存读取 Token 数
+  totalCost: number // 总花费
 }
 
 /** 按天 × 来源 × 模型聚合。 */
@@ -489,6 +512,7 @@ export interface DailyUsage {
   cacheReadTokens: number
 }
 
+/** 用量过滤参数 */
 export interface UsageFilter {
   /** date 闭区间（YYYY-MM-DD，预设周期） */
   start?: string
@@ -500,6 +524,7 @@ export interface UsageFilter {
   appType?: string
 }
 
+/** 判断单条明细是否通过过滤条件。 */
 function passFilter(e: NormEntry, f: UsageFilter): boolean {
   if (f.appType && appTypeOf(e) !== f.appType) return false
   if (f.start && e.date < f.start) return false
@@ -514,6 +539,7 @@ function appTypeOf(e: NormEntry): string {
   return e.raw.provider ?? 'unknown'
 }
 
+/** usageApi：用量统计面板的数据接口 */
 export const usageApi = {
   /** ccMesh 是扫本机会话日志；vortex 数据本就在库里，这里等价于刷新缓存。 */
   async sync(): Promise<{ imported: number; filesScanned: number; errors: number }> {
@@ -597,6 +623,13 @@ export const usageApi = {
   },
 }
 
+/**
+ * 按自定义分桶函数对明细进行聚合。
+ * @param rows - 归一化后的明细数组
+ * @param f - 过滤条件
+ * @param bucket - 分桶键生成函数
+ * @returns 按桶聚合的用量数组
+ */
 function groupByBucket(
   rows: NormEntry[],
   f: UsageFilter,

@@ -20,6 +20,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * UsageTrendChart.vue — 用量趋势图
+ * 职责：以 ECharts 折线图展示调用趋势，支持按请求次数或 Token 数切换指标。
+ */
 import { computed, ref } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -30,19 +34,22 @@ import { fmtCompact, fmtInt } from '@/lib/format'
 import { useThemeColors } from '@/composables/useThemeColors'
 import type { TrendPoint } from '@/lib/usageChart'
 
+// 注册 ECharts 所需组件
 use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
-type Metric = 'requests' | 'tokens'
+type Metric = 'requests' | 'tokens' // 指标类型
 
+// 指标切换 Tab 配置
 const METRIC_TABS: { key: Metric; label: string }[] = [
   { key: 'requests', label: '次数' },
   { key: 'tokens', label: 'Tokens' },
 ]
 
+// Props 定义：data 为趋势数据点列表
 const props = defineProps<{ data: TrendPoint[] }>()
 
-const metric = ref<Metric>('requests')
-const colors = useThemeColors()
+const metric = ref<Metric>('requests') // 当前选中的指标
+const colors = useThemeColors() // 主题色（响应式）
 
 /** 面积渐变的 rgba 化：echarts 不认 oklch，取计算值后交给 canvas 直接用。 */
 const option = computed(() => {

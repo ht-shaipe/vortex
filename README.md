@@ -229,7 +229,7 @@ vortex/
 │       ├── routing/        # 熔断器等弹性组件
 │       ├── tauri_cmds/     # Tauri IPC 命令
 │       └── translator/     # 响应格式转换器
-├── website/                # 项目官网（独立静态站点，原生 HTML/CSS/JS 零依赖）
+├── docs/website/           # 项目官网（独立静态站点，原生 HTML/CSS/JS 零依赖）
 ├── package.json            # 前端配置
 └── src-tauri/Cargo.toml    # 后端配置
 ```
@@ -258,18 +258,18 @@ bun run tauri dev
 
 ## 官网
 
-`website/` 是项目的独立静态落地页，原生 HTML/CSS/JS 实现、零构建依赖，配色沿用应用主题（`src/styles/cc-theme.css`）的深紫强调色。
+`docs/website/` 是项目的独立静态落地页，原生 HTML/CSS/JS 实现、零构建依赖，配色沿用应用主题（`src/styles/cc-theme.css`）的深紫强调色。
 
 ```bash
 # 直接打开
-open website/index.html
+open docs/website/index.html
 
 # 或起一个本地静态服务
-python3 -m http.server 8080 --directory website
+python3 -m http.server 8080 --directory docs/website
 ```
 
 页面结构：Hero → 数据概览 → 接入范围 → 特性 → 界面预览 → 快速开始 → 请求流程 → 下载安装 → FAQ。
-截图位于 `website/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
+截图位于 `docs/website/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
 
 > 下载区的按钮由 `assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
 > 静态 HTML 里只放「指向 Releases 页面」的兜底链接 —— 因为安装包文件名带版本号，写死必然过期。

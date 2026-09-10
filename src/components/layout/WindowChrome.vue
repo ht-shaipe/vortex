@@ -4,7 +4,11 @@
 </template>
 
 <script setup lang="ts">
-import { runtime } from '@/lib/runtime'
+/**
+ * WindowChrome.vue — 窗口控制按钮
+ * 职责：在桌面端渲染顶部拖拽区域（data-tauri-drag-region），窗口控制按钮交由系统标题栏处理。
+ */
+import { runtime } from '@/lib/runtime' // 运行时环境信息（desktop / web 等）
 </script>
 
 <style scoped>

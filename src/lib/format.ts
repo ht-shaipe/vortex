@@ -10,6 +10,9 @@
  *
  * 主数值仍应展示精确值，本函数仅产出「辅助小字」文案。
  * 非有限值按 `"0"` 处理；负数取绝对值折算并保留负号。
+ *
+ * @param n - Token 数量
+ * @returns 格式化后的辅助文案
  */
 export function formatTokenCompact(n: number): string {
   if (!Number.isFinite(n)) return '0'
@@ -25,6 +28,9 @@ export function formatTokenCompact(n: number): string {
  * - |n| ≥ 1000：取整千 → `1k`、`102k`、`110k`
  * - 否则：原始整数
  * 用于悬停明细等空间紧凑处。负数保留符号。
+ *
+ * @param n - Token 数量
+ * @returns 紧凑展示文案
  */
 export function formatTokenK(n: number): string {
   if (!Number.isFinite(n)) return '0'
@@ -34,19 +40,33 @@ export function formatTokenK(n: number): string {
   return String(Math.round(n))
 }
 
-/** 耗时统一按秒展示（两位小数）：`6458ms → 6.46s`。非有限值按 `0.00s`。 */
+/**
+ * 耗时统一按秒展示（两位小数）：`6458ms → 6.46s`。非有限值按 `0.00s`。
+ * @param ms - 毫秒数
+ * @returns 秒级展示文案
+ */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms)) return '0.00s'
   return `${(ms / 1000).toFixed(2)}s`
 }
 
-/** 千分位整数。 */
+/**
+ * 千分位整数。
+ * @param n - 数值，null/undefined 按 0 处理
+ * @returns 千分位格式字符串
+ */
 export function fmtInt(n: number | null | undefined): string {
   return (n ?? 0).toLocaleString()
 }
 
-/** 紧凑数字（图表坐标轴用）：1.2K / 3.4M。 */
+/** 紧凑数字格式化器（图表坐标轴用）：1.2K / 3.4M。 */
 const compactFmt = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+
+/**
+ * 紧凑数字格式化（复用 Intl.NumberFormat）。
+ * @param n - 数值
+ * @returns 紧凑格式字符串（如 1.2K、3.4M）
+ */
 export function fmtCompact(n: number): string {
   return compactFmt.format(n)
 }

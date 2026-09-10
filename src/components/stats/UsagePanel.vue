@@ -86,6 +86,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * UsagePanel.vue — 用量面板
+ * 职责：展示用量统计的来源 Tab、KPI 卡片、调用热力图、趋势图与按日期·模型明细表格。
+ */
 import { computed, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -115,17 +119,18 @@ import {
  * 用量统计：ccMesh 里「来源」是本机 Claude Code / Codex 会话日志；
  * vortex 语义下对应 provider，故来源 Tab 由数据里出现过的 provider 动态生成。
  */
-const app = ref<string>('all')
-const range = ref<RangeValue>({ kind: 'preset', key: 'today' })
-const syncing = ref(false)
-const appTypes = ref<string[]>([])
-const summary = ref<UsageSummary | null>(null)
-const dayModelRows = ref<DayModelUsage[]>([])
-const byDayRows = ref<DailyUsage[]>([])
-const byHourRows = ref<DailyUsage[]>([])
+const app = ref<string>('all') // 当前选中的来源 Tab
+const range = ref<RangeValue>({ kind: 'preset', key: 'today' }) // 日期范围筛选值
+const syncing = ref(false) // 是否正在刷新
+const appTypes = ref<string[]>([]) // 数据中出现的来源列表
+const summary = ref<UsageSummary | null>(null) // 汇总统计
+const dayModelRows = ref<DayModelUsage[]>([]) // 按日期·模型明细行
+const byDayRows = ref<DailyUsage[]>([]) // 按天数据（热力图用）
+const byHourRows = ref<DailyUsage[]>([]) // 按小时数据（趋势图用）
 
-const todayStart = startOfTodayMs()
+const todayStart = startOfTodayMs() // 今日零点时间戳
 
+// 来源 Tab 列表（全部 + 动态来源）
 const appTabs = computed(() => [
   { key: 'all', label: '全部' },
   ...appTypes.value.map((t) => ({ key: t, label: appLabel(t) })),
@@ -139,18 +144,20 @@ function appLabel(t: string): string {
   return t
 }
 
-const appType = computed(() => (app.value === 'all' ? undefined : app.value))
-const filter = computed(() => rangeValueUsageFilter(range.value, todayStart))
+const appType = computed(() => (app.value === 'all' ? undefined : app.value)) // 实际查询用的来源过滤值
+const filter = computed(() => rangeValueUsageFilter(range.value, todayStart)) // 日期范围过滤参数
 
+// 缓存 Token 总量（创建 + 读取）
 const cacheTotal = computed(
   () => (summary.value?.totalCacheCreationTokens ?? 0) + (summary.value?.totalCacheReadTokens ?? 0),
 )
 
-const trendWin = computed(() => resolveTrendWindow(range.value, todayStart))
-const hourly = computed(() => isHourlyTrend(trendWin.value))
+const trendWin = computed(() => resolveTrendWindow(range.value, todayStart)) // 趋势图时间窗口
+const hourly = computed(() => isHourlyTrend(trendWin.value)) // 是否使用小时粒度趋势
 
-const dayTotals = computed<Map<string, DayTotals>>(() => mergeByDate(byDayRows.value))
+const dayTotals = computed<Map<string, DayTotals>>(() => mergeByDate(byDayRows.value)) // 按日期合并的总量（热力图用）
 
+// 趋势图数据（小时粒度或天粒度切片）
 const trendData = computed(() => {
   const w = trendWin.value
   if (hourly.value && w) {
@@ -159,6 +166,7 @@ const trendData = computed(() => {
   return sliceTrend(dayTotals.value, range.value, todayStart)
 })
 
+/** 日期分组结构（用于表格按日期合并行）。 */
 interface DateGroup {
   date: string
   rows: DayModelUsage[]
@@ -175,6 +183,7 @@ const groups = computed<DateGroup[]>(() => {
   return out
 })
 
+/** 加载筛选数据：汇总统计与按日期·模型明细。 */
 async function loadFiltered(): Promise<void> {
   const f = { appType: appType.value, ...filter.value }
   const [s, dm] = await Promise.all([usageApi.getSummary(f), usageApi.getByDayModel(f)])
@@ -187,6 +196,7 @@ async function loadByDay(): Promise<void> {
   byDayRows.value = await usageApi.getByDay({ appType: appType.value })
 }
 
+/** 加载按小时数据（仅小时粒度趋势时拉取）。 */
 async function loadByHour(): Promise<void> {
   const w = trendWin.value
   if (!hourly.value || !w) {
@@ -200,10 +210,12 @@ async function loadByHour(): Promise<void> {
   })
 }
 
+/** 加载来源类型列表。 */
 async function loadAppTypes(): Promise<void> {
   appTypes.value = await usageApi.listAppTypes()
 }
 
+/** 手动刷新：失效缓存后重新拉取所有数据。 */
 async function sync(): Promise<void> {
   syncing.value = true
   try {
@@ -217,10 +229,11 @@ async function sync(): Promise<void> {
   }
 }
 
+// 来源或筛选变化时重新加载对应数据
 watch([appType, filter], () => void loadFiltered(), { immediate: true })
 watch(appType, () => void loadByDay(), { immediate: true })
 watch([appType, trendWin], () => void loadByHour(), { immediate: true })
-void loadAppTypes()
+void loadAppTypes() // 初始加载来源列表
 </script>
 
 <style scoped>

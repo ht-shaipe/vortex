@@ -34,10 +34,15 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * WebdavForm.vue — WebDAV 表单
+ * 职责：配置 WebDAV 连接参数（URL、用户名、密码、路径），支持测试连接与保存到本机。
+ */
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { webdavApi, errMsg, type WebDavConfig } from '@/api/sync'
 
+// 表单字段配置（key、标签、输入类型、占位符）
 const FIELDS: Array<{ k: keyof WebDavConfig; label: string; type?: string; ph?: string }> = [
   { k: 'url', label: '服务器 URL', ph: 'https://dav.example.com/' },
   { k: 'username', label: '用户名' },
@@ -45,6 +50,7 @@ const FIELDS: Array<{ k: keyof WebDavConfig; label: string; type?: string; ph?: 
   { k: 'configPath', label: '配置路径', ph: '/vortex' },
 ]
 
+// 表单数据（响应式）
 const form = reactive<WebDavConfig>({
   url: '',
   username: '',
@@ -52,13 +58,15 @@ const form = reactive<WebDavConfig>({
   configPath: '/vortex',
   statsPath: '/vortex/stats',
 })
-const testing = ref(false)
-const saving = ref(false)
+const testing = ref(false) // 是否正在测试连接
+const saving = ref(false) // 是否正在保存
 
+// 挂载时加载已保存的配置
 onMounted(async () => {
   Object.assign(form, await webdavApi.getConfig())
 })
 
+/** 测试 WebDAV 连接。 */
 async function onTest(): Promise<void> {
   testing.value = true
   try {
@@ -71,6 +79,7 @@ async function onTest(): Promise<void> {
   }
 }
 
+/** 保存 WebDAV 配置到本机。 */
 async function onSave(): Promise<void> {
   saving.value = true
   try {

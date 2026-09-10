@@ -1,7 +1,9 @@
 <template>
   <div>
+    <!-- 页面头部：标题与副标题 -->
     <PageHeader title="关于" sub="Vortex AI Gateway" />
 
+    <!-- 应用信息卡片：图标、版本、简介与相关链接 -->
     <div class="card section">
       <div class="card-body about-hero">
         <div class="app-mark">V</div>
@@ -17,7 +19,7 @@
       </div>
     </div>
 
-    <!-- 检查更新 -->
+    <!-- 检查更新：根据状态展示不同 UI -->
     <div class="card section">
       <div class="card-head">
         <div>
@@ -27,18 +29,22 @@
         <StatusBadge :tone="statusTone" :label="statusLabel" />
       </div>
       <div class="card-body">
+        <!-- 空闲态：可发起检查 -->
         <template v-if="status === 'idle'">
           <p class="para">点击下方按钮检查是否有新版本。</p>
           <button type="button" class="btn primary" @click="checkForUpdate()">检查更新</button>
         </template>
+        <!-- 检查中态 -->
         <template v-else-if="status === 'checking'">
           <p class="para">正在检查更新…</p>
           <button type="button" class="btn" disabled>检查中…</button>
         </template>
+        <!-- 已是最新版本 -->
         <template v-else-if="status === 'up-to-date'">
           <p class="para">当前已是最新版本。</p>
           <button type="button" class="btn primary" @click="checkForUpdate()">重新检查</button>
         </template>
+        <!-- 发现新版本：展示发版说明与下载按钮 -->
         <template v-else-if="status === 'available' && updateInfo">
           <p class="para">
             发现新版本 <strong>v{{ updateInfo.version }}</strong>
@@ -52,16 +58,19 @@
             <button type="button" class="btn" @click="checkForUpdate()">重新检查</button>
           </div>
         </template>
+        <!-- 下载中态：展示进度条 -->
         <template v-else-if="status === 'downloading'">
           <p class="para">正在下载更新… {{ downloadProgress }}%</p>
           <div class="progress-bar">
             <div class="progress-fill" :style="{ width: downloadProgress + '%' }" />
           </div>
         </template>
+        <!-- 下载完成待重启 -->
         <template v-else-if="status === 'ready'">
           <p class="para">更新已下载完成，重启应用以完成安装。</p>
           <button type="button" class="btn primary" @click="relaunchApp()">重启应用</button>
         </template>
+        <!-- 出错态 -->
         <template v-else-if="status === 'error'">
           <p class="para error-text">{{ errorMsg || '检查更新失败' }}</p>
           <button type="button" class="btn primary" @click="checkForUpdate()">重试</button>
@@ -69,6 +78,21 @@
       </div>
     </div>
 
+    <!-- 通知测试：模拟免费 Token 发现通知 -->
+    <div class="card section">
+      <div class="card-head">
+        <div>
+          <div class="card-title">通知测试</div>
+          <div class="card-sub">模拟免费 Token 发现通知</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="para">点击按钮测试通知弹出效果，通知会显示在右下角，点击通知可跳转到免费 Token 页面。</p>
+        <button type="button" class="btn primary" @click="testNotification()">发送测试通知</button>
+      </div>
+    </div>
+
+    <!-- 免责声明 -->
     <div class="card section">
       <div class="card-head">
         <div>
@@ -85,11 +109,18 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 关于页面。
+ * 职责：展示应用基本信息、版本号、检查更新流程、通知测试入口与免责声明。
+ * 更新检查与下载安装的逻辑由 useUpdater 组合式函数提供。
+ */
 import { computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useUpdater } from '@/composables/useUpdater'
+import { useNotifications } from '@/composables/useNotifications'
 
+// 解构更新器状态与方法
 const {
   status,
   updateInfo,
@@ -101,6 +132,10 @@ const {
   relaunchApp,
 } = useUpdater()
 
+// 通知组合式函数：提供测试通知能力
+const { testNotification } = useNotifications()
+
+// 更新状态对应的徽标色调
 const statusTone = computed(() => {
   switch (status.value) {
     case 'up-to-date': return 'ok'
@@ -112,6 +147,7 @@ const statusTone = computed(() => {
   }
 })
 
+// 更新状态对应的中文标签
 const statusLabel = computed(() => {
   switch (status.value) {
     case 'idle': return '未检查'
@@ -125,9 +161,12 @@ const statusLabel = computed(() => {
   }
 })
 
+/**
+ * 组件挂载时若尚未检查过更新，则自动静默检查一次。
+ */
 onMounted(() => {
   if (status.value === 'idle') {
-    checkForUpdate(true)
+    checkForUpdate(true) // true 表示静默检查
   }
 })
 </script>

@@ -33,13 +33,25 @@ pub enum ExecutorOutput {
     UpstreamError { status: u16, body: String },
 }
 
+/// 执行器工厂
+///
+/// 根据提供商的 API 格式创建对应的执行器实例。
 pub struct ExecutorFactory;
 
 impl ExecutorFactory {
+    /// 创建执行器工厂
     pub fn new() -> Self {
         Self
     }
 
+    /// 根据提供商定义创建对应格式的执行器
+    ///
+    /// # 参数
+    /// - `def`：提供商定义
+    ///
+    /// # 返回
+    /// 按格式匹配的执行器：`anthropic` → AnthropicExecutor，
+    /// `gemini` → GeminiExecutor，其他 → OpenAIExecutor
     pub fn create(&self, def: &ProviderDef) -> Box<dyn ProviderExecutor + Send + Sync> {
         match def.api_format.as_str() {
             "anthropic" => Box::new(AnthropicExecutor),
@@ -49,8 +61,23 @@ impl ExecutorFactory {
     }
 }
 
+/// 提供商执行器 trait
+///
+/// 定义向上游 AI 提供商发送请求的统一接口，
+/// 不同 API 格式的执行器各自实现此 trait。
 #[async_trait::async_trait]
 pub trait ProviderExecutor: Send + Sync {
+    /// 执行上游请求
+    ///
+    /// # 参数
+    /// - `state`：应用全局状态
+    /// - `request`：代理请求
+    /// - `def`：提供商定义
+    /// - `connection`：提供商连接
+    /// - `model`：实际模型名
+    ///
+    /// # 返回
+    /// 执行器输出（JSON / 流 / 上游错误）
     async fn execute(
         &self,
         state: &Arc<AppState>,
@@ -83,10 +110,33 @@ async fn upstream_error(response: reqwest::Response) -> ExecutorOutput {
     ExecutorOutput::UpstreamError { status, body }
 }
 
+/// 拼接上游 URL 并做版本段归一化。
+///
+/// 连接级 baseUrl 通常已含版本前缀（如 `https://host/v1`），而提供商定义的
+/// `chat_path` 也以 `/v1` 开头，直接相加会得到 `/v1/v1/chat/completions`（上游 404）。
+/// 此处：当 baseUrl 以 `/v1` 结尾且 path 以 `v1/` 开头时去掉重复段，其余情况原样拼接。
+fn build_upstream_url(base_url: &str, chat_path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let path = chat_path.strip_prefix('/').unwrap_or(chat_path);
+    let path = if base.ends_with("/v1") && path.starts_with("v1/") {
+        &path["v1/".len()..]
+    } else {
+        path
+    };
+    format!("{}/{}", base, path)
+}
+
+/// OpenAI 格式执行器
+///
+/// 直接使用 OpenAI chat/completions 接口格式，请求与响应无需转换。
 pub struct OpenAIExecutor;
 
 #[async_trait::async_trait]
 impl ProviderExecutor for OpenAIExecutor {
+    /// 执行 OpenAI 格式请求
+    ///
+    /// 构建请求体（注入 model、temperature、max_tokens 等参数），
+    /// 设置 Bearer 认证，发送请求并处理流式/非流式响应。
     async fn execute(
         &self,
         state: &Arc<AppState>,
@@ -96,14 +146,18 @@ impl ProviderExecutor for OpenAIExecutor {
         model: &str,
     ) -> Result<ExecutorOutput> {
         let client = &state.http_client;
+        // 优先使用连接级 baseUrl，回退到提供商定义的默认值
         let base_url = connection
             .provider_specific_data
             .get("baseUrl")
             .and_then(|v| v.as_str())
             .unwrap_or(&def.base_url);
 
-        let url = format!("{}{}", base_url, def.chat_path);
+        let url = build_upstream_url(base_url, &def.chat_path);
 
+        log::info!("上游请求: POST {} (model: {}, stream: {})", url, model, request.stream);
+
+        // 构建请求体：在原始消息基础上注入模型与采样参数
         let mut body = request.messages.clone();
         if let Some(obj) = body.as_object_mut() {
             obj.insert("model".to_string(), json!(model));
@@ -130,15 +184,18 @@ impl ProviderExecutor for OpenAIExecutor {
 
         let response = send_with_first_byte_timeout(req_builder.json(&body)).await?;
 
+        // 上游返回错误
         if response.status().as_u16() >= 400 {
             return Ok(upstream_error(response).await);
         }
 
         if request.stream {
+            // 流式：返回归一化 SSE 流
             Ok(ExecutorOutput::Stream(
                 sse::stream_sse_response(response, "openai").await,
             ))
         } else {
+            // 非流式：解析 JSON 响应
             let json_body = response
                 .json::<Value>()
                 .await
@@ -148,10 +205,18 @@ impl ProviderExecutor for OpenAIExecutor {
     }
 }
 
+/// Anthropic 格式执行器
+///
+/// 将 OpenAI 格式请求转换为 Anthropic Messages 格式发送，
+/// 并将非流式响应转回 OpenAI 格式。
 pub struct AnthropicExecutor;
 
 #[async_trait::async_trait]
 impl ProviderExecutor for AnthropicExecutor {
+    /// 执行 Anthropic 格式请求
+    ///
+    /// 将 OpenAI 消息/工具定义转换为 Anthropic 格式，设置 x-api-key 认证，
+    /// 发送请求。非流式响应通过转换器转回 OpenAI 格式。
     async fn execute(
         &self,
         state: &Arc<AppState>,
@@ -166,7 +231,7 @@ impl ProviderExecutor for AnthropicExecutor {
             .get("baseUrl")
             .and_then(|v| v.as_str())
             .unwrap_or(&def.base_url);
-        let url = format!("{}{}", base_url, def.chat_path);
+        let url = build_upstream_url(base_url, &def.chat_path);
 
         // OpenAI 消息 → Anthropic 消息（含 tool_calls → tool_use 全链路转换）
         let (system, messages) = crate::translator::openai_messages_to_anthropic(&request.messages);
@@ -178,6 +243,7 @@ impl ProviderExecutor for AnthropicExecutor {
             "stream": request.stream,
         });
 
+        // 设置 system 提示
         if let Some(sys) = system {
             body["system"] = sys;
         }
@@ -187,9 +253,11 @@ impl ProviderExecutor for AnthropicExecutor {
         if let Some(t) = request.top_p {
             body["top_p"] = json!(t);
         }
+        // 转换停止序列
         if let Some(stops) = request.messages.get("stop").and_then(|s| s.as_array()) {
             body["stop_sequences"] = json!(stops);
         }
+        // 转换工具定义与工具选择
         if let Some(tools) = request
             .messages
             .get("tools")
@@ -210,6 +278,7 @@ impl ProviderExecutor for AnthropicExecutor {
             .as_deref()
             .ok_or_else(|| AppError::Unauthorized("API key required".into()))?;
 
+        // Anthropic 认证：x-api-key 头 + 版本头
         let mut req_builder = client
             .post(&url)
             .header("x-api-key", api_key)
@@ -226,10 +295,12 @@ impl ProviderExecutor for AnthropicExecutor {
         }
 
         if request.stream {
+            // 流式：Anthropic SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
                 sse::stream_sse_response(response, "anthropic").await,
             ))
         } else {
+            // 非流式：解析 Anthropic 响应并转回 OpenAI 格式
             let json_body = response
                 .json::<Value>()
                 .await
@@ -240,10 +311,18 @@ impl ProviderExecutor for AnthropicExecutor {
     }
 }
 
+/// Gemini 格式执行器
+///
+/// 将 OpenAI 格式请求转换为 Gemini generateContent 格式发送，
+/// 并将非流式响应转回 OpenAI 格式。API key 通过 URL 查询参数传递。
 pub struct GeminiExecutor;
 
 #[async_trait::async_trait]
 impl ProviderExecutor for GeminiExecutor {
+    /// 执行 Gemini 格式请求
+    ///
+    /// 将 OpenAI 消息转换为 Gemini contents 格式（system → systemInstruction，
+    /// assistant → model 角色），设置 generationConfig，通过 URL 参数传递 API key。
     async fn execute(
         &self,
         state: &Arc<AppState>,
@@ -258,6 +337,7 @@ impl ProviderExecutor for GeminiExecutor {
             .as_deref()
             .ok_or_else(|| AppError::Unauthorized("API key required".into()))?;
 
+        // 流式使用 streamGenerateContent，非流式使用 generateContent
         let chat_path = if request.stream {
             def.chat_path
                 .replace("{model}", model)
@@ -265,11 +345,13 @@ impl ProviderExecutor for GeminiExecutor {
         } else {
             def.chat_path.replace("{model}", model)
         };
+        // Gemini 通过 URL 查询参数传递 API key
         let url = format!("{}{}?key={}", def.base_url, chat_path, api_key);
 
         let mut system_instruction: Option<Value> = None;
         let mut contents = vec![];
 
+        // 转换 OpenAI 消息为 Gemini contents 格式
         if let Some(obj) = request.messages.as_object() {
             if let Some(msgs) = obj.get("messages").and_then(|m| m.as_array()) {
                 for msg in msgs {
@@ -277,8 +359,10 @@ impl ProviderExecutor for GeminiExecutor {
                     let content_str = crate::translator::extract_text_content(msg.get("content"));
 
                     if role == "system" {
+                        // system 消息 → systemInstruction
                         system_instruction = Some(json!({"parts": [{"text": content_str}]}));
                     } else {
+                        // assistant → model，其他 → user
                         let gemini_role = if role == "assistant" { "model" } else { "user" };
                         contents.push(json!({
                             "role": gemini_role,
@@ -289,6 +373,7 @@ impl ProviderExecutor for GeminiExecutor {
             }
         }
 
+        // 构建生成配置
         let mut generation_config = json!({
             "temperature": request.temperature.unwrap_or(1.0),
             "maxOutputTokens": request.max_tokens.unwrap_or(8192),
@@ -318,10 +403,12 @@ impl ProviderExecutor for GeminiExecutor {
         }
 
         if request.stream {
+            // 流式：Gemini SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
                 sse::stream_sse_response(response, "gemini").await,
             ))
         } else {
+            // 非流式：解析 Gemini 响应并转回 OpenAI 格式
             let json_body = response
                 .json::<Value>()
                 .await

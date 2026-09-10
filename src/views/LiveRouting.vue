@@ -1,5 +1,6 @@
 <template>
   <div class="live-root">
+    <!-- 顶部标题栏与网关运行状态徽标 -->
     <div class="page-bar">
       <span class="page-head">实时路由</span>
       <StatusBadge :tone="running ? 'ok' : 'err'" :label="running ? '网关运行中' : '网关未运行'" />
@@ -7,9 +8,10 @@
 
     <el-scrollbar class="live-scroll">
       <div class="page-col live-col">
-        <!-- 拓扑简图 -->
+        <!-- 拓扑简图：对外协议 → Vortex → 上游提供商 -->
         <div class="card topo-card">
           <div class="topo">
+            <!-- 左列：对外协议 -->
             <div class="topo-col">
               <div class="topo-title">对外协议</div>
               <div class="rf-proto" v-for="p in protocols" :key="p.name">
@@ -17,11 +19,13 @@
                 <span class="rf-proto-name">{{ p.name }}</span>
               </div>
             </div>
+            <!-- 中列：Vortex 网关中心节点 -->
             <div class="topo-mid">
               <div class="rf-flow-line" />
               <div class="rf-hub">Vortex</div>
               <div class="rf-flow-line" />
             </div>
+            <!-- 右列：上游提供商列表 -->
             <div class="topo-col">
               <div class="topo-title">上游提供商</div>
               <template v-if="upstreams.length > 0">
@@ -36,7 +40,7 @@
           </div>
         </div>
 
-        <!-- 接入信息 -->
+        <!-- 接入信息：展示各协议的 base_url -->
         <div class="card section">
           <div class="card-head">
             <div>
@@ -52,7 +56,7 @@
           </div>
         </div>
 
-        <!-- API 端点 -->
+        <!-- API 端点：列出网关对外暴露的所有接口 -->
         <div class="card section">
           <div class="card-head">
             <div>
@@ -74,25 +78,35 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 实时路由页面。
+ * 职责：展示网关当前的运行状态、对外协议与上游提供商的拓扑简图、
+ * 客户端接入地址以及网关对外暴露的 API 端点清单。
+ */
 import { onMounted, ref } from 'vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import { listProviders } from '@/api/providers'
 
+// 网关本地基础地址
 const baseHost = 'http://localhost:20128'
+// 网关是否正在运行
 const running = ref(false)
 
+// 对外协议定义
 const protocols = [
   { name: 'OpenAI 协议', tag: 'OAI', cls: 'oai' },
   { name: 'Anthropic 协议', tag: 'ANT', cls: 'ant' },
 ]
 
+// 客户端接入端点
 const endpoints = [
   { label: 'OpenAI', url: `${baseHost}/v1` },
   { label: 'Anthropic', url: `${baseHost}/anthropic/v1` },
 ]
 
+/** 上游提供商连接的简化结构 */
 interface Upstream {
   id: string
   provider: string
@@ -100,8 +114,10 @@ interface Upstream {
   model?: string
 }
 
+// 当前活跃的上游连接列表
 const upstreams = ref<Upstream[]>([])
 
+// 网关对外暴露的 API 端点清单
 const apis = [
   { method: 'POST', path: '/v1/chat/completions', desc: 'OpenAI 聊天补全（流式）', group: 'oai' },
   { method: 'GET', path: '/v1/models', desc: 'OpenAI 模型列表', group: 'oai' },
@@ -111,7 +127,11 @@ const apis = [
   { method: 'GET', path: '/api/health', desc: '健康检查', group: 'mgmt' },
 ]
 
+/**
+ * 组件挂载时加载上游提供商连接并探测网关健康状态。
+ */
 onMounted(async () => {
+  // 拉取活跃的上游连接
   try {
     const data = await listProviders()
     upstreams.value = (data.connections ?? [])
@@ -125,6 +145,7 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  // 探测网关健康状态
   try {
     const res = await fetch(`${baseHost}/api/health`)
     const d = await res.json()

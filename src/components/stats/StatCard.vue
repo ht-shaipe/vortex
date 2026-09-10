@@ -9,8 +9,13 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * StatCard.vue — 统计卡片
+ * 职责：展示单个统计指标的标签与数值，支持辅助提示插槽（水平或垂直布局）。
+ */
 import { computed } from 'vue'
 
+// Props 定义：label 为标签，value 为数值或文本，hintBelow 控制辅助提示布局方向
 const props = withDefaults(
   defineProps<{
     label: string
@@ -21,6 +26,7 @@ const props = withDefaults(
   { hintBelow: false },
 )
 
+// 显示值：数值类型时添加千分位分隔符
 const display = computed(() =>
   typeof props.value === 'number' ? props.value.toLocaleString() : props.value,
 )

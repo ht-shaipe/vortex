@@ -1,6 +1,6 @@
 <template>
   <div class="chat-root">
-    <!-- 会话侧栏 -->
+    <!-- 会话侧栏：会话列表与新建/重命名/删除入口 -->
     <div class="chat-side" :class="{ collapsed: layout.topicListCollapsed }">
       <TopicList
         :topics="topics"
@@ -12,8 +12,9 @@
       />
     </div>
 
-    <!-- 主列 -->
+    <!-- 主列：头部、消息列表与输入框 -->
     <div ref="columnEl" class="chat-col">
+      <!-- 头部：侧边栏切换、标题与模型选择器 -->
       <header class="chat-head">
         <div class="head-left">
           <el-tooltip :content="`${sidebarToggleLabel} (Ctrl+[)`" placement="bottom">
@@ -31,9 +32,11 @@
         </div>
 
         <div class="head-right">
+          <!-- 无可用模型时引导去配置 -->
           <template v-if="modelGroups.length === 0">
             <button type="button" class="btn sm" @click="goConfigure">去配置端点</button>
           </template>
+          <!-- 模型选择器 -->
           <ModelSelector
             v-else
             :value="selectedKey"
@@ -45,11 +48,14 @@
         </div>
       </header>
 
+      <!-- 消息滚动区 -->
       <el-scrollbar class="chat-scroll">
+        <!-- 空态提示 -->
         <div v-if="messages.length === 0" class="chat-empty">
           <p class="empty-main">选择模型后开始对话</p>
           <p class="empty-sub">非核心功能，对话无工具支持，可用于测试连通性</p>
         </div>
+        <!-- 消息气泡列表 -->
         <div v-else class="chat-list">
           <MessageBubble
             v-for="m in messages"
@@ -63,6 +69,7 @@
         </div>
       </el-scrollbar>
 
+      <!-- 输入框 -->
       <ComposerBar
         v-model:value="draft"
         :busy="busy"
@@ -73,7 +80,7 @@
       />
     </div>
 
-    <!-- 删除会话 -->
+    <!-- 删除会话确认弹窗 -->
     <el-dialog
       v-model="deleteOpen"
       title="删除会话"
@@ -94,6 +101,11 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 聊天页面。
+ * 职责：提供与 AI 模型的对话界面，包括会话侧栏、消息列表、输入框与模型选择器；
+ * 支持新建/重命名/删除会话、流式接收回复、重新生成、切换历史分支与中止生成。
+ */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -114,21 +126,32 @@ import {
 } from '@/api/chat'
 
 const router = useRouter()
+// 聊天布局状态（侧边栏折叠等）
 const layout = useChatLayoutStore()
 
+// 会话列表
 const topics = ref<ChatTopic[]>([])
+// 当前会话的消息列表
 const messages = ref<BranchMessage[]>([])
+// 当前选中的会话 ID
 const activeId = ref<string | null>(null)
+// 输入框草稿
 const draft = ref('')
+// 可用模型分组
 const modelGroups = ref<ModelOptionGroup[]>([])
+// 当前选中的模型 key（endpointId/model）
 const selectedKey = ref('')
 
 /** 正在生成的会话 id 集合（后端按 topic 并行，前端须隔离）。 */
 const streamingIds = ref<Set<string>>(new Set())
+// 当前会话是否正在生成
 const busy = computed(() => !!activeId.value && streamingIds.value.has(activeId.value))
 
+// 待删除的会话
 const deletingTopic = ref<ChatTopic | null>(null)
+// 是否正在删除
 const deleting = ref(false)
+// 删除弹窗可见性（与 deletingTopic 联动）
 const deleteOpen = computed({
   get: () => deletingTopic.value !== null,
   set: (v: boolean) => {
@@ -136,19 +159,29 @@ const deleteOpen = computed({
   },
 })
 
+// 主列容器元素（供 ComposerBar 计算高度）
 const columnEl = ref<HTMLElement | null>(null)
 
+// 消息列表底部锚点（用于滚动到底）
 const bottomEl = ref<HTMLElement | null>(null)
 
+// 当前选中的会话对象
 const activeTopic = computed(() => topics.value.find((t) => t.id === activeId.value) ?? null)
+// 侧边栏切换按钮的 aria 标签
 const sidebarToggleLabel = computed(() => (layout.topicListCollapsed ? '显示侧边栏' : '隐藏侧边栏'))
 
 /* ============ 载入 ============ */
 
+/**
+ * 加载会话列表。
+ */
 async function loadTopics(): Promise<void> {
   topics.value = await chatApi.listTopics()
 }
 
+/**
+ * 加载当前会话的消息列表。
+ */
 async function loadMessages(): Promise<void> {
   if (!activeId.value) {
     messages.value = []
@@ -157,6 +190,9 @@ async function loadMessages(): Promise<void> {
   messages.value = await chatApi.listMessages(activeId.value)
 }
 
+/**
+ * 加载可用模型分组，并在未选中时默认选第一个。
+ */
 async function loadModels(): Promise<void> {
   modelGroups.value = await listModelGroups()
   if (!selectedKey.value) {
@@ -171,14 +207,17 @@ watch(
   async (n) => {
     if (n === 0) activeId.value = null
     else if (!activeId.value || !topics.value.some((t) => t.id === activeId.value)) {
+      // 当前会话不存在时回退到第一个
       activeId.value = topics.value[0]?.id ?? null
       await loadMessages()
     }
   },
 )
 
+// 切换会话时重新加载消息
 watch(activeId, () => void loadMessages())
 
+// 会话的端点或模型变化时同步 selectedKey
 watch(
   () => [activeTopic.value?.id, activeTopic.value?.endpointId, activeTopic.value?.model] as const,
   ([id, ep, model]) => {
@@ -187,8 +226,12 @@ watch(
   },
 )
 
+// 消息变化时滚动到底部
 watch(messages, () => void scrollToBottom())
 
+/**
+ * 滚动消息列表到底部。
+ */
 async function scrollToBottom(): Promise<void> {
   await nextTick()
   const el = bottomEl.value
@@ -199,6 +242,11 @@ async function scrollToBottom(): Promise<void> {
 
 /* ============ 流式事件 ============ */
 
+/**
+ * 标记某会话是否正在流式生成。
+ * @param topicId 会话 ID
+ * @param on 是否正在生成
+ */
 function markStreaming(topicId: string, on: boolean): void {
   const next = new Set(streamingIds.value)
   if (on) next.add(topicId)
@@ -206,20 +254,34 @@ function markStreaming(topicId: string, on: boolean): void {
   streamingIds.value = next
 }
 
+/**
+ * 局部更新某条消息的字段。
+ * @param topicId 会话 ID
+ * @param messageId 消息 ID
+ * @param patch 待合并的字段
+ */
 function patchMessage(topicId: string, messageId: string, patch: Partial<BranchMessage>): void {
   if (activeId.value !== topicId) return
   messages.value = messages.value.map((m) => (m.id === messageId ? { ...m, ...patch } : m))
 }
 
+// 事件监听器卸载函数集合
 let unlistens: Array<() => void> = []
 
+/**
+ * 全局键盘事件处理：Ctrl+[ 切换侧边栏。
+ * @param e 键盘事件
+ */
 function onKeyDown(e: KeyboardEvent): void {
-  if (e.isComposing) return
+  if (e.isComposing) return // 忽略输入法组合
   if (!(e.ctrlKey || e.metaKey) || e.key !== '[') return
   e.preventDefault()
   layout.toggleTopicList()
 }
 
+/**
+ * 组件挂载时加载模型与会话，并注册流式事件监听。
+ */
 onMounted(async () => {
   await loadModels()
   await loadTopics()
@@ -229,18 +291,22 @@ onMounted(async () => {
     await loadMessages()
   }
 
+  // 注册流式事件监听
   unlistens.push(
+    // 接收到增量 chunk：追加到对应消息内容
     chatApi.onChunk((p) => {
       if (activeId.value !== p.topicId) return
       messages.value = messages.value.map((m) =>
         m.id === p.messageId ? { ...m, content: m.content + p.delta, status: 'streaming' } : m,
       )
     }),
+    // 生成完成：更新最终内容与状态
     chatApi.onDone((p) => {
       patchMessage(p.topicId, p.messageId, { content: p.content, status: 'success' })
       markStreaming(p.topicId, false)
       void loadTopics()
     }),
+    // 生成出错：标记错误状态（已取消视为成功）
     chatApi.onError((p) => {
       if (p.error.includes('已取消')) {
         patchMessage(p.topicId, p.messageId, { status: 'success' })
@@ -256,6 +322,9 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeyDown)
 })
 
+/**
+ * 组件卸载时移除事件监听。
+ */
 onBeforeUnmount(() => {
   unlistens.forEach((u) => u())
   unlistens = []
@@ -264,6 +333,10 @@ onBeforeUnmount(() => {
 
 /* ============ 交互 ============ */
 
+/**
+ * 选择会话。
+ * @param id 会话 ID
+ */
 function onSelectTopic(id: string): void {
   if (id === activeId.value) return
   activeId.value = id
@@ -277,6 +350,7 @@ async function ensureTopic(): Promise<string | null> {
     ElMessage.error('请先选择模型')
     return null
   }
+  // 校验当前模型是否仍然可用
   const stillAvailable = modelGroups.value.some(
     (g) => g.id === parsed.endpointId && g.models.includes(parsed.model),
   )
@@ -284,6 +358,7 @@ async function ensureTopic(): Promise<string | null> {
     ElMessage.error('当前模型已不可用，请重新选择')
     return null
   }
+  // 已有会话：若模型变更则同步更新
   if (activeId.value) {
     const t = topics.value.find((x) => x.id === activeId.value)
     if (t && (t.endpointId !== parsed.endpointId || t.model !== parsed.model)) {
@@ -295,6 +370,7 @@ async function ensureTopic(): Promise<string | null> {
     }
     return activeId.value
   }
+  // 无会话：创建新会话
   const created = await chatApi.createTopic({
     endpointId: parsed.endpointId,
     model: parsed.model,
@@ -304,6 +380,9 @@ async function ensureTopic(): Promise<string | null> {
   return created.id
 }
 
+/**
+ * 新建会话。
+ */
 async function handleNew(): Promise<void> {
   const parsed = parseModelKey(selectedKey.value)
   if (!parsed) {
@@ -323,6 +402,11 @@ async function handleNew(): Promise<void> {
   }
 }
 
+/**
+ * 重命名会话。
+ * @param topic 会话对象
+ * @param title 新标题
+ */
 async function handleRename(topic: ChatTopic, title: string): Promise<void> {
   try {
     await chatApi.updateTopic(topic.id, { title })
@@ -332,9 +416,13 @@ async function handleRename(topic: ChatTopic, title: string): Promise<void> {
   }
 }
 
+/**
+ * 确认删除会话。
+ */
 async function handleConfirmDelete(): Promise<void> {
   const target = deletingTopic.value
   if (!target) return
+  // 预先选定删除后的激活会话
   const nextActiveId = topics.value.find((t) => t.id !== target.id)?.id ?? null
   deleting.value = true
   try {
@@ -353,6 +441,9 @@ async function handleConfirmDelete(): Promise<void> {
   }
 }
 
+/**
+ * 发送消息。
+ */
 async function handleSend(): Promise<void> {
   const text = draft.value.trim()
   if (!text || busy.value) return
@@ -404,6 +495,10 @@ async function handleSend(): Promise<void> {
   }
 }
 
+/**
+ * 重新生成指定消息。
+ * @param m 待重新生成的消息
+ */
 async function handleRegenerate(m: BranchMessage): Promise<void> {
   if (!activeId.value || busy.value) return
   const topicId = activeId.value
@@ -417,6 +512,11 @@ async function handleRegenerate(m: BranchMessage): Promise<void> {
   }
 }
 
+/**
+ * 切换到同级历史分支。
+ * @param m 当前消息
+ * @param dir 切换方向：-1 上一个 / 1 下一个
+ */
 async function handleSwitchSibling(m: BranchMessage, dir: -1 | 1): Promise<void> {
   if (!activeId.value || busy.value) return
   const topicId = activeId.value
@@ -431,6 +531,9 @@ async function handleSwitchSibling(m: BranchMessage, dir: -1 | 1): Promise<void>
   }
 }
 
+/**
+ * 中止当前会话的生成。
+ */
 async function handleAbort(): Promise<void> {
   if (!activeId.value || !streamingIds.value.has(activeId.value)) return
   try {
@@ -440,6 +543,10 @@ async function handleAbort(): Promise<void> {
   }
 }
 
+/**
+ * 切换模型并同步到当前会话。
+ * @param key 模型 key
+ */
 async function onModelChange(key: string): Promise<void> {
   const prev = selectedKey.value
   selectedKey.value = key
@@ -452,11 +559,15 @@ async function onModelChange(key: string): Promise<void> {
     })
     await loadTopics()
   } catch (e) {
+    // 更新失败时回滚选择
     selectedKey.value = prev
     ElMessage.error(e instanceof Error ? e.message : '更新模型失败')
   }
 }
 
+/**
+ * 跳转到订阅管理页配置端点。
+ */
 function goConfigure(): void {
   void router.push('/subscriptions')
 }
@@ -473,7 +584,7 @@ function goConfigure(): void {
 
 .chat-side {
   flex-shrink: 0;
-  width: 224px;
+  width: 208px;
   overflow: hidden;
   transition: width 0.2s ease-in-out;
 }
@@ -493,16 +604,16 @@ function goConfigure(): void {
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  padding: 10px 20px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
-.head-left { display: flex; align-items: center; gap: 6px; }
-.chat-title { margin: 0; font-size: 18px; font-weight: 400; letter-spacing: -0.01em; }
-.head-right { display: flex; align-items: center; gap: 8px; }
+.head-left { display: flex; align-items: center; gap: 8px; }
+.chat-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.head-right { display: flex; align-items: center; gap: 6px; }
 
 .chat-scroll { flex: 1; min-height: 0; }
-.chat-scroll :deep(.el-scrollbar__view) { padding: 16px 20px; }
+.chat-scroll :deep(.el-scrollbar__view) { padding: 20px 20px 12px; }
 
 .chat-empty {
   display: flex;

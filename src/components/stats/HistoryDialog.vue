@@ -61,6 +61,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * HistoryDialog.vue — 历史对话框
+ * 职责：以弹窗展示按天统计的历史记录，支持分页、删除单行与删除整天数据。
+ */
 import { ref, watch } from 'vue'
 import { Clock, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -68,27 +72,31 @@ import Pagination from './Pagination.vue'
 import { fmtInt } from '@/lib/format'
 import { statsApi, type DailyStat } from '@/api/stats'
 
-const PAGE_SIZE = 12
+const PAGE_SIZE = 12 // 每页行数
 
-const open = ref(false)
-const page = ref(1)
-const loading = ref(false)
-const pending = ref(false)
-const rows = ref<DailyStat[]>([])
-const total = ref(0)
+const open = ref(false) // 弹窗是否打开
+const page = ref(1) // 当前页码
+const loading = ref(false) // 是否正在加载
+const pending = ref(false) // 是否正在执行删除操作
+const rows = ref<DailyStat[]>([]) // 历史统计行列表
+const total = ref(0) // 总记录数
 
+// Emits 定义：changed 通知外部数据已变更（删除后需刷新）
 const emit = defineEmits<{ changed: [] }>()
 
+/** 提取错误信息文案。 */
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/** 打开弹窗并加载第一页数据。 */
 function openDialog(): void {
   page.value = 1
   open.value = true
   void load()
 }
 
+/** 加载历史统计数据。 */
 async function load(): Promise<void> {
   loading.value = true
   try {
@@ -102,10 +110,12 @@ async function load(): Promise<void> {
   }
 }
 
+// 翻页时重新加载（仅弹窗打开时）
 watch(page, () => {
   if (open.value) void load()
 })
 
+/** 删除单行记录（指定端点 + 日期）。 */
 async function delRow(r: DailyStat): Promise<void> {
   pending.value = true
   try {
@@ -120,6 +130,7 @@ async function delRow(r: DailyStat): Promise<void> {
   }
 }
 
+/** 删除整天的所有记录。 */
 async function delDay(date: string): Promise<void> {
   pending.value = true
   try {

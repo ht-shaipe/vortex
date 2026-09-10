@@ -1,7 +1,13 @@
+//! 免费 Token 站点管理模块。
+//!
+//! 负责对 `free_token_sites` 表的增删改查。支持用户提交站点推荐，
+//! 用户提交的站点排序权重固定为 9000（排在内置条目之后），且仅允许删除用户自己提交的条目。
+
 use rusqlite::{params, Row};
 use crate::db::models::{CreateFreeTokenSiteRequest, FreeTokenSite};
 use crate::error::{AppError, Result};
 
+/// 查询列名常量，供各查询复用
 const SELECT_COLS: &str = "id, name, home_url, apply_url, api_supported, api_base, api_format, \
      free_quota, region, requires_card, requires_verify, tags, note, provider_id, source, \
      submitter, sort_order, created_at, updated_at";
@@ -9,6 +15,15 @@ const SELECT_COLS: &str = "id, name, home_url, apply_url, api_supported, api_bas
 /// 用户提交的推荐排在内置条目之后
 const USER_SORT_ORDER: i32 = 9000;
 
+/// 查询所有免费 Token 站点列表。
+///
+/// 按排序权重升序、名称升序排列。
+///
+/// # 参数
+/// - `conn`：数据库连接
+///
+/// # 返回
+/// 所有站点的列表
 pub fn list(conn: &rusqlite::Connection) -> Result<Vec<FreeTokenSite>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {} FROM free_token_sites ORDER BY sort_order ASC, name ASC",
@@ -22,6 +37,14 @@ pub fn list(conn: &rusqlite::Connection) -> Result<Vec<FreeTokenSite>> {
     Ok(result)
 }
 
+/// 按 ID 查询单个免费 Token 站点。
+///
+/// # 参数
+/// - `conn`：数据库连接
+/// - `id`：站点唯一标识
+///
+/// # 返回
+/// 找到返回 `Some(站点)`，未找到返回 `None`
 pub fn get_by_id(conn: &rusqlite::Connection, id: &str) -> Result<Option<FreeTokenSite>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {} FROM free_token_sites WHERE id = ?1",
@@ -34,11 +57,24 @@ pub fn get_by_id(conn: &rusqlite::Connection, id: &str) -> Result<Option<FreeTok
     }
 }
 
+/// 创建新的免费 Token 站点（用户提交）。
+///
+/// 生成 UUID 作为主键，对可选字段填充默认值（如 `region` 默认 `global`、
+/// `api_supported` 默认 `true`），`source` 固定为 `"user"`，
+/// 排序权重固定为 `USER_SORT_ORDER`（9000）。
+///
+/// # 参数
+/// - `conn`：数据库连接
+/// - `req`：创建请求参数
+///
+/// # 返回
+/// 创建成功的站点实体
 pub fn create(conn: &rusqlite::Connection, req: &CreateFreeTokenSiteRequest) -> Result<FreeTokenSite> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let tags = serde_json::to_string(&req.tags.clone().unwrap_or(serde_json::json!([])))?;
 
+    // 组装站点实体，填充默认值
     let site = FreeTokenSite {
         id: id.clone(),
         name: req.name.trim().to_string(),
@@ -61,6 +97,7 @@ pub fn create(conn: &rusqlite::Connection, req: &CreateFreeTokenSiteRequest) -> 
         updated_at: now,
     };
 
+    // 插入数据库
     conn.execute(
         "INSERT INTO free_token_sites (id, name, home_url, apply_url, api_supported, api_base, \
          api_format, free_quota, region, requires_card, requires_verify, tags, note, provider_id, \
@@ -93,10 +130,18 @@ pub fn create(conn: &rusqlite::Connection, req: &CreateFreeTokenSiteRequest) -> 
 }
 
 /// 仅允许删除用户自己提交的推荐，内置条目不可删
+///
+/// # 参数
+/// - `conn`：数据库连接
+/// - `id`：站点唯一标识
+///
+/// # 返回
+/// 删除成功返回 `true`；站点不存在返回 `false`；尝试删除内置站点返回 `AppError::BadRequest`
 pub fn delete_user_site(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
     let site = get_by_id(conn, id)?;
     match site {
         Some(s) if s.source == "user" => {
+            // 用户提交的站点：允许删除
             let rows = conn.execute("DELETE FROM free_token_sites WHERE id = ?1", params![id])?;
             Ok(rows > 0)
         }
@@ -105,7 +150,17 @@ pub fn delete_user_site(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
     }
 }
 
+/// 将数据库行映射为 `FreeTokenSite` 实体。
+///
+/// 解析 tags JSON 字段，将布尔列从整数还原。
+///
+/// # 参数
+/// - `row`：数据库行引用
+///
+/// # 返回
+/// 映射后的站点实体（rusqlite 错误类型）
 fn row_to_site(row: &Row) -> rusqlite::Result<FreeTokenSite> {
+    // 读取 tags JSON 字符串
     let tags_str: String = row.get(11)?;
 
     Ok(FreeTokenSite {
@@ -120,6 +175,7 @@ fn row_to_site(row: &Row) -> rusqlite::Result<FreeTokenSite> {
         region: row.get(8)?,
         requires_card: row.get::<_, i32>(9)? != 0,
         requires_verify: row.get::<_, i32>(10)? != 0,
+        // 解析 tags JSON，失败时回退为空数组
         tags: serde_json::from_str(&tags_str).unwrap_or(serde_json::json!([])),
         note: row.get(12)?,
         provider_id: row.get(13)?,

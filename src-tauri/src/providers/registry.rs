@@ -1,11 +1,27 @@
+//! 提供商注册表
+//!
+//! 内置 21 个 AI 提供商的定义，并提供按 ID 查询、列表、
+//! 以及根据模型字符串解析所属提供商的能力。
+
 use crate::providers::types::ProviderDef;
 use std::collections::HashMap;
 
+/// 提供商注册表
+///
+/// 维护所有内置 AI 提供商的定义，支持按 ID 查询、按名称排序列表，
+/// 以及根据模型字符串（如 "openai/gpt-4" 或 "oa-gpt-4"）解析出对应的提供商与模型名。
 pub struct ProviderRegistry {
+    /// 提供商 ID → 定义 的映射表
     providers: HashMap<String, ProviderDef>,
 }
 
 impl ProviderRegistry {
+    /// 创建注册表并注册全部内置提供商定义
+    ///
+    /// 内置提供商包括：OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、
+    /// Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、
+    /// Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、
+    /// Qwen、MiniMax 以及自定义 OpenAI 兼容端点。
     pub fn new() -> Self {
         let mut providers = HashMap::new();
 
@@ -189,6 +205,7 @@ impl ProviderRegistry {
             },
         ];
 
+        // 将所有提供商定义插入映射表
         for def in defs {
             providers.insert(def.id.clone(), def);
         }
@@ -196,26 +213,49 @@ impl ProviderRegistry {
         Self { providers }
     }
 
+    /// 按 ID 查询提供商定义
+    ///
+    /// # 参数
+    /// - `id`：提供商标识符
+    ///
+    /// # 返回
+    /// 找到时返回定义的引用，否则返回 `None`
     pub fn get(&self, id: &str) -> Option<&ProviderDef> {
         self.providers.get(id)
     }
 
+    /// 返回所有提供商定义列表，按名称排序
     pub fn list(&self) -> Vec<&ProviderDef> {
         let mut list: Vec<_> = self.providers.values().collect();
+        // 按显示名称排序，保证前端列表顺序稳定
         list.sort_by(|a, b| a.name.cmp(&b.name));
         list
     }
 
+    /// 根据模型字符串解析出对应的提供商与模型名
+    ///
+    /// 支持两种格式：
+    /// 1. `provider/model`（如 "openai/gpt-4"）—— 精确按 ID 匹配
+    /// 2. `alias-model` 或 `id-model`（如 "oa-gpt-4"）—— 按别名或 ID 前缀匹配
+    ///
+    /// # 参数
+    /// - `model_str`：模型字符串
+    ///
+    /// # 返回
+    /// 解析成功时返回 `(提供商 ID, 提供商定义引用, 模型名)`，否则返回 `None`
     pub fn resolve_model_provider(&self, model_str: &str) -> Option<(String, &ProviderDef, String)> {
+        // 优先尝试 "provider/model" 格式
         if let Some((provider_id, model)) = model_str.split_once('/') {
             if let Some(def) = self.providers.get(provider_id) {
                 return Some((provider_id.to_string(), def, model.to_string()));
             }
         }
 
+        // 回退到别名/ID 前缀匹配
         let model_lower = model_str.to_lowercase();
         for (id, def) in &self.providers {
             if model_lower.starts_with(&format!("{}-", def.alias)) || model_lower.starts_with(&format!("{}-", id)) {
+                // 提取前缀后的模型名部分
                 let model = model_str.splitn(2, '-').nth(1).unwrap_or(model_str).to_string();
                 return Some((id.clone(), def, model));
             }

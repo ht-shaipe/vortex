@@ -47,31 +47,37 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * UsageHeatmap.vue — 用量热力图
+ * 职责：以 GitHub 风格的热力图展示近一年每日调用量，支持悬停 tooltip 显示明细。
+ */
 import { computed, ref } from 'vue'
 import { startOfTodayMs } from '@/lib/range'
 import { fmtInt } from '@/lib/format'
 import { buildHeatmapCells, heatLevel, type DayTotals, type HeatmapCell } from '@/lib/usageChart'
 import { useThemeColors } from '@/composables/useThemeColors'
 
-const GAP = '3px'
+const GAP = '3px' // 格子间距
 /** 星期标签列宽（第一列），其余列 1fr 均分容器宽度、格子 aspect-square 保持正方形。 */
 const LABEL_COL = '1.25rem'
-const WEEKDAY_LABELS: Record<number, string> = { 0: '一', 2: '三', 4: '五', 6: '日' }
+const WEEKDAY_LABELS: Record<number, string> = { 0: '一', 2: '三', 4: '五', 6: '日' } // 星期标签（仅显示部分）
 
+// Props 定义：totals 为按日期映射的每日总量数据
 const props = defineProps<{ totals: Map<string, DayTotals> }>()
 
-const colors = useThemeColors()
-const todayStart = startOfTodayMs()
-const cells = computed(() => buildHeatmapCells(todayStart))
+const colors = useThemeColors() // 主题色
+const todayStart = startOfTodayMs() // 今日零点时间戳
+const cells = computed(() => buildHeatmapCells(todayStart)) // 热力图格子列表
 
+// 所有格子中的最大请求数（用于色阶映射）
 const max = computed(() => {
   let m = 0
   for (const c of cells.value) m = Math.max(m, props.totals.get(c.date)?.requests ?? 0)
   return m
 })
 
-const weekCount = computed(() => Math.ceil(cells.value.length / 7))
-const gridColumns = computed(() => `${LABEL_COL} repeat(${weekCount.value}, minmax(0, 1fr))`)
+const weekCount = computed(() => Math.ceil(cells.value.length / 7)) // 总周数
+const gridColumns = computed(() => `${LABEL_COL} repeat(${weekCount.value}, minmax(0, 1fr))`) // grid 列模板
 
 /** 每列（周）首格所在月份变化时打月份刻度。 */
 const monthLabels = computed(() => {
@@ -96,16 +102,18 @@ function cellColor(date: string): string {
   return colors.value.seq[level - 1]
 }
 
+/** Tooltip 状态结构。 */
 interface TooltipState {
   cell: HeatmapCell
   x: number
   y: number
 }
-const tooltip = ref<TooltipState | null>(null)
+const tooltip = ref<TooltipState | null>(null) // 当前悬停的 tooltip 状态
 const activeTotals = computed(() =>
   tooltip.value ? props.totals.get(tooltip.value.cell.date) : undefined,
-)
+) // 当前悬停格子的每日总量
 
+/** 显示 tooltip：记录格子信息与定位坐标。 */
 function showTip(cell: HeatmapCell, ev: MouseEvent): void {
   const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect()
   tooltip.value = { cell, x: rect.left + rect.width / 2, y: rect.top }

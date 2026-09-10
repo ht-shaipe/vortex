@@ -27,16 +27,21 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * LocalBackup.vue — 本地备份
+ * 职责：提供配置导出（JSON 文件）与导入功能，支持同名跳过/覆盖策略选择。
+ */
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, Upload } from '@element-plus/icons-vue'
 import { backupApi, errMsg, type ImportStrategy } from '@/api/sync'
 
-const strategy = ref<ImportStrategy>('skip')
-const exporting = ref(false)
-const importing = ref(false)
-const busy = computed(() => exporting.value || importing.value)
+const strategy = ref<ImportStrategy>('skip') // 导入时同名处理策略
+const exporting = ref(false) // 是否正在导出
+const importing = ref(false) // 是否正在导入
+const busy = computed(() => exporting.value || importing.value) // 是否忙碌
 
+/** 导出配置到本地 JSON 文件。 */
 async function onExport(): Promise<void> {
   exporting.value = true
   try {
@@ -49,6 +54,7 @@ async function onExport(): Promise<void> {
   }
 }
 
+/** 导入配置：选择文件并按策略导入。 */
 async function onImport(): Promise<void> {
   importing.value = true
   try {

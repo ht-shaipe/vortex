@@ -6,8 +6,10 @@
  * 这样把结果放进 computed 依赖不会逐帧漂移、导致无限重取。
  */
 
+/** 预设时间段键：今日 / 近7天 / 近30天 / 全部。 */
 export type RangeKey = 'today' | '7d' | '30d' | 'all'
 
+/** 预设时间段选项列表（供下拉选择）。 */
 export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: 'today', label: '今日' },
   { key: '7d', label: '近 7 天' },
@@ -15,9 +17,14 @@ export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: 'all', label: '全部' },
 ]
 
+/** 一天的毫秒数。 */
 const DAY_MS = 86_400_000
 
-/** 当天 0 点的毫秒时间戳（本地时区）。按天对齐，作为稳定锚点。 */
+/**
+ * 当天 0 点的毫秒时间戳（本地时区）。按天对齐，作为稳定锚点。
+ * @param now - 当前时间戳，默认 Date.now()
+ * @returns 当天 0 点的毫秒时间戳
+ */
 export function startOfTodayMs(now: number = Date.now()): number {
   const d = new Date(now)
   d.setHours(0, 0, 0, 0)
@@ -27,6 +34,9 @@ export function startOfTodayMs(now: number = Date.now()): number {
 /**
  * 毫秒区间（用于请求明细的 ts 过滤，Unix 毫秒）。
  * 上界取「次日 0 点」以覆盖一整天且保持稳定。
+ * @param key - 预设时间段键
+ * @param todayStartMs - 当天 0 点毫秒时间戳
+ * @returns 包含 startMs/endMs 的区间对象，'all' 时为空对象
  */
 export function rangeMs(key: RangeKey, todayStartMs: number): { startMs?: number; endMs?: number } {
   const tomorrow = todayStartMs + DAY_MS
@@ -42,7 +52,11 @@ export function rangeMs(key: RangeKey, todayStartMs: number): { startMs?: number
   }
 }
 
-/** 本地日期 `YYYY-MM-DD`。 */
+/**
+ * 本地日期 `YYYY-MM-DD`。
+ * @param ms - 毫秒时间戳
+ * @returns YYYY-MM-DD 格式日期字符串
+ */
 export function ymd(ms: number): string {
   const d = new Date(ms)
   const y = d.getFullYear()
@@ -54,6 +68,9 @@ export function ymd(ms: number): string {
 /**
  * 本地日期区间 `YYYY-MM-DD`（用于用量统计 `start/end`，后端按本地 date 聚合）。
  * 闭区间：今日为 `[today, today]`，近 N 天为 `[today-(N-1), today]`。
+ * @param key - 预设时间段键
+ * @param todayStartMs - 当天 0 点毫秒时间戳
+ * @returns 包含 start/end 的日期字符串区间，'all' 时为空对象
  */
 export function rangeDates(key: RangeKey, todayStartMs: number): { start?: string; end?: string } {
   const today = ymd(todayStartMs)
@@ -77,13 +94,23 @@ export type RangeValue =
   | { kind: 'preset'; key: RangeKey }
   | { kind: 'custom'; startMs: number; endMs: number }
 
-/** 统一取毫秒区间（请求明细的 ts 过滤）。 */
+/**
+ * 统一取毫秒区间（请求明细的 ts 过滤）。
+ * @param v - 时间段选择值
+ * @param todayStartMs - 当天 0 点毫秒时间戳
+ * @returns 毫秒区间对象
+ */
 export function rangeValueMs(v: RangeValue, todayStartMs: number): { startMs?: number; endMs?: number } {
   if (v.kind === 'preset') return rangeMs(v.key, todayStartMs)
   return { startMs: v.startMs, endMs: v.endMs }
 }
 
-/** 用量查询参数：预设走 date 闭区间，自定义走 ts 毫秒闭区间。 */
+/**
+ * 用量查询参数：预设走 date 闭区间，自定义走 ts 毫秒闭区间。
+ * @param v - 时间段选择值
+ * @param todayStartMs - 当天 0 点毫秒时间戳
+ * @returns 用量查询过滤参数
+ */
 export function rangeValueUsageFilter(
   v: RangeValue,
   todayStartMs: number,
@@ -92,21 +119,34 @@ export function rangeValueUsageFilter(
   return { startTs: v.startMs, endTs: v.endMs }
 }
 
-/** 本地 `MM-DD HH:mm`（触发按钮上的自定义范围文案）。 */
+/**
+ * 本地 `MM-DD HH:mm`（触发按钮上的自定义范围文案）。
+ * @param ms - 毫秒时间戳
+ * @returns MM-DD HH:mm 格式字符串
+ */
 export function fmtShortDateTime(ms: number): string {
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/** 两个选择值是否等价（preset 比 key，custom 比毫秒区间）。 */
+/**
+ * 两个选择值是否等价（preset 比 key，custom 比毫秒区间）。
+ * @param a - 选择值 A
+ * @param b - 选择值 B
+ * @returns 是否等价
+ */
 export function rangeValueEquals(a: RangeValue, b: RangeValue): boolean {
   if (a.kind === 'preset' && b.kind === 'preset') return a.key === b.key
   if (a.kind === 'custom' && b.kind === 'custom') return a.startMs === b.startMs && a.endMs === b.endMs
   return false
 }
 
-/** 时间段选择值的展示文案。 */
+/**
+ * 时间段选择值的展示文案。
+ * @param v - 时间段选择值
+ * @returns 展示文案字符串
+ */
 export function rangeValueLabel(v: RangeValue): string {
   if (v.kind === 'preset') {
     return RANGE_OPTIONS.find((o) => o.key === v.key)?.label ?? v.key
@@ -119,17 +159,27 @@ export function rangeValueLabel(v: RangeValue): string {
  * `value` 以「当天 0 点」锚点换算，可表达任意区间（今日/昨日/本周/本月…）。
  */
 export interface RangePreset {
+  /** 快捷项标识 */
   key: string
+  /** 展示文案 */
   label: string
+  /** 根据当天 0 点锚点计算选择值 */
   value: (todayStartMs: number) => RangeValue
 }
 
 /** 趋势图用的半开毫秒窗 `[start, endExclusive)`。`all` 无界时为 null。 */
 export interface TrendWindow {
+  /** 窗口起始（毫秒，含） */
   startMs: number
+  /** 窗口结束（毫秒，不含） */
   endExclusiveMs: number
 }
 
+/**
+ * 判断给定时间戳是否为当天 0 点。
+ * @param ms - 毫秒时间戳
+ * @returns 是否为 0 点
+ */
 function isMidnight(ms: number): boolean {
   return startOfTodayMs(ms) === ms
 }
@@ -138,6 +188,9 @@ function isMidnight(ms: number): boolean {
  * 把 RangeValue 收成可分桶的半开区间。
  * 端点「昨日」等 custom 把 1 个日历日编成零宽 `{start=end=当天0点}`，这里展开成 `[0点, 次日0点)`。
  * 两端都是 0 点且跨多日（本周/本月）按闭日区间：`[start, end+1天)`。
+ * @param range - 时间段选择值
+ * @param todayStartMs - 当天 0 点毫秒时间戳
+ * @returns 半开区间窗口，'all' 时为 null
  */
 export function resolveTrendWindow(range: RangeValue, todayStartMs: number): TrendWindow | null {
   if (range.kind === 'preset') {
@@ -148,12 +201,18 @@ export function resolveTrendWindow(range: RangeValue, todayStartMs: number): Tre
   }
   const { startMs, endMs } = range
   if (isMidnight(startMs) && isMidnight(endMs)) {
+    // 两端都是 0 点：按整天展开
     return { startMs, endExclusiveMs: endMs + DAY_MS }
   }
+  // 非整天：结束点 +1ms 使半开区间覆盖闭区间
   return { startMs, endExclusiveMs: endMs + 1 }
 }
 
-/** 窗口跨度 ≤24h（含闭区间多出的 1ms）则按小时，否则按天。`all` 无窗按天。 */
+/**
+ * 窗口跨度 ≤24h（含闭区间多出的 1ms）则按小时，否则按天。`all` 无窗按天。
+ * @param w - 趋势窗口
+ * @returns 是否按小时粒度
+ */
 export function isHourlyTrend(w: TrendWindow | null): boolean {
   return w != null && w.endExclusiveMs - w.startMs <= DAY_MS + 1
 }

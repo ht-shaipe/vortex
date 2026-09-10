@@ -15,24 +15,29 @@ import { getSettings } from './settings'
 
 /* ============ 通用 ============ */
 
+/** 统一抛出"后端未实现"错误。 */
 function throwTodo(what: string): never {
   throw new Error(`后端未实现：${what}（vortex 暂无对应接口）`)
 }
 
+/** 把任意错误对象转为可读字符串。 */
 export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
 /* ============ WebDAV 配置 ============ */
 
+/** WebDAV 云同步配置 */
 export interface WebDavConfig {
-  url: string
-  username: string
-  password: string
-  configPath: string
-  statsPath: string
+  url: string // WebDAV 服务地址
+  username: string // 用户名
+  password: string // 密码
+  configPath: string // 配置文件存储路径
+  statsPath: string // 统计数据存储路径
 }
 
+// WebDAV 配置在 localStorage 中的存储键
 const WEBDAV_KEY = 'vortex-webdav-v1'
 
+// WebDAV 配置默认空值
 const EMPTY_WEBDAV: WebDavConfig = {
   url: '',
   username: '',
@@ -41,6 +46,7 @@ const EMPTY_WEBDAV: WebDavConfig = {
   statsPath: '/vortex/stats',
 }
 
+/** webdavApi：WebDAV 云同步接口（部分功能待后端实现） */
 export const webdavApi = {
   async getConfig(): Promise<WebDavConfig> {
     try {
@@ -75,30 +81,34 @@ export const webdavApi = {
   },
 }
 
+/** 云端备份文件信息 */
 export interface BackupFile {
-  filename: string
-  size: number
-  modTime: string
+  filename: string // 文件名
+  size: number // 文件大小（字节）
+  modTime: string // 最后修改时间
 }
 
 /* ============ 本地配置导出 / 导入 ============ */
 
+/** 导入策略：跳过已存在 / 覆盖已存在 */
 export type ImportStrategy = 'skip' | 'overwrite'
 
+/** 导入结果汇总 */
 export interface ImportSummary {
-  endpointsAdded: number
-  endpointsUpdated: number
-  endpointsSkipped: number
-  settingsKeys: number
+  endpointsAdded: number // 新增端点数
+  endpointsUpdated: number // 更新端点数
+  endpointsSkipped: number // 跳过端点数
+  settingsKeys: number // 导入的设置键数
 }
 
+/** vortex 配置备份文件结构 */
 export interface VortexBackup {
-  version: 1
-  app: 'vortex'
-  exportedAt: string
-  endpoints: ProviderConnection[]
-  keys: { id: string; name: string; isActive: boolean }[]
-  settings: { general: Record<string, unknown> } | null
+  version: 1 // 备份格式版本
+  app: 'vortex' // 应用标识
+  exportedAt: string // 导出时间
+  endpoints: ProviderConnection[] // 端点（连接）列表
+  keys: { id: string; name: string; isActive: boolean }[] // 密钥摘要列表
+  settings: { general: Record<string, unknown> } | null // 设置数据
 }
 
 /** 弹出文件选择框并解析为文本；用户取消返回 null。 */
@@ -134,6 +144,7 @@ function pickTextFile(accept = 'application/json'): Promise<string | null> {
   })
 }
 
+/** 触发浏览器下载 JSON 文件。 */
 function downloadJson(filename: string, data: unknown): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -146,6 +157,7 @@ function downloadJson(filename: string, data: unknown): void {
   URL.revokeObjectURL(url)
 }
 
+/** backupApi：本地配置导出 / 导入接口 */
 export const backupApi = {
   /** 导出端点（连接）+ 密钥名 + 设置到 JSON，浏览器下载。 */
   async exportConfig(): Promise<string> {
@@ -226,8 +238,10 @@ export const backupApi = {
 
 /* ============ cc-switch 配置迁移 ============ */
 
+/** 预览项状态：可导入 / 已跳过 */
 export type PreviewStatus = 'ok' | 'skipped'
 
+/** cc-switch 配置预览项 */
 export interface PreviewItem {
   /** cc-switch 里的供应商 id，用作勾选键。 */
   ccSwitchId: string
@@ -243,6 +257,7 @@ export interface PreviewItem {
   skipReason?: string
 }
 
+// 应用类型 → vortex 提供商类型映射
 const APP_TO_PROVIDER: Record<string, string> = {
   claude: 'anthropic',
   anthropic: 'anthropic',
@@ -252,6 +267,7 @@ const APP_TO_PROVIDER: Record<string, string> = {
   google: 'gemini',
 }
 
+/** 对 API 密钥做掩码处理（保留首尾各 4 位，中间用 •••• 代替）。 */
 function mask(key?: string): string {
   if (!key) return ''
   if (key.length <= 8) return '••••'
@@ -321,11 +337,13 @@ function normalizePreview(raw: unknown): PreviewItem[] {
   return out
 }
 
+/** cc-switch 导入结果汇总 */
 export interface CcSwitchImportSummary {
-  imported: number
-  skipped: number
+  imported: number // 成功导入数
+  skipped: number // 跳过数
 }
 
+/** ccSwitchApi：cc-switch 配置迁移接口 */
 export const ccSwitchApi = {
   /** 选择 cc-switch 导出的 JSON，返回可迁移项预览。 */
   async preview(): Promise<PreviewItem[]> {

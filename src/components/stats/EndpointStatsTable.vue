@@ -29,9 +29,14 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * EndpointStatsTable.vue — 端点统计表格
+ * 职责：以表格展示各端点的请求、错误、Token 用量等统计明细。
+ */
 import { fmtInt } from '@/lib/format'
 import type { EndpointStat } from '@/api/stats'
 
+// Props 定义：rows 为端点统计行列表
 defineProps<{ rows: EndpointStat[] }>()
 </script>
 

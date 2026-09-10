@@ -2,7 +2,7 @@
   <aside class="topics">
     <div class="topics-head">
       <span class="topics-title">会话</span>
-      <button type="button" class="btn bare icon" title="新建对话" aria-label="新建对话" @click="emit('new')">
+      <button type="button" class="btn bare icon topics-new" title="新建对话" aria-label="新建对话" @click="emit('new')">
         <el-icon :size="15"><Plus /></el-icon>
       </button>
     </div>
@@ -12,6 +12,7 @@
       <ul v-else class="topics-list">
         <li v-for="t in topics" :key="t.id">
           <div class="topic-row" :class="{ active: activeId === t.id }">
+            <span class="topic-indicator" />
             <input
               v-if="editingId === t.id"
               ref="editInput"
@@ -51,12 +52,18 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * TopicList.vue — 话题列表
+ * 职责：展示对话会话列表，支持新建、选择、重命名（内联编辑）与删除操作。
+ */
 import { nextTick, ref } from 'vue'
 import { Plus, EditPen, Delete } from '@element-plus/icons-vue'
 import type { ChatTopic } from '@/api/chat'
 
+// Props 定义：topics 为会话列表，activeId 为当前激活会话 ID
 defineProps<{ topics: ChatTopic[]; activeId: string | null }>()
 
+// Emits 定义：select 选中会话，new 新建会话，rename 重命名会话，delete 删除会话
 const emit = defineEmits<{
   select: [id: string]
   new: []
@@ -64,12 +71,13 @@ const emit = defineEmits<{
   delete: [topic: ChatTopic]
 }>()
 
-const editingId = ref<string | null>(null)
-const editingTitle = ref('')
-const editInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const editingId = ref<string | null>(null) // 正在编辑的会话 ID
+const editingTitle = ref('') // 编辑中的标题文本
+const editInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null) // 编辑输入框引用
 /** Esc 取消时会先触发 blur，用这个标记吞掉那次提交。 */
 const ignoreBlur = ref(false)
 
+/** 开始重命名：进入编辑态并聚焦选中输入框文本。 */
 async function beginRename(topic: ChatTopic): Promise<void> {
   editingId.value = topic.id
   editingTitle.value = topic.title || '新对话'
@@ -79,12 +87,14 @@ async function beginRename(topic: ChatTopic): Promise<void> {
   el?.select()
 }
 
+/** 取消重命名，退出编辑态。 */
 function cancelRename(fromEsc = false): void {
   if (fromEsc) ignoreBlur.value = true
   editingId.value = null
   editingTitle.value = ''
 }
 
+/** 输入框失焦处理：若非 Esc 取消则提交重命名。 */
 function onBlur(topic: ChatTopic): void {
   if (ignoreBlur.value) {
     ignoreBlur.value = false
@@ -93,6 +103,7 @@ function onBlur(topic: ChatTopic): void {
   commitRename(topic)
 }
 
+/** 提交重命名：标题非空且变化时触发 rename 事件。 */
 function commitRename(topic: ChatTopic): void {
   const next = editingTitle.value.trim()
   const current = topic.title || '新对话'
@@ -119,40 +130,69 @@ function commitRename(topic: ChatTopic): void {
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-sm);
-  padding: 10px 8px 10px 12px;
+  padding: 14px 10px 12px 16px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 .topics-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  letter-spacing: 0.03em;
+  color: var(--ink-2);
 }
-.topics-body { flex: 1; min-height: 0; padding: 0 6px; }
+.topics-new {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--ink-3);
+  transition: background 0.15s, color 0.15s;
+}
+.topics-new:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.topics-body { flex: 1; min-height: 0; padding: 6px 6px 8px; }
 .topics-empty {
   margin: 0;
-  padding: 22px 8px;
+  padding: 28px 8px;
   text-align: center;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-4);
 }
-.topics-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.topics-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
 .topic-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px 6px 6px 9px;
-  border-radius: var(--r-sm);
-  font-size: 14px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
   color: var(--ink-2);
-  transition: background 0.12s, color 0.12s;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .topic-row:hover { background: var(--surface-3); color: var(--ink); }
-.topic-row.active { background: var(--accent-bg); color: var(--accent-ink); }
+.topic-row.active {
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
 html.dark .topic-row.active { background: var(--surface-3); color: var(--ink); }
+
+.topic-indicator {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: transform 0.15s ease;
+}
+.topic-row.active .topic-indicator { transform: translateY(-50%) scaleY(1); }
 
 .topic-name {
   flex: 1;
@@ -171,13 +211,13 @@ html.dark .topic-row.active { background: var(--surface-3); color: var(--ink); }
 .topic-input {
   flex: 1;
   min-width: 0;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 14px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 13.5px;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: 6px;
   outline: none;
 }
 
@@ -185,14 +225,20 @@ html.dark .topic-row.active { background: var(--surface-3); color: var(--ink); }
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  padding: 2px;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: none;
+  border-radius: 5px;
   background: transparent;
   color: var(--ink-4);
   opacity: 0;
   cursor: pointer;
-  transition: opacity 0.12s, color 0.12s;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
-.topic-row:hover .topic-op { opacity: 1; }
-.topic-op:hover { color: var(--ink); }
+.topic-row:hover .topic-op,
+.topic-row.active .topic-op { opacity: 1; }
+.topic-op:hover { color: var(--ink); background: var(--surface-3); }
+html.dark .topic-op:hover { background: var(--surface-2); }
 </style>

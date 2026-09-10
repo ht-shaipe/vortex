@@ -15,6 +15,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * CopyableBlock.vue — 可复制文本块
+ * 职责：展示文本内容并附带复制按钮，支持代码高亮（block 模式）与内联（inline）两种变体。
+ */
 import { computed, ref } from 'vue'
 import { DocumentCopy, Check } from '@element-plus/icons-vue'
 import hljs from 'highlight.js/lib/core'
@@ -23,27 +27,31 @@ import bash from 'highlight.js/lib/languages/bash'
 import json from 'highlight.js/lib/languages/json'
 import plaintext from 'highlight.js/lib/languages/plaintext'
 
+// 注册 highlight.js 支持的语言
 hljs.registerLanguage('python', python)
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('json', json)
 hljs.registerLanguage('plaintext', plaintext)
 
+// Props 定义：text 为文本内容，variant 控制展示变体，lang 指定高亮语言
 const props = withDefaults(
   defineProps<{ text?: string; variant?: 'block' | 'inline'; lang?: string }>(),
   { text: '', variant: 'block', lang: '' },
 )
 
-const copied = ref(false)
+const copied = ref(false) // 是否已复制（用于切换图标）
 
+// 高亮后的 HTML 字符串（无语言或无文本时回退为原文）
 const highlighted = computed(() => {
   if (!props.lang || !props.text) return props.text
   try {
     return hljs.highlight(props.text, { language: props.lang }).value
   } catch {
-    return props.text
+    return props.text // 高亮失败时回退为纯文本
   }
 })
 
+/** 复制文本到剪贴板，并短暂显示已复制状态。 */
 async function copy() {
   try {
     await navigator.clipboard.writeText(props.text)
@@ -51,7 +59,7 @@ async function copy() {
     /* 剪贴板不可用时忽略 */
   }
   copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
+  setTimeout(() => (copied.value = false), 1500) // 1.5 秒后恢复图标
 }
 </script>
 
@@ -86,8 +94,9 @@ async function copy() {
   font-size: 12px;
   color: var(--ink-2);
   flex: 1;
-  overflow-x: auto;
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .copy-btn { flex-shrink: 0; }
 </style>

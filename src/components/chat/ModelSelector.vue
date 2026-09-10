@@ -7,9 +7,15 @@
     popper-class="ms-popper"
   >
     <template #reference>
-      <button type="button" class="ms-trigger" :title="selected?.model || '选择模型'">
+      <button
+        type="button"
+        class="ms-trigger"
+        :class="{ placeholder: isPlaceholder }"
+        :title="triggerTitle"
+      >
         <el-icon :size="14" class="ms-trigger-icon"><Cpu /></el-icon>
-        <span class="ms-trigger-text">{{ selected?.model || '选择模型' }}</span>
+        <span v-if="selected && !isPlaceholder && groupPrefix" class="ms-group-chip">{{ groupPrefix }}</span>
+        <span class="ms-trigger-text">{{ triggerText }}</span>
         <el-icon :size="12" class="ms-caret" :class="{ flipped: open }"><ArrowDown /></el-icon>
       </button>
     </template>
@@ -38,7 +44,7 @@
                 @click="pick(g.id, m)"
               >
                 <span v-if="modelKey(g.id, m) === value" class="ms-bar" aria-hidden="true" />
-                <span class="ms-item-text">{{ m }}</span>
+                <span class="ms-item-text" :title="m">{{ stripPrefix(g.id, m) }}</span>
                 <el-icon v-if="modelKey(g.id, m) === value" :size="13" class="ms-check"><Check /></el-icon>
               </button>
             </li>
@@ -55,10 +61,15 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * ModelSelector.vue — 模型选择器
+ * 职责：以弹出面板展示按端点分组的模型列表，支持搜索过滤、选择模型与跳转配置。
+ */
 import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowDown, Check, Cpu, Search, Setting } from '@element-plus/icons-vue'
 import { modelKey, parseModelKey, type ModelOptionGroup } from '@/api/chat'
 
+// Props 定义：value 为当前选中的模型 key，groups 为分组模型列表，configureText 为配置按钮文案
 const props = withDefaults(
   defineProps<{
     value: string
@@ -68,15 +79,17 @@ const props = withDefaults(
   { configureText: '去配置端点' },
 )
 
+// Emits 定义：update:value 同步选中值，configure 触发跳转配置
 const emit = defineEmits<{
   'update:value': [key: string]
   configure: []
 }>()
 
-const open = ref(false)
-const query = ref('')
-const searchInput = ref<HTMLInputElement | null>(null)
+const open = ref(false) // 弹出面板是否展开
+const query = ref('') // 搜索关键词
+const searchInput = ref<HTMLInputElement | null>(null) // 搜索输入框引用
 
+// 面板展开/收起时重置搜索或延迟聚焦输入框
 watch(open, async (v) => {
   if (!v) {
     query.value = ''
@@ -87,6 +100,7 @@ watch(open, async (v) => {
   window.setTimeout(() => searchInput.value?.focus(), 60)
 })
 
+// 当前选中的模型解析信息（端点 ID、模型名、分组名）
 const selected = computed(() => {
   const parsed = parseModelKey(props.value)
   if (!parsed) return null
@@ -94,6 +108,39 @@ const selected = computed(() => {
   return { ...parsed, groupName: g?.name }
 })
 
+/** 网关拉取模型失败时的占位条目形如 `{provider}/models`，需要特殊展示。 */
+const isPlaceholder = computed(() => !!selected.value && /\/models$/.test(selected.value.model))
+
+/** 模型 id 带 `{provider}/` 前缀时，展示时剥掉（发送仍用完整 id）。 */
+const displayModel = computed(() => {
+  const s = selected.value
+  if (!s) return ''
+  const prefix = `${s.endpointId}/`
+  return s.model.startsWith(prefix) ? s.model.slice(prefix.length) : s.model
+})
+
+/** 展示用的分组短名（endpointId 剥掉 custom- 前缀）。 */
+const groupPrefix = computed(() => {
+  const s = selected.value
+  if (!s) return ''
+  return (s.groupName || s.endpointId).replace(/^custom-/, '')
+})
+
+// 触发按钮显示文案
+const triggerText = computed(() => {
+  if (!selected.value) return '选择模型'
+  if (isPlaceholder.value) return '未获取到模型'
+  return displayModel.value
+})
+
+// 触发按钮 title 提示
+const triggerTitle = computed(() => {
+  if (!selected.value) return '选择模型'
+  if (isPlaceholder.value) return '该提供方模型目录获取失败，请检查订阅的 API 地址后重试'
+  return selected.value.model
+})
+
+// 按搜索关键词过滤后的分组列表
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.groups
@@ -105,11 +152,21 @@ const filtered = computed(() => {
     .filter((g) => g.models.length > 0)
 })
 
+/** 选中某个模型，关闭面板并触发更新事件。 */
 function pick(groupId: string, model: string): void {
   open.value = false
   emit('update:value', modelKey(groupId, model))
 }
 
+/** 列表里剥掉 `{provider}/` 前缀与 `/models` 占位，仅用于展示。 */
+function stripPrefix(groupId: string, model: string): string {
+  const prefix = `${groupId}/`
+  const bare = model.startsWith(prefix) ? model.slice(prefix.length) : model
+  if (bare === 'models') return 'models（获取失败占位）'
+  return bare
+}
+
+/** 点击配置按钮，关闭面板并触发 configure 事件。 */
 function onConfigure(): void {
   open.value = false
   emit('configure')
@@ -120,20 +177,35 @@ function onConfigure(): void {
 .ms-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-width: 180px;
-  max-width: 320px;
-  height: 30px;
-  padding: 0 8px;
+  gap: 7px;
+  min-width: 200px;
+  max-width: 340px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--fs-sm);
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
 }
 .ms-trigger:hover { border-color: var(--line-2); color: var(--ink); background: var(--surface-2); }
+.ms-trigger.placeholder { border-style: dashed; color: var(--warn, #b8860b); }
+.ms-trigger.placeholder .ms-trigger-text { color: var(--warn, #b8860b); }
 .ms-trigger-icon { flex-shrink: 0; color: var(--ink-4); }
+.ms-group-chip {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+}
 .ms-trigger-text {
   flex: 1;
   min-width: 0;
@@ -141,6 +213,8 @@ function onConfigure(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 .ms-caret { flex-shrink: 0; color: var(--ink-4); transition: transform 0.15s; }
 .ms-caret.flipped { transform: rotate(180deg); }

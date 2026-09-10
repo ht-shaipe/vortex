@@ -19,17 +19,19 @@ import { listKeys } from './keys'
 const STORAGE_KEY = 'vortex-chat-v1'
 const GATEWAY_BASE = 'http://localhost:20128'
 
+/** 消息流式状态 */
 export type ChatMessageStatus = 'pending' | 'streaming' | 'success' | 'error'
 
+/** 对话主题（会话） */
 export interface ChatTopic {
-  id: string
-  title: string
+  id: string // 会话唯一标识
+  title: string // 会话标题
   /** 模型所属分组（vortex 下为 `owned_by`，即提供商 id）。 */
-  endpointId: string
-  model: string
-  activeNodeId?: string | null
-  createdAt: string
-  updatedAt: string
+  endpointId: string // 端点 ID
+  model: string // 使用的模型名
+  activeNodeId?: string | null // 当前活动分支叶子节点 ID
+  createdAt: string // 创建时间
+  updatedAt: string // 更新时间
 }
 
 /** 存储态消息节点（树结构，parentId 为 null 表示挂在根上）。 */
@@ -59,48 +61,56 @@ export interface BranchMessage {
   siblingIds: string[]
 }
 
+/** 创建会话请求参数 */
 export interface CreateChatTopicRequest {
-  title?: string
-  endpointId: string
-  model: string
+  title?: string // 会话标题（可选）
+  endpointId: string // 端点 ID
+  model: string // 模型名
 }
 
+/** 更新会话请求参数 */
 export interface UpdateChatTopicRequest {
-  title?: string
-  endpointId?: string
-  model?: string
+  title?: string // 新标题（可选）
+  endpointId?: string // 新端点 ID（可选）
+  model?: string // 新模型名（可选）
 }
 
+/** 发送消息响应 */
 export interface ChatSendResponse {
-  userMessageId: string
-  assistantMessageId: string
+  userMessageId: string // 用户消息节点 ID
+  assistantMessageId: string // 助手消息节点 ID
 }
 
+/** 流式增量块载荷 */
 export interface ChatChunkPayload {
-  topicId: string
-  messageId: string
-  delta: string
+  topicId: string // 会话 ID
+  messageId: string // 消息节点 ID
+  delta: string // 增量文本
 }
 
+/** 流式完成载荷 */
 export interface ChatDonePayload {
-  topicId: string
-  messageId: string
-  content: string
+  topicId: string // 会话 ID
+  messageId: string // 消息节点 ID
+  content: string // 完整文本内容
 }
 
+/** 流式错误载荷 */
 export interface ChatErrorPayload {
-  topicId: string
-  messageId: string
-  error: string
+  topicId: string // 会话 ID
+  messageId: string // 消息节点 ID
+  error: string // 错误信息
 }
 
 /* ============ 持久化 ============ */
 
+/** localStorage 持久化结构 */
 interface Store {
-  topics: ChatTopic[]
-  messages: StoredMessage[]
+  topics: ChatTopic[] // 全部会话
+  messages: StoredMessage[] // 全部消息节点
 }
 
+/** 从 localStorage 读取存储结构，解析失败返回空结构。 */
 function load(): Store {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -115,6 +125,7 @@ function load(): Store {
   }
 }
 
+/** 将存储结构写入 localStorage，配额溢出时静默忽略。 */
 function save(s: Store): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
@@ -123,19 +134,27 @@ function save(s: Store): void {
   }
 }
 
+/** 生成唯一 ID（时间戳 36 进制 + 随机串）。 */
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** 生成当前时间的 ISO 字符串。 */
 function nowIso(): string {
   return new Date().toISOString()
 }
 
 /* ============ 事件总线（对齐 ccMesh 的 onChunk/onDone/onError） ============ */
 
+/** 类型别名：事件监听回调 */
 type Listener<T> = (p: T) => void
+/** 类型别名：取消监听函数 */
 type Unlisten = () => void
 
+/**
+ * 创建一个简易事件总线（发布/订阅）。
+ * @returns 包含 on（订阅）和 emit（发布）方法的对象
+ */
 function bus<T>() {
   const set = new Set<Listener<T>>()
   return {
@@ -158,6 +177,7 @@ const aborters = new Map<string, AbortController>()
 
 /* ============ 树操作 ============ */
 
+/** 获取指定父节点下的子消息（按创建时间排序）。 */
 function childrenOf(msgs: StoredMessage[], topicId: string, parentId: string | null): StoredMessage[] {
   return msgs
     .filter((m) => m.topicId === topicId && m.parentId === parentId)
@@ -191,6 +211,7 @@ function activePath(msgs: StoredMessage[], topic: ChatTopic): StoredMessage[] {
   return out.reverse()
 }
 
+/** 把存储态消息转换为展示态消息（附带兄弟分支信息）。 */
 function toBranchMessages(msgs: StoredMessage[], topic: ChatTopic): BranchMessage[] {
   const path = activePath(msgs, topic)
   return path.map((m) => {
@@ -348,6 +369,7 @@ function parseGatewayError(text: string): string {
   }
 }
 
+/** 局部更新单条消息并持久化。 */
 function patchMessage(id: string, patch: Partial<StoredMessage>): void {
   const s = load()
   const m = s.messages.find((x) => x.id === id)
@@ -372,6 +394,7 @@ function touchTopicTitle(topicId: string): void {
 
 /* ============ 对外 API ============ */
 
+/** chatApi：对话会话与消息的对外接口 */
 export const chatApi = {
   async listTopics(): Promise<ChatTopic[]> {
     const s = load()
@@ -543,6 +566,11 @@ export function modelKey(endpointId: string, model: string): string {
   return `${endpointId}::${model}`
 }
 
+/**
+ * 解析 `endpointId::model` 复合键。
+ * @param key - 复合键字符串
+ * @returns 解析结果，格式不合法时返回 null
+ */
 export function parseModelKey(key: string): { endpointId: string; model: string } | null {
   const i = key.indexOf('::')
   if (i <= 0) return null
@@ -552,10 +580,15 @@ export function parseModelKey(key: string): { endpointId: string; model: string 
   return { endpointId, model }
 }
 
-/** 从网关 `GET /v1/models` 读取可用模型，按 `owned_by` 分组。 */
+/** 从网关 `GET /v1/models` 读取可用模型，按 `owned_by` 分组。带 5s 超时，网关无响应时快速降级为空列表。 */
 export async function listModelGroups(): Promise<ModelOptionGroup[]> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 5000)
   try {
-    const res = await fetch(`${GATEWAY_BASE}/v1/models`)
+    const key = await gatewayKey()
+    const headers: Record<string, string> = {}
+    if (key) headers.Authorization = `Bearer ${key}`
+    const res = await fetch(`${GATEWAY_BASE}/v1/models`, { headers, signal: controller.signal })
     if (!res.ok) return []
     const body = (await res.json()) as { data?: { id?: string; owned_by?: string }[] }
     const groups = new Map<string, ModelOptionGroup>()
@@ -573,5 +606,7 @@ export async function listModelGroups(): Promise<ModelOptionGroup[]> {
     return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
   } catch {
     return []
+  } finally {
+    window.clearTimeout(timer)
   }
 }

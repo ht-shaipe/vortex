@@ -128,6 +128,10 @@ pub fn anthropic_to_openai_response(body: &Value, model: &str) -> Value {
 // Gemini → OpenAI（上游为 Gemini 时）
 // =============================================================================
 
+/// 将 Gemini generateContent 响应转换为 OpenAI chat.completion 格式。
+///
+/// 提取首个 candidate 的文本内容与 finishReason，
+/// 映射 usageMetadata 中的 token 计数。
 pub fn gemini_to_openai_response(body: &Value, model: &str) -> Value {
     let content = body
         .get("candidates")
@@ -397,6 +401,10 @@ fn push_merge(out: &mut Vec<Value>, role: &str, content: Value) {
     out.push(json!({"role": role, "content": content}));
 }
 
+/// 合并两个 content 值为内容块数组
+///
+/// 将字符串转为 `{"type": "text", "text": ...}` 块，
+/// 数组直接保留，拼接后返回合并的块数组。
 fn merge_content(a: Option<&Value>, b: &Value) -> Value {
     let to_blocks = |v: &Value| -> Vec<Value> {
         match v {

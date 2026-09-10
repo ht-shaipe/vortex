@@ -75,6 +75,10 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * RequestMonitor.vue — 请求监控
+ * 职责：以表格展示请求日志列表，支持实时/时间段两种模式、分页、Token 明细 tooltip。
+ */
 import { computed, ref, watch } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import DateRangePicker from './DateRangePicker.vue'
@@ -83,6 +87,7 @@ import { fmtInt, formatDuration, formatTokenK } from '@/lib/format'
 import { rangeValueMs, startOfTodayMs, type RangeValue } from '@/lib/range'
 import { statsApi, type RequestLog } from '@/api/stats'
 
+// Props 定义：mode 控制实时/时间段模式，range 为受控时间范围，hideWhenEmpty 空数据时隐藏，endpointFilter 端点过滤，pageSize 分页大小，title 自定义标题，refreshKey 外部刷新键
 const props = withDefaults(
   defineProps<{
     /** live：进入即拉最新；ranged：时间段 + 分页查询。 */
@@ -100,15 +105,16 @@ const props = withDefaults(
   { pageSize: 20, hideWhenEmpty: false, refreshKey: 0 },
 )
 
-const page = ref(1)
-const ownRange = ref<RangeValue>({ kind: 'preset', key: 'today' })
-const loading = ref(true)
-const items = ref<RequestLog[]>([])
-const total = ref(0)
+const page = ref(1) // 当前页码
+const ownRange = ref<RangeValue>({ kind: 'preset', key: 'today' }) // 内置日期范围（无外部受控时使用）
+const loading = ref(true) // 是否正在加载
+const items = ref<RequestLog[]>([]) // 请求日志列表
+const total = ref(0) // 总记录数
 
-const rangeValue = computed<RangeValue>(() => props.range ?? ownRange.value)
-const hidden = computed(() => props.hideWhenEmpty && !loading.value && total.value === 0)
+const rangeValue = computed<RangeValue>(() => props.range ?? ownRange.value) // 实际生效的时间范围
+const hidden = computed(() => props.hideWhenEmpty && !loading.value && total.value === 0) // 是否整块隐藏
 
+/** 加载请求日志数据。 */
 async function load(): Promise<void> {
   loading.value = true
   try {
@@ -135,12 +141,14 @@ watch(rangeValue, () => {
   void load()
 })
 watch([page, () => props.refreshKey, () => props.endpointFilter], () => void load())
-void load()
+void load() // 初始加载
 
+/** 计算请求的总 Token 数。 */
 function totalTokens(r: RequestLog): number {
   return r.inputTokens + r.outputTokens + r.cacheCreationTokens + r.cacheReadTokens
 }
 
+/** 根据状态码推断色调。 */
 function statusTone(code: number | null): 'ok' | 'warn' | 'err' {
   if (code == null) return 'err'
   if (code < 300) return 'ok'
@@ -157,6 +165,7 @@ function inferPath(format: string): string {
   return '—'
 }
 
+/** 格式化时间戳为可读日期时间字符串。 */
 function fmtDateTime(ts: number): string {
   const d = new Date(ts)
   const p = (n: number) => String(n).padStart(2, '0')

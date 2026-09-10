@@ -118,21 +118,25 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * CcSwitchImport.vue — CC Switch 导入
+ * 职责：从 cc-switch 导出的 JSON 中识别可迁移的供应商配置，支持勾选、筛选与批量导入为 vortex 连接。
+ */
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Download, Right, Select } from '@element-plus/icons-vue'
 import { ccSwitchApi, errMsg, type PreviewItem } from '@/api/sync'
 
-const open = ref(false)
-const loading = ref(false)
-const loadError = ref('')
-const picked = ref(false)
-const items = ref<PreviewItem[]>([])
-const selected = ref<Set<string>>(new Set())
-const appFilter = ref({ claude: false, codex: false })
-const importing = ref(false)
+const open = ref(false) // 弹窗是否打开
+const loading = ref(false) // 是否正在加载预览
+const loadError = ref('') // 加载错误信息
+const picked = ref(false) // 是否已选择文件
+const items = ref<PreviewItem[]>([]) // 预览项列表
+const selected = ref<Set<string>>(new Set()) // 已勾选项的 ID 集合
+const appFilter = ref({ claude: false, codex: false }) // 应用类型筛选状态
+const importing = ref(false) // 是否正在导入
 
-const APP_ORDER: Record<string, number> = { claude: 0, codex: 1 }
+const APP_ORDER: Record<string, number> = { claude: 0, codex: 1 } // 应用类型排序权重
 
 /** 不可用在前；可迁移项 claude → codex，同组按名称。 */
 const sortedItems = computed(() =>
@@ -147,8 +151,9 @@ const sortedItems = computed(() =>
   }),
 )
 
-const importable = computed(() => items.value.filter((i) => i.status === 'ok'))
+const importable = computed(() => items.value.filter((i) => i.status === 'ok')) // 可迁移项列表
 
+// 按应用类型筛选后的可见项
 const visibleItems = computed(() => {
   const active = appFilter.value.claude || appFilter.value.codex
   if (!active) return sortedItems.value
@@ -157,11 +162,12 @@ const visibleItems = computed(() => {
   )
 })
 
-const visibleImportable = computed(() => visibleItems.value.filter((i) => i.status === 'ok'))
+const visibleImportable = computed(() => visibleItems.value.filter((i) => i.status === 'ok')) // 可见且可迁移的项
 const allSelected = computed(
   () => visibleImportable.value.length > 0 && visibleImportable.value.every((i) => selected.value.has(i.ccSwitchId)),
-)
+) // 是否全选
 
+/** 跳过原因 → 用户可读文案。 */
 function skipReasonLabel(reason?: string): string {
   if (!reason) return '不可迁移'
   if (reason.startsWith('oauth')) return 'OAuth/托管账号，需手动配置'
@@ -173,19 +179,25 @@ function skipReasonLabel(reason?: string): string {
   return reason
 }
 
+/** 切换某项的勾选状态。 */
 function toggle(id: string): void {
   const next = new Set(selected.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
   selected.value = next
 }
+
+/** 全选可见可迁移项。 */
 function selectAll(): void {
   selected.value = new Set(visibleImportable.value.map((i) => i.ccSwitchId))
 }
+
+/** 取消全选。 */
 function deselectAll(): void {
   selected.value = new Set()
 }
 
+/** 打开弹窗并加载预览数据。 */
 async function openDialog(): Promise<void> {
   selected.value = new Set()
   appFilter.value = { claude: false, codex: false }
@@ -206,6 +218,7 @@ async function openDialog(): Promise<void> {
   }
 }
 
+/** 执行导入：提交已勾选项到后端。 */
 async function onImport(): Promise<void> {
   const chosen = items.value.filter((i) => selected.value.has(i.ccSwitchId))
   importing.value = true
