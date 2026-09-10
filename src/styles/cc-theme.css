@@ -1,0 +1,213 @@
+/* ============================================================
+ * Vortex 视觉系统 — 移植自 cc-router (operator's console)
+ * 暖中性灰 + 单一铁锈橙强调色 + 紧凑密度
+ * ============================================================ */
+
+/* ============ 浅色主题 ============ */
+:root {
+  /* 暖中性灰 */
+  --bg:        #f6f5f2;
+  --surface:   #ffffff;
+  --surface-2: #fbfaf7;
+  --surface-3: #f1efea;
+  --line:      #e6e3dc;
+  --line-2:    #d8d4cb;
+  --ink:       #1a1916;
+  --ink-2:     #3a3833;
+  --ink-3:     #6b6962;
+  --ink-4:     #9a978f;
+  --ink-5:     #bdbab2;
+
+  /* 铁锈橙（唯一强调色） */
+  --accent:      oklch(0.63 0.14 42);
+  --accent-ink:  oklch(0.42 0.12 42);
+  --accent-bg:   oklch(0.96 0.03 42);
+  --accent-line: oklch(0.85 0.07 42);
+
+  /* 状态 */
+  --ok:     oklch(0.62 0.13 150);
+  --ok-bg:  oklch(0.95 0.04 150);
+  --warn:   oklch(0.70 0.15 75);
+  --warn-bg: oklch(0.95 0.06 75);
+  --err:    oklch(0.58 0.18 28);
+  --err-bg: oklch(0.96 0.03 28);
+
+  /* 圆角 / 阴影 / 密度 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  --shadow-sm: 0 1px 0 rgba(20,18,12,0.04), 0 1px 2px rgba(20,18,12,0.04);
+  --shadow-md: 0 1px 0 rgba(20,18,12,0.04), 0 6px 18px -8px rgba(20,18,12,0.10);
+  --shadow-lg: 0 1px 0 rgba(20,18,12,0.04), 0 24px 60px -28px rgba(20,18,12,0.22);
+
+  --d: 0.84;
+  --pad-card: calc(18px * var(--d));
+  --pad-row:  calc(11px * var(--d));
+  --gap-xs:   calc(5px  * var(--d));
+  --gap-sm:   calc(8px  * var(--d));
+  --gap-md:   calc(12px * var(--d));
+  --gap-lg:   calc(18px * var(--d));
+  --gap-xl:   calc(24px * var(--d));
+  --fs-body:  calc(14px * var(--d));
+  --fs-sm:    calc(12px * var(--d));
+  --fs-xs:    calc(11px * var(--d));
+  --fs-h1:    calc(28px * var(--d));
+  --fs-h2:    calc(18px * var(--d));
+  --fs-mono:  calc(12.5px * var(--d));
+
+  /* 图表顺序色阶（铁锈橙 4 段，浅→深 = 量少→多） */
+  --seq-1: oklch(0.77 0.09 42);
+  --seq-2: oklch(0.67 0.13 42);
+  --seq-3: oklch(0.57 0.14 42);
+  --seq-4: oklch(0.45 0.13 42);
+
+  /* 虚拟模型分类固定色 */
+  --vm-fable:    oklch(0.52 0.17 295);
+  --vm-opus:     var(--accent);
+  --vm-sonnet:   oklch(0.58 0.14 245);
+  --vm-haiku:    oklch(0.66 0.14 85);
+  --vm-fallback: var(--ink-4);
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+    Inter, Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    "Cascadia Mono", "Cascadia Code", Consolas, "DejaVu Sans Mono", "Liberation Mono",
+    "Source Han Mono SC", monospace;
+
+  /* 标题栏内嵌高度 */
+  --titlebar-inset: 0px;
+}
+
+/* ============ 暗色主题 ============ */
+html.dark {
+  color-scheme: dark;
+
+  --bg:        #0b0b0e;
+  --surface:   #16161a;
+  --surface-2: #121216;
+  --surface-3: #1e1e24;
+  --line:      #262630;
+  --line-2:    #32323e;
+  --ink:       #e8e8ec;
+  --ink-2:     #c8c8d0;
+  --ink-3:     #92929e;
+  --ink-4:     #6a6a76;
+  --ink-5:     #4e4e5a;
+
+  --accent:      oklch(0.67 0.15 42);
+  --accent-ink:  oklch(0.78 0.08 42);
+  --accent-bg:   oklch(0.18 0.04 42);
+  --accent-line: oklch(0.28 0.08 42);
+
+  --ok:     oklch(0.68 0.15 150);
+  --ok-bg:  oklch(0.17 0.05 150);
+  --warn:   oklch(0.75 0.16 75);
+  --warn-bg: oklch(0.18 0.06 75);
+  --err:    oklch(0.62 0.20 28);
+  --err-bg: oklch(0.18 0.06 28);
+
+  --seq-1: oklch(0.48 0.10 42);
+  --seq-2: oklch(0.58 0.13 42);
+  --seq-3: oklch(0.68 0.14 42);
+  --seq-4: oklch(0.80 0.09 42);
+
+  --vm-fable:    oklch(0.66 0.15 295);
+  --vm-sonnet:   oklch(0.64 0.13 245);
+  --vm-haiku:    oklch(0.66 0.13 85);
+
+  --shadow-sm: 0 1px 0 rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-md: 0 1px 0 rgba(0,0,0,0.40), 0 6px 18px -8px rgba(0,0,0,0.45);
+  --shadow-lg: 0 1px 0 rgba(0,0,0,0.45), 0 24px 60px -28px rgba(0,0,0,0.60);
+
+  /* Element Plus 暗色映射 */
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface-3);
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color-light: var(--surface-3);
+  --el-fill-color-lighter: var(--surface-2);
+  --el-fill-color: var(--surface-3);
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-2);
+  --el-text-color-secondary: var(--ink-3);
+  --el-text-color-placeholder: var(--ink-4);
+  --el-text-color-disabled: var(--ink-5);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line);
+  --el-border-color-extra-light: var(--line);
+  --el-border-color-hover: var(--ink-3);
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-light: var(--shadow-sm);
+}
+
+/* ============ 基础 reset ============ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+input, select, textarea { font: inherit; color: inherit; }
+a { color: inherit; }
+#app { min-height: 100vh; }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "ss01"; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ============ Element Plus 变量映射 ============ */
+:root {
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: oklch(0.75 0.12 42);
+  --el-color-primary-light-5: oklch(0.82 0.09 42);
+  --el-color-primary-light-7: oklch(0.90 0.05 42);
+  --el-color-primary-light-8: oklch(0.93 0.03 42);
+  --el-color-primary-light-9: oklch(0.96 0.02 42);
+  --el-color-primary-dark-2: oklch(0.52 0.13 42);
+
+  --el-color-success: var(--ok);
+  --el-color-warning: var(--warn);
+  --el-color-danger: var(--err);
+  --el-color-error: var(--err);
+
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color-light: var(--surface-3);
+  --el-fill-color-lighter: var(--surface-2);
+  --el-fill-color: var(--surface-3);
+
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--ink-2);
+  --el-text-color-secondary: var(--ink-3);
+  --el-text-color-placeholder: var(--ink-4);
+  --el-text-color-disabled: var(--ink-5);
+
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line);
+  --el-border-color-extra-light: var(--line);
+  --el-border-color-hover: var(--ink-3);
+
+  --el-border-radius-base: var(--r-sm);
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 999px;
+
+  --el-font-size-base: var(--fs-body);
+
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-light: var(--shadow-sm);
+}

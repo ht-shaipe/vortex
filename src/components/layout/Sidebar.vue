@@ -1,112 +1,99 @@
 <template>
-  <el-aside width="220px" class="vortex-sidebar" :collapse="collapsed" :collapse-transition="true">
-    <div class="sidebar-brand" @click="collapsed = !collapsed">
-      <span class="brand-icon">⚡</span>
-      <span v-if="!collapsed" class="brand-text">Vortex</span>
-    </div>
-
-    <el-menu
-      :default-active="activeRoute"
-      :collapse="collapsed"
-      :collapse-transition="true"
-      background-color="transparent"
-      text-color="#a1a1aa"
-      active-text-color="#e54d5e"
-      router
-    >
-      <el-menu-item index="/">
-        <el-icon><Odometer /></el-icon>
-        <template #title>Dashboard</template>
-      </el-menu-item>
-      <el-menu-item index="/providers">
-        <el-icon><Connection /></el-icon>
-        <template #title>Providers</template>
-      </el-menu-item>
-      <el-menu-item index="/combos">
-        <el-icon><Switch /></el-icon>
-        <template #title>Combos</template>
-      </el-menu-item>
-      <el-menu-item index="/keys">
-        <el-icon><Key /></el-icon>
-        <template #title>API Keys</template>
-      </el-menu-item>
-      <el-menu-item index="/usage">
-        <el-icon><DataLine /></el-icon>
-        <template #title>Usage</template>
-      </el-menu-item>
-      <el-menu-item index="/settings">
-        <el-icon><Setting /></el-icon>
-        <template #title>Settings</template>
-      </el-menu-item>
-    </el-menu>
-
-    <div class="sidebar-footer">
-      <div class="endpoint-info" v-if="!collapsed">
-        <span class="endpoint-label">Endpoint</span>
-        <code class="endpoint-url">localhost:20128/v1</code>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">V</div>
+      <div class="brand-text">
+        <div class="brand-name">Vortex</div>
+        <div class="brand-tag">AI Gateway</div>
       </div>
     </div>
-  </el-aside>
+
+    <template v-for="item in items" :key="item.to">
+      <router-link :to="item.to" class="nav-item" :class="{ active: isActive(item.to) }">
+        <span class="nav-icon"><component :is="item.icon" /></span>
+        <span class="nav-label">{{ item.label }}</span>
+        <span v-if="item.badge != null" class="badge">{{ item.badge }}</span>
+        <span v-else-if="item.dot" class="nav-dot" :class="{ ok: item.dotTone === 'ok' }" />
+      </router-link>
+    </template>
+  </aside>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Odometer, Connection, Switch, Key, DataLine, Setting } from '@element-plus/icons-vue'
+import {
+  Reading,
+  DataLine,
+  Grid,
+  Key,
 
-const collapsed = ref(false)
+  Histogram,
+  Refresh,
+  Setting,
+  InfoFilled,
+  Document,
+} from '@element-plus/icons-vue'
+import { listCombos } from '@/api/combos'
+import { listProviders } from '@/api/providers'
+
 const route = useRoute()
-const activeRoute = computed(() => route.path)
+
+interface NavItem {
+  to: string
+  label: string
+  icon: unknown
+  badge?: string | null
+  dot?: boolean
+  dotTone?: 'ok' | 'err'
+}
+
+const comboCount = ref(0)
+const providerCount = ref(0)
+const running = ref(false)
+
+const items = computed<NavItem[]>(() => [
+  { to: '/guide', label: '接入指南', icon: Reading },
+  { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: 'ok' },
+  { to: '/virtual-models', label: '虚拟模型', icon: Grid, badge: String(comboCount.value) },
+  { to: '/subscriptions', label: '订阅', icon: Key, badge: providerCount.value > 0 ? String(providerCount.value) : null },
+  { to: '/request-logs', label: '请求日志', icon: Document },
+  { to: '/statistics', label: '统计', icon: Histogram },
+
+  { to: '/updates', label: '检查更新', icon: Refresh },
+  { to: '/settings', label: '设置', icon: Setting },
+  { to: '/about', label: '关于', icon: InfoFilled },
+])
+
+function isActive(to: string): boolean {
+  if (to === '/virtual-models') return route.path === '/virtual-models' || route.path === '/'
+  return route.path.startsWith(to)
+}
+
+async function loadCounts() {
+  try {
+    const [combos, providers] = await Promise.all([listCombos(), listProviders()])
+    comboCount.value = combos.combos?.length ?? 0
+    providerCount.value = providers.connections?.length ?? 0
+  } catch {
+    /* 后端未启动时静默 */
+  }
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch('http://localhost:20128/api/health')
+    const data = await res.json()
+    running.value = data.status === 'ok'
+  } catch {
+    running.value = false
+  }
+}
+
+onMounted(() => {
+  loadCounts()
+  checkHealth()
+  setInterval(loadCounts, 10000)
+  setInterval(checkHealth, 5000)
+})
 </script>
-
-<style scoped>
-.vortex-sidebar {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  padding: 20px 16px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.brand-icon {
-  font-size: 24px;
-  margin-right: 10px;
-}
-
-.brand-text {
-  font-size: 20px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #e54d5e, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.endpoint-label {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  display: block;
-  margin-bottom: 4px;
-}
-
-.endpoint-url {
-  font-size: 12px;
-  color: var(--color-accent);
-  background: var(--color-surface-2);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-family: ui-monospace, monospace;
-}
-</style>

@@ -1,118 +1,140 @@
 <template>
-  <div class="settings-page">
-    <el-card shadow="never">
-      <template #header>
-        <span>General Settings</span>
-      </template>
-      <el-form :model="generalForm" label-width="160px">
-        <el-form-item label="Require API Key">
-          <el-switch v-model="generalForm.requireApiKey" />
-        </el-form-item>
-        <el-form-item label="Default Theme">
-          <el-radio-group v-model="generalForm.theme">
-            <el-radio value="dark">Dark</el-radio>
-            <el-radio value="light">Light</el-radio>
-            <el-radio value="system">System</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveGeneral">Save</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+  <div>
+    <PageHeader title="设置" sub="网关与界面配置" />
 
-    <el-card shadow="never" style="margin-top: 20px">
-      <template #header>
-        <span>Routing Settings</span>
-      </template>
-      <el-form :model="routingForm" label-width="160px">
-        <el-form-item label="Default Strategy">
-          <el-select v-model="routingForm.defaultStrategy" style="width: 100%">
-            <el-option
-              v-for="s in strategies"
-              :key="s.id"
-              :label="s.name"
-              :value="s.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="Auto-Combo">
-          <el-switch v-model="routingForm.autoComboEnabled" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveRouting">Save</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+    <div class="tabs">
+      <button v-for="t in tabs" :key="t.id" class="tab" :class="{ active: active === t.id }" @click="active = t.id">
+        <el-icon :size="14" class="tab-icon"><component :is="t.icon" /></el-icon>{{ t.label }}
+      </button>
+    </div>
 
-    <el-card shadow="never" style="margin-top: 20px">
-      <template #header>
-        <span>Endpoint Information</span>
-      </template>
-      <div class="endpoint-info">
-        <p>OpenAI-compatible endpoint: <code>http://localhost:20128/v1</code></p>
-        <p>Set your tools to use this base URL with any API key from the Keys page.</p>
+    <div v-if="loading" class="spin-wrap">
+      <el-icon class="spin" :size="18"><Loading /></el-icon>
+    </div>
+
+    <template v-else>
+      <div v-if="active === 'general'" class="card section">
+        <div class="card-head">
+          <div><div class="card-title">通用</div><div class="card-sub">界面与语言</div></div>
+        </div>
+        <div class="card-body">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">主题</div>
+              <div class="setting-desc">跟随系统 / 浅色 / 深色</div>
+            </div>
+            <div class="radio-group">
+              <button v-for="m in themes" :key="m.id" class="radio-option" :class="{ active: theme.mode.value === m.id }" @click="theme.setMode(m.id)">{{ m.label }}</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">界面语言</div>
+              <div class="setting-desc">当前仅支持简体中文</div>
+            </div>
+            <StatusBadge tone="neutral" label="简体中文" :dot="false" />
+          </div>
+        </div>
       </div>
-    </el-card>
+
+      <div v-else-if="active === 'routing'" class="card section">
+        <div class="card-head">
+          <div><div class="card-title">路由配置</div><div class="card-sub">来自 /api/settings · routing</div></div>
+        </div>
+        <div class="card-body">
+          <div v-if="routingEntries.length === 0" class="kv-empty">暂无路由配置项</div>
+          <div v-for="e in routingEntries" :key="e.key" class="setting-row">
+            <div><div class="setting-label">{{ e.key }}</div></div>
+            <el-input v-model="e.value" style="max-width: 320px" />
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="card section">
+        <div class="card-head">
+          <div><div class="card-title">高级</div><div class="card-sub">来自 /api/settings · general</div></div>
+        </div>
+        <div class="card-body">
+          <div v-if="generalEntries.length === 0" class="kv-empty">暂无高级配置项</div>
+          <div v-for="e in generalEntries" :key="e.key" class="setting-row">
+            <div><div class="setting-label">{{ e.key }}</div></div>
+            <el-input v-model="e.value" style="max-width: 320px" />
+          </div>
+        </div>
+      </div>
+
+      <div v-if="active !== 'general'" class="save-row">
+        <button type="button" class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存设置' }}</button>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { useSettingsStore } from '@/stores/settings'
-import { STRATEGIES } from '@/api/combos'
+import { onMounted, reactive, ref } from 'vue'
+import { Loading, Setting, Grid, Tools } from '@element-plus/icons-vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { useTheme } from '@/composables/useTheme'
+import { getSettings, updateSettings } from '@/api/settings'
 
-const settingsStore = useSettingsStore()
-const strategies = STRATEGIES
+const theme = useTheme()
+const themes = [
+  { id: 'system' as const, label: '跟随系统' },
+  { id: 'light' as const, label: '浅色' },
+  { id: 'dark' as const, label: '深色' },
+]
+const tabs = [
+  { id: 'general', label: '通用', icon: Setting },
+  { id: 'routing', label: '路由', icon: Grid },
+  { id: 'advanced', label: '高级', icon: Tools },
+]
+const active = ref('general')
+const loading = ref(true)
+const saving = ref(false)
 
-const generalForm = ref({
-  requireApiKey: false,
-  theme: 'dark',
-})
+interface Entry { key: string; value: string }
+const generalEntries = reactive<Entry[]>([])
+const routingEntries = reactive<Entry[]>([])
 
-const routingForm = ref({
-  defaultStrategy: 'priority',
-  autoComboEnabled: true,
-})
+function toEntries(map: Record<string, unknown> | undefined): Entry[] {
+  return Object.entries(map ?? {}).map(([key, value]) => ({ key, value: String(value ?? '') }))
+}
 
-async function loadSettings() {
-  await settingsStore.fetchSettings()
-  const s = settingsStore.settings as any
-  if (s.general) {
-    generalForm.value.requireApiKey = s.general.requireApiKey ?? false
-    generalForm.value.theme = s.general.theme ?? 'dark'
+async function load() {
+  loading.value = true
+  try {
+    const data = await getSettings()
+    generalEntries.splice(0, generalEntries.length, ...toEntries(data.general))
+    routingEntries.splice(0, routingEntries.length, ...toEntries(data.routing))
+  } catch {
+    /* 后端未就绪 */
+  } finally {
+    loading.value = false
   }
-  if (s.routing) {
-    routingForm.value.defaultStrategy = s.routing.defaultStrategy ?? 'priority'
-    routingForm.value.autoComboEnabled = s.routing.autoComboEnabled ?? true
+}
+
+function fromEntries(entries: Entry[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const e of entries) out[e.key] = e.value
+  return out
+}
+
+async function save() {
+  saving.value = true
+  try {
+    await updateSettings({ general: fromEntries(generalEntries), routing: fromEntries(routingEntries) })
+  } finally {
+    saving.value = false
   }
 }
 
-async function saveGeneral() {
-  await settingsStore.saveSettings({ general: generalForm.value })
-  ElMessage.success('Settings saved')
-}
-
-async function saveRouting() {
-  await settingsStore.saveSettings({ routing: routingForm.value })
-  ElMessage.success('Routing settings saved')
-}
-
-onMounted(loadSettings)
+onMounted(load)
 </script>
 
 <style scoped>
-.endpoint-info code {
-  background: var(--color-surface-2);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-family: ui-monospace, monospace;
-  color: var(--color-accent);
-}
-
-.endpoint-info p {
-  margin: 8px 0;
-  font-size: 14px;
-}
+.spin-wrap { padding: 40px; text-align: center; color: var(--ink-4); }
+.section { margin-bottom: var(--gap-lg); }
+.kv-empty { font-size: 12.5px; color: var(--ink-4); padding: 8px 0; }
+.save-row { display: flex; justify-content: flex-end; }
 </style>

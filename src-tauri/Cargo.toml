@@ -3,7 +3,8 @@ name = "vortex"
 version = "0.1.0"
 description = "Vortex AI Gateway — Rust + Tauri"
 authors = ["Vortex"]
-edition = "2021"
+edition = "2024"
+license = "MIT"
 
 [lib]
 name = "vortex_lib"

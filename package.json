@@ -2,6 +2,7 @@
   "name": "vortex",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +14,7 @@
     "@element-plus/icons-vue": "^2.3.2",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-shell": "^2.3.6",
+    "ant-design-vue": "^4.2.6",
     "axios": "^1.20.0",
     "echarts": "^6.1.0",
     "element-plus": "^2.14.5",
@@ -25,6 +27,7 @@
     "@tauri-apps/cli": "^2.11.4",
     "@vitejs/plugin-vue": "^6.0.8",
     "typescript": "^7.0.2",
+    "unocss": "^66.10.1",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"
   }

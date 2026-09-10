@@ -98,7 +98,7 @@ impl RoutingStrategy for Weighted {
         let primary_idx = {
             let mut found = 0usize;
             for _ in 0..100 {
-                let mut roll = rng.gen::<f64>() * total_weight;
+                let mut roll = rng.r#gen::<f64>() * total_weight;
                 for (i, target) in targets.iter().enumerate() {
                     roll -= target.weight.max(0.01);
                     if roll <= 0.0 {
@@ -565,7 +565,7 @@ impl RoutingStrategy for Auto {
             if t.weight > 0.0 {
                 score += 10.0;
             }
-            score += rand::thread_rng().gen::<f64>() * 5.0;
+            score += rand::thread_rng().r#gen::<f64>() * 5.0;
             (score, t)
         }).collect();
 
