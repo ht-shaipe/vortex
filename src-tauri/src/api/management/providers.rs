@@ -344,7 +344,7 @@ async fn test_connection(
     let url = if def.id == "custom-openai" {
         let base_trimmed = base_url.trim_end_matches('/');
         // 检测占位符
-        if let Some(idx) = base_trimmed.find("{account_id}") {
+        if base_trimmed.contains("{account_id}") {
             return TestResult {
                 status: "error".into(),
                 error: Some("该提供方需在「自定义设置」中填写完整 API 地址（替换 {account_id} 占位符）".into()),

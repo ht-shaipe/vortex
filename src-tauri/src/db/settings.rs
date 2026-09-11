@@ -126,6 +126,7 @@ fn merge_objects(a: &serde_json::Value, b: &serde_json::Value) -> serde_json::Va
 ///
 /// # 返回
 /// 32 字符小写十六进制字符串
+#[allow(dead_code)]
 pub fn generate_token() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     use std::collections::hash_map::DefaultHasher;

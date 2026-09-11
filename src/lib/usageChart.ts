@@ -97,10 +97,10 @@ export function buildHeatmapCells(todayStartMs: number, weeks = 53): HeatmapCell
   const start = new Date(currentMonday - (weeks - 1) * 7 * DAY_MS)
   // 用 Date 构造器逐日递增而非 +DAY_MS，规避 DST 跳变导致的重复/缺日。
   const cells: HeatmapCell[] = []
-  for (let i = 0; ; i++) {
+  const maxCells = weeks * 7 + 7 // 上限：周数 × 7 + 余量
+  for (let i = 0; i < maxCells; i++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
     const ms = d.getTime()
-    // 超过今天则停止
     if (ms > todayStartMs) break
     cells.push({ date: ymd(ms), ms, dayIndex: mondayIndex(ms) })
   }
@@ -173,7 +173,8 @@ export function sliceTrend(
   // 逐日生成数据点，缺失日期补 0
   const start = new Date(startMs)
   const points: TrendPoint[] = []
-  for (let i = 0; ; i++) {
+  const maxDays = 366 * 5 // 上限 5 年，防止异常输入导致死循环
+  for (let i = 0; i < maxDays; i++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
     const ms = d.getTime()
     if (ms > endMs) break
@@ -230,7 +231,8 @@ export function sliceHourlyTrend(
   if (last < first) return []
   // 逐小时生成数据点，缺失补 0
   const points: TrendPoint[] = []
-  for (let i = 0; ; i++) {
+  const maxHours = 24 * 366 // 上限 1 年，防止异常输入导致死循环
+  for (let i = 0; i < maxHours; i++) {
     const d = new Date(first)
     d.setHours(d.getHours() + i)
     const ms = d.getTime()

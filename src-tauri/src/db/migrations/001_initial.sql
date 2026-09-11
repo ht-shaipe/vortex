@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS usage_history (
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+
 CREATE TABLE IF NOT EXISTS key_value (
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,
