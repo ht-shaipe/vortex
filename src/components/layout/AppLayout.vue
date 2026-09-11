@@ -1,8 +1,14 @@
 <template>
-  <div class="app">
-    <WindowChrome />
-    <Sidebar />
+  <div class="app" :class="{ 'sidebar-collapsed': collapsed }">
+    <Sidebar
+      :collapsed="collapsed"
+      :collapsible="true"
+      :active="route.path"
+      @toggle="collapsed = !collapsed"
+    />
     <main class="main" :class="{ flush }">
+      <!-- 拖拽区：作为布局流中的实际头部元素，参照 dsa 项目实现 -->
+      <WindowChrome />
       <router-view v-if="flush" />
       <el-scrollbar v-else>
         <div class="main-inner">
@@ -15,24 +21,42 @@
 
 <script setup lang="ts">
 /**
- * AppLayout.vue — 应用整体布局
- * 职责：组合窗口控制条、侧边栏与主内容区，根据路由决定主内容区是否贴边渲染（flush）。
+ * AppLayout.vue — 应用根布局
+ * 职责：组合侧边栏与主内容区，管理侧边栏折叠状态。
+ * 窗口拖动由 main 区域顶部的 WindowChrome 组件处理，作为布局流中的实际头部元素。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './Sidebar.vue'
 import WindowChrome from './WindowChrome.vue'
 
-// 需要贴边（无内边距滚动条）的路由前缀
-const FLUSH_ROUTES = ['/live-routing', '/subscriptions/', '/chat']
-// 即使命中贴边路由也需排除的例外路径前缀
-const FLUSH_EXCEPTIONS = ['/subscriptions/new']
-
-const route = useRoute() // 当前路由对象
-// 是否贴边渲染：命中贴边路由且不在例外列表中时为 true
-const flush = computed(
-  () =>
-    !FLUSH_EXCEPTIONS.some((p) => route.path.startsWith(p)) &&
-    FLUSH_ROUTES.some((p) => route.path.startsWith(p)),
-)
+const route = useRoute()
+const collapsed = ref(false)
+/** 通栏页面（如 /chat、实时路由、订阅编辑）自管理布局与滚动，直接铺满主区域 */
+const FLUSH_PATHS = ['/chat', '/live-routing']
+const NON_FLUSH_SUB = ['/subscriptions/new', '/subscriptions/custom']
+const flush = computed(() => {
+  if (FLUSH_PATHS.includes(route.path)) return true
+  if (!route.path.startsWith('/subscriptions/')) return false
+  return !NON_FLUSH_SUB.includes(route.path)
+})
 </script>
+
+<style scoped>
+.app {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+.main.flush {
+  padding: 0;
+}
+</style>

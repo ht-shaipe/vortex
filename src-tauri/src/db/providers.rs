@@ -70,7 +70,7 @@ pub fn list(conn: &rusqlite::Connection, enc_key: &[u8]) -> Result<Vec<ProviderC
          rate_limit_protection, group_name, max_concurrent, proxy_enabled, \
          display_name, default_model, token_type, scope, last_used_at, \
          last_health_check_at, last_tested, provider_specific_data, \
-         created_at, updated_at \
+         created_at, updated_at, last_latency_ms \
          FROM provider_connections ORDER BY priority DESC, name ASC"
     )?;
 
@@ -102,7 +102,7 @@ pub fn list_by_provider(conn: &rusqlite::Connection, provider: &str, enc_key: &[
          rate_limit_protection, group_name, max_concurrent, proxy_enabled, \
          display_name, default_model, token_type, scope, last_used_at, \
          last_health_check_at, last_tested, provider_specific_data, \
-         created_at, updated_at \
+         created_at, updated_at, last_latency_ms \
          FROM provider_connections WHERE provider = ?1 AND is_active = 1 \
          ORDER BY priority DESC, name ASC"
     )?;
@@ -133,7 +133,7 @@ pub fn get_by_id(conn: &rusqlite::Connection, id: &str, enc_key: &[u8]) -> Resul
          rate_limit_protection, group_name, max_concurrent, proxy_enabled, \
          display_name, default_model, token_type, scope, last_used_at, \
          last_health_check_at, last_tested, provider_specific_data, \
-         created_at, updated_at \
+         created_at, updated_at, last_latency_ms \
          FROM provider_connections WHERE id = ?1"
     )?;
 
@@ -252,6 +252,7 @@ pub fn create(conn: &rusqlite::Connection, req: &crate::db::models::CreateProvid
         provider_specific_data: specific_data,
         created_at: now.clone(),
         updated_at: now,
+        last_latency_ms: None,
     })
 }
 
@@ -277,10 +278,33 @@ pub fn update(conn: &rusqlite::Connection, id: &str, updates: &serde_json::Value
     if let Some(name) = updates.get("name").and_then(|v| v.as_str()) {
         conn.execute("UPDATE provider_connections SET name = ?1, updated_at = ?2 WHERE id = ?3", params![name, now, id])?;
     }
-    // 更新 apiKey（加密后存储）
-    if let Some(api_key) = updates.get("apiKey").and_then(|v| v.as_str()) {
-        let encrypted = encrypt_value(enc_key, api_key);
-        conn.execute("UPDATE provider_connections SET api_key = ?1, updated_at = ?2 WHERE id = ?3", params![encrypted, now, id])?;
+    // 更新 apiKey（加密后存储）。
+    //
+    // 三种语义必须区分清楚，否则「编辑时没动密钥输入框」会被误判成「清空密钥」：
+    //   - 字段不存在（None）      → 不修改，保留原值
+    //   - 空字符串 ""            → 不修改，保留原值（前端「留空保持不变」的约定）
+    //   - 显式 null              → 明确清空
+    // 旧实现把 "" 也走 encrypt_value（空串返回 None），等于把已有密钥写成 NULL。
+    match updates.get("apiKey") {
+        Some(v) if v.is_null() => {
+            conn.execute(
+                "UPDATE provider_connections SET api_key = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now, id],
+            )?;
+        }
+        Some(v) => {
+            if let Some(api_key) = v.as_str() {
+                let trimmed = api_key.trim();
+                if !trimmed.is_empty() {
+                    let encrypted = encrypt_value(enc_key, trimmed);
+                    conn.execute(
+                        "UPDATE provider_connections SET api_key = ?1, updated_at = ?2 WHERE id = ?3",
+                        params![encrypted, now, id],
+                    )?;
+                }
+            }
+        }
+        None => {}
     }
     // 更新 isActive
     if let Some(is_active) = updates.get("isActive").and_then(|v| v.as_bool()) {
@@ -434,11 +458,18 @@ pub fn delete(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
 /// - `id`：连接唯一标识
 /// - `status`：测试状态字符串
 /// - `error`：错误信息（可选）
-pub fn update_test_status(conn: &rusqlite::Connection, id: &str, status: &str, error: Option<&str>) -> Result<()> {
+/// - `latency_ms`：响应延迟（毫秒，可选；失败时传 None 会一并清空旧值）
+pub fn update_test_status(
+    conn: &rusqlite::Connection,
+    id: &str,
+    status: &str,
+    error: Option<&str>,
+    latency_ms: Option<i64>,
+) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "UPDATE provider_connections SET test_status = ?1, last_error = ?2, last_tested = ?3, updated_at = ?4 WHERE id = ?5",
-        params![status, error, now, now, id],
+        "UPDATE provider_connections SET test_status = ?1, last_error = ?2, last_tested = ?3, updated_at = ?4, last_latency_ms = ?5 WHERE id = ?6",
+        params![status, error, now, now, latency_ms, id],
     )?;
     Ok(())
 }
@@ -556,5 +587,7 @@ fn row_to_connection(row: &Row, enc_key: &[u8]) -> rusqlite::Result<ProviderConn
         provider_specific_data: specific_data,
         created_at: row.get(33)?,
         updated_at: row.get(34)?,
+        // 迁移 004 新增列；老库未应用迁移时用 unwrap_or 兜底，避免整表查询失败
+        last_latency_ms: row.get::<_, Option<i64>>(35).unwrap_or(None),
     })
 }

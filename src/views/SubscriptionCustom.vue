@@ -1,32 +1,32 @@
 <template>
-  <div class="wizard">
+  <div class="wizard max-w-560px mx-auto">
     <!-- 页面头部：标题与副标题 -->
     <PageHeader title="自定义提供方" sub="接入任意 OpenAI 兼容端点" />
 
     <div class="card">
-      <div class="card-body form">
+      <div class="card-body form flex flex-col gap-[var(--gap-lg)] pt-24px">
         <!-- Provider ID：唯一标识，用于请求路由与凭据派生 -->
-        <div class="field">
-          <label class="field-label">Provider ID <span class="req">*</span></label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">Provider ID <span class="req text-err ml-2px">*</span></label>
           <el-input v-model="form.customProviderId" placeholder="acme-gateway" />
-          <div class="field-hint">以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。</div>
+          <div class="field-hint text-11.5px text-ink-4">以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。</div>
         </div>
 
         <!-- 显示名称 -->
-        <div class="field">
-          <label class="field-label">显示名称</label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">显示名称</label>
           <el-input v-model="form.displayName" placeholder="显示名称" />
         </div>
 
         <!-- API 地址 -->
-        <div class="field">
-          <label class="field-label">API 地址 <span class="req">*</span></label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">API 地址 <span class="req text-err ml-2px">*</span></label>
           <el-input v-model="form.baseUrl" placeholder="https://api.your-gateway.com/v1" />
         </div>
 
         <!-- API 协议选择 -->
-        <div class="field">
-          <label class="field-label">API 协议 <span class="req">*</span></label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">API 协议 <span class="req text-err ml-2px">*</span></label>
           <el-select v-model="form.apiProtocol" placeholder="选择协议" style="width: 100%">
             <el-option
               v-for="p in protocols"
@@ -38,15 +38,15 @@
         </div>
 
         <!-- API 密钥 -->
-        <div class="field">
-          <label class="field-label">API 密钥</label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">API 密钥</label>
           <el-input v-model="form.apiKey" type="password" show-password placeholder="输入 API 密钥" />
         </div>
 
         <!-- 模型目录：可拉取可用模型并多选 -->
-        <div class="field">
-          <div class="row-between">
-            <span class="field-label static">模型目录</span>
+        <div class="field flex flex-col gap-6px">
+          <div class="row-between flex items-center justify-between">
+            <span class="field-label static text-12px font-medium text-ink-2">模型目录</span>
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels" @click="fetchModels">
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
@@ -69,21 +69,21 @@
             />
           </el-select>
           <!-- 已选模型列表：第一个为默认模型 -->
-          <div v-if="selectedModels.length" class="model-list">
-            <div class="model-row" v-for="(m, i) in selectedModels" :key="m.id">
-              <span class="model-idx" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
-              <span class="model-id mono" :title="m.id">{{ m.id }}</span>
-              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name" />
+          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
+            <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
+              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
+              <span class="model-id mono shrink-0 w-150px text-12px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis" :title="m.id">{{ m.id }}</span>
+              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1" />
               <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
             </div>
           </div>
-          <div v-else class="model-hint">点击「获取可用模型」将基于上方地址与密钥直接拉取，<b>无需先保存连接</b>；可多选并为每个模型设置自定义名称。</div>
+          <div v-else class="model-hint text-11.5px text-ink-4 py-10px px-12px bg-surface-2 border border-dashed border-line rounded-sm text-center">点击「获取可用模型」将基于上方地址与密钥直接拉取，<b>无需先保存连接</b>；可多选并为每个模型设置自定义名称。</div>
         </div>
       </div>
     </div>
 
     <!-- 底部操作按钮 -->
-    <div class="wizard-actions">
+    <div class="wizard-actions flex justify-end gap-[var(--gap-sm)] mt-[var(--gap-lg)]">
       <button type="button" class="btn" @click="$router.back()">取消</button>
       <button type="button" class="btn primary" :disabled="!canSubmit || saving" @click="submit">
         {{ saving ? '保存中…' : '添加模型' }}
@@ -235,63 +235,10 @@ async function submit() {
 </script>
 
 <style scoped>
-.wizard { max-width: 560px; margin: 0 auto; }
-.form { display: flex; flex-direction: column; gap: var(--gap-lg); padding-top: 24px; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .field-label.static { font-weight: 600; }
-.req { color: var(--err); margin-left: 2px; }
-.field-hint { font-size: 11.5px; color: var(--ink-4); }
-.wizard-actions { display: flex; justify-content: flex-end; gap: var(--gap-sm); margin-top: var(--gap-lg); }
-
-.row-between { display: flex; align-items: center; justify-content: space-between; }
-
-.model-hint {
-  font-size: 11.5px;
-  color: var(--ink-4);
-  padding: 10px 12px;
-  background: var(--surface-2);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-sm);
-  text-align: center;
-}
-.model-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.model-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.model-idx {
-  flex-shrink: 0;
-  width: 34px;
-  font-size: 11px;
-  color: var(--ink-4);
-  text-align: center;
-}
 .model-idx.primary {
   color: var(--ok);
   font-weight: 600;
-}
-.model-id {
-  flex-shrink: 0;
-  width: 150px;
-  font-size: 12px;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.model-name {
-  flex: 1;
 }
 .model-name :deep(.el-input__inner) { font-size: 12px; }
 .btn.sm.ghost {

@@ -1,8 +1,8 @@
 <template>
-  <div class="empty-state">
-    <div class="empty-icon"><component :is="icon" /></div>
-    <div class="empty-title">{{ title }}</div>
-    <div v-if="desc" class="empty-desc">{{ desc }}</div>
+  <div class="empty-state py-48px px-24px text-center text-ink-3">
+    <div class="empty-icon w-32px h-32px mx-auto mb-12px text-ink-4"><component :is="icon" /></div>
+    <div class="empty-title text-14px font-semibold text-ink-2 mb-6px">{{ title }}</div>
+    <div v-if="desc" class="empty-desc text-12.5px leading-1.6 mb-16px">{{ desc }}</div>
     <slot />
   </div>
 </template>
@@ -22,13 +22,5 @@ withDefaults(
 </script>
 
 <style scoped>
-.empty-state {
-  padding: 48px 24px;
-  text-align: center;
-  color: var(--ink-3);
-}
-.empty-icon { width: 32px; height: 32px; margin: 0 auto 12px; color: var(--ink-4); }
 .empty-icon :deep(svg) { width: 32px; height: 32px; }
-.empty-title { font-size: 14px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
-.empty-desc { font-size: 12.5px; line-height: 1.6; margin-bottom: 16px; }
 </style>

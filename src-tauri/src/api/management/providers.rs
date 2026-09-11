@@ -25,6 +25,19 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
     let masked_key = c.api_key.as_deref().map(|k| {
         if k.len() > 8 { format!("{}{}", "*".repeat(k.len()-4), &k[k.len()-4..]) } else { "*".repeat(k.len()) }
     });
+    // 是否配置了密钥。前端不能再靠掩码字符串是否为空来猜——掩码恒为非空，
+    // 而真正未配置时 api_key 为 NULL，二者必须区分开。
+    let has_api_key = c
+        .api_key
+        .as_deref()
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
+    // 是否配置了 OAuth access token（OAuth 连接没有 api_key，但有令牌）
+    let has_access_token = c
+        .access_token
+        .as_deref()
+        .map(|t| !t.trim().is_empty())
+        .unwrap_or(false);
     // 自定义提供方扩展字段：从 provider_specific_data 提取 baseUrl / apiProtocol / customId，
     // 这样前端不必理解 JSON 结构直接读平铺字段。
     let empty_obj = serde_json::json!({});
@@ -43,8 +56,12 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
         "priority": c.priority,
         "isActive": c.is_active,
         "apiKey": masked_key,
+        "hasApiKey": has_api_key,
+        "hasAccessToken": has_access_token,
         "projectId": c.project_id,
         "testStatus": c.test_status,
+        "lastTestedAt": c.last_tested,
+        "lastLatencyMs": c.last_latency_ms,
         "errorCode": c.error_code,
         "lastError": c.last_error,
         "lastErrorAt": c.last_error_at,
@@ -239,7 +256,13 @@ pub async fn test_provider(
             // 执行连接测试
             let test_result = test_connection(&p, def).await;
             // 持久化测试结果
-            let _ = db_providers::update_test_status(&conn, &id, &test_result.status, test_result.error.as_deref());
+            let _ = db_providers::update_test_status(
+                &conn,
+                &id,
+                &test_result.status,
+                test_result.error.as_deref(),
+                test_result.latency_ms.map(|v| v as i64),
+            );
             HttpResponse::Ok().json(json!({
                 "status": test_result.status,
                 "error": test_result.error,
@@ -282,6 +305,27 @@ async fn test_connection(
             latency_ms: None,
         },
     };
+
+    // 需要鉴权却没有任何凭据时直接短路。
+    // 否则会发出一个无鉴权请求，上游回 401/404，前端显示成「地址不通」，
+    // 把真正的原因（没填密钥）掩盖掉。
+    let has_credential = connection
+        .api_key
+        .as_deref()
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false)
+        || connection
+            .access_token
+            .as_deref()
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
+    if !def.no_auth && !has_credential {
+        return TestResult {
+            status: "error".into(),
+            error: Some("该连接未配置 API 密钥，无法测试。请在「认证凭据」中填写密钥后重试".into()),
+            latency_ms: None,
+        };
+    }
 
     // 确定基础 URL：优先使用连接中的自定义 baseUrl
     let base_url = connection
@@ -557,12 +601,16 @@ pub async fn preview_models(
         Ok(resp) => {
             let status = resp.status();
             if !status.is_success() {
-                // HTTP 错误：根据状态码给出友好提示
+                // HTTP 错误：根据状态码给出友好提示，并附带上游真实错误信息（如有）
                 let detail = resp.text().await.unwrap_or_default();
+                let upstream = extract_upstream_error(&detail);
                 let hint = match status.as_u16() {
                     401 => "API 密钥无效或已过期，请检查密钥是否正确".to_string(),
                     403 => "密钥权限不足，可能未开通模型访问权限".to_string(),
-                    429 => "请求过于频繁被限流，请稍后重试（部分平台需等待 1 分钟）".to_string(),
+                    429 => match upstream.as_deref() {
+                        Some(u) => format!("请求被上游限流（{}），请稍后重试", u),
+                        None => "请求过于频繁被限流，请稍后重试（部分平台需等待 1 分钟）".to_string(),
+                    },
                     500..=599 => format!("上游服务异常（HTTP {}），请稍后重试", status.as_u16()),
                     _ => format!("远程返回 HTTP {}", status.as_u16()),
                 };
@@ -592,6 +640,47 @@ pub async fn preview_models(
         Err(e) => HttpResponse::BadGateway().json(json!({
             "error": format!("无法连接到该地址，请检查 API 地址是否正确、网络是否可访问该服务（底层错误：{}）", e)
         })),
+    }
+}
+
+/// 从上游错误响应体中提取真实错误信息，用于补充友好提示。
+///
+/// 支持两种常见格式：
+/// - OpenAI 风格：`{ "error": { "message": "...", "code": "..." } }`
+/// - AMD / FastAPI 风格：`{ "detail": { "error": { "message": "...", "code": "..." } } }`
+///   或 `{ "detail": "纯文本错误" }`
+///
+/// - `body`：上游返回的响应体文本
+/// - 返回值：提取出的 `message [code]` 形式描述，无法解析时返回 None
+fn extract_upstream_error(body: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    // 优先取 error 对象（OpenAI 风格），其次 detail.error（AMD/FastAPI 风格）
+    let err = v
+        .get("error")
+        .cloned()
+        .or_else(|| v.get("detail").and_then(|d| d.get("error")).cloned());
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(err) = err {
+        if let Some(m) = err.get("message").and_then(|x| x.as_str()) {
+            if !m.is_empty() {
+                parts.push(m.to_string());
+            }
+        }
+        if let Some(c) = err.get("code").and_then(|x| x.as_str()) {
+            if !c.is_empty() {
+                parts.push(format!("[{}]", c));
+            }
+        }
+    } else if let Some(d) = v.get("detail").and_then(|x| x.as_str()) {
+        // detail 为纯文本的情况（如 FastAPI 默认错误）
+        if !d.is_empty() {
+            parts.push(d.to_string());
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
     }
 }
 

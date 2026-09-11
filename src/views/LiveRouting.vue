@@ -1,41 +1,41 @@
 <template>
-  <div class="live-root">
+  <div class="live-root flex-1 min-h-0 flex flex-col" data-tauri-drag-region>
     <!-- 顶部标题栏与网关运行状态徽标 -->
-    <div class="page-bar">
+    <div class="page-bar" data-tauri-drag-region >
       <span class="page-head">实时路由</span>
       <StatusBadge :tone="running ? 'ok' : 'err'" :label="running ? '网关运行中' : '网关未运行'" />
     </div>
 
-    <el-scrollbar class="live-scroll">
-      <div class="page-col live-col">
+    <el-scrollbar class="live-scroll flex-1">
+      <div class="page-col live-col p-24px">
         <!-- 拓扑简图：对外协议 → Vortex → 上游提供商 -->
         <div class="card topo-card">
-          <div class="topo">
+          <div class="topo flex items-center justify-center gap-24px">
             <!-- 左列：对外协议 -->
-            <div class="topo-col">
-              <div class="topo-title">对外协议</div>
-              <div class="rf-proto" v-for="p in protocols" :key="p.name">
-                <span class="rf-proto-icon" :class="p.cls">{{ p.tag }}</span>
-                <span class="rf-proto-name">{{ p.name }}</span>
+            <div class="topo-col flex flex-col gap-8px min-w-160px">
+              <div class="topo-title text-11px text-ink-4 uppercase tracking-0.04em mb-4px">对外协议</div>
+              <div class="rf-proto flex items-center gap-8px py-8px px-10px rounded-sm border border-line bg-surface-2 text-13px" v-for="p in protocols" :key="p.name">
+                <span class="rf-proto-icon grid place-items-center w-28px h-20px rounded-4px text-10px font-bold shrink-0" :class="p.cls">{{ p.tag }}</span>
+                <span class="rf-proto-name text-ink-2">{{ p.name }}</span>
               </div>
             </div>
             <!-- 中列：Vortex 网关中心节点 -->
-            <div class="topo-mid">
-              <div class="rf-flow-line" />
-              <div class="rf-hub">Vortex</div>
-              <div class="rf-flow-line" />
+            <div class="topo-mid flex flex-col items-center gap-4px">
+              <div class="rf-flow-line w-2px h-24px bg-line-2 rounded-1px" />
+              <div class="rf-hub w-64px h-64px rounded-16px grid place-items-center font-bold text-13px bg-accent-bg text-accent-ink border border-accent-line">Vortex</div>
+              <div class="rf-flow-line w-2px h-24px bg-line-2 rounded-1px" />
             </div>
             <!-- 右列：上游提供商列表 -->
-            <div class="topo-col">
-              <div class="topo-title">上游提供商</div>
+            <div class="topo-col flex flex-col gap-8px min-w-160px">
+              <div class="topo-title text-11px text-ink-4 uppercase tracking-0.04em mb-4px">上游提供商</div>
               <template v-if="upstreams.length > 0">
-                <div class="rf-up" v-for="p in upstreams" :key="p.id">
+                <div class="rf-up flex items-center gap-8px py-6px px-8px rounded-sm bg-surface-2 border border-line" v-for="p in upstreams" :key="p.id">
                   <ProviderLogo :name="p.provider" :hint="`${p.name} ${p.baseUrl || ''}`" :size="16" />
-                  <span class="rf-up-name">{{ p.name }}</span>
-                  <span class="rf-up-badge">{{ p.model || '默认' }}</span>
+                  <span class="rf-up-name text-12px text-ink-2">{{ p.name }}</span>
+                  <span class="rf-up-badge ml-auto text-10px font-mono text-ink-4 bg-surface-3 py-1px px-5px rounded-3px">{{ p.model || '默认' }}</span>
                 </div>
               </template>
-              <div v-else class="topo-empty">暂无活跃连接，请先在订阅页添加</div>
+              <div v-else class="topo-empty text-12px text-ink-4 p-8px">暂无活跃连接，请先在订阅页添加</div>
             </div>
           </div>
         </div>
@@ -49,8 +49,8 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="access-row" v-for="e in endpoints" :key="e.label">
-              <span class="access-label">{{ e.label }}</span>
+            <div class="access-row flex items-center gap-12px py-4px" v-for="e in endpoints" :key="e.label">
+              <span class="access-label w-90px shrink-0 text-12px font-medium text-ink-3">{{ e.label }}</span>
               <CopyableBlock :text="e.url" variant="inline">{{ e.url }}</CopyableBlock>
             </div>
           </div>
@@ -64,11 +64,11 @@
               <div class="card-sub">OpenAI 兼容 + Anthropic 兼容 + 管理接口</div>
             </div>
           </div>
-          <div class="card-body api-list">
+          <div class="card-body api-list flex flex-col">
             <div v-for="a in apis" :key="a.method + a.path" class="api-row">
-              <span class="api-method mono" :class="a.group">{{ a.method }}</span>
-              <span class="api-path mono">{{ a.path }}</span>
-              <span class="api-desc">{{ a.desc }}</span>
+              <span class="api-method mono text-11px font-bold" :class="a.group">{{ a.method }}</span>
+              <span class="api-path mono text-12.5px text-ink-2">{{ a.path }}</span>
+              <span class="api-desc text-12px text-ink-3">{{ a.desc }}</span>
             </div>
           </div>
         </div>
@@ -159,65 +159,13 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.live-root { height: 100vh; display: flex; flex-direction: column; }
-.live-scroll { flex: 1; }
-.live-col { padding: 24px; }
-
 .topo-card { padding: var(--pad-card); margin-bottom: var(--gap-lg); }
-.topo { display: flex; align-items: center; justify-content: center; gap: 24px; }
-.topo-col { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
-.topo-title { font-size: 11px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-.topo-mid { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.rf-hub {
-  width: 64px; height: 64px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 13px;
-  background: var(--accent-bg);
-  color: var(--accent-ink);
-  border: 1px solid var(--accent-line);
-}
-.rf-flow-line { width: 2px; height: 24px; background: var(--line-2); border-radius: 1px; }
 
-.rf-proto {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  font-size: 13px;
-}
-.rf-proto-icon {
-  display: grid; place-items: center;
-  width: 28px; height: 20px;
-  border-radius: 4px;
-  font-size: 10px; font-weight: 700;
-  flex-shrink: 0;
-}
 .rf-proto-icon.oai { background: oklch(0.90 0.05 150); color: oklch(0.40 0.12 150); }
 .rf-proto-icon.ant { background: oklch(0.88 0.08 280); color: oklch(0.40 0.15 280); }
-.rf-proto-name { color: var(--ink-2); }
-
-.rf-up { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
-.rf-up-name { font-size: 12px; color: var(--ink-2); }
-.rf-up-badge {
-  margin-left: auto;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--ink-4);
-  background: var(--surface-3);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-.topo-empty { font-size: 12px; color: var(--ink-4); padding: 8px; }
 
 .section { margin-bottom: var(--gap-lg); }
-.access-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
-.access-label { width: 90px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 
-.api-list { display: flex; flex-direction: column; }
 .api-row {
   display: grid;
   grid-template-columns: 56px 1fr auto;
@@ -227,10 +175,7 @@ onMounted(async () => {
   border-bottom: 1px solid var(--line);
 }
 .api-row:last-child { border-bottom: none; }
-.api-method { font-size: 11px; font-weight: 700; }
 .api-method.oai { color: oklch(0.45 0.12 150); }
 .api-method.ant { color: oklch(0.50 0.15 280); }
 .api-method.mgmt { color: var(--ink-4); }
-.api-path { font-size: 12.5px; color: var(--ink-2); }
-.api-desc { font-size: 12px; color: var(--ink-3); }
 </style>

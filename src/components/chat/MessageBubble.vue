@@ -1,19 +1,19 @@
 <template>
-  <div class="msg" :class="{ mine: isUser }">
-    <div class="avatar" :class="{ mine: isUser }" aria-hidden="true">
+  <div class="msg flex w-full gap-10px" :class="{ mine: isUser }">
+    <div class="avatar mt-2px shrink-0 w-32px h-32px rounded-full grid place-items-center bg-surface-3 text-ink-3" :class="{ mine: isUser }" aria-hidden="true">
       <el-icon :size="15"><component :is="isUser ? User : Cpu" /></el-icon>
     </div>
 
-    <div class="msg-col" :class="{ mine: isUser }">
-      <div class="msg-meta" :class="{ mine: isUser }">
-        <span class="msg-who">{{ isUser ? '我' : '助手' }}</span>
+    <div class="msg-col flex flex-col gap-4px min-w-0 max-w-76% items-start" :class="{ mine: isUser }">
+      <div class="msg-meta flex items-center gap-8px px-2px text-11px text-ink-4" :class="{ mine: isUser }">
+        <span class="msg-who font-medium text-ink-3">{{ isUser ? '我' : '助手' }}</span>
         <span v-if="time" :title="new Date(msg.createdAt).toLocaleString()">{{ time }}</span>
       </div>
 
       <div v-if="isError" class="err-callout">
-        <div class="err-head">
-          <el-icon :size="14" class="err-icon"><CircleClose /></el-icon>
-          <span class="err-title">生成失败</span>
+        <div class="err-head flex items-center gap-6px text-err">
+          <el-icon :size="14" class="err-icon shrink-0"><CircleClose /></el-icon>
+          <span class="err-title font-medium text-12.5px">生成失败</span>
           <button
             v-if="msg.content.length > 60"
             type="button"
@@ -26,9 +26,9 @@
         <div class="err-body" :class="{ collapsed: !expanded && msg.content.length > 60 }">{{ msg.content }}</div>
       </div>
 
-      <div v-else class="bubble" :class="{ mine: isUser }">{{ body }}</div>
+      <div v-else class="bubble px-14px py-9px rounded-12px text-14px leading-1.625 text-ink bg-surface border border-line whitespace-pre-wrap break-words min-w-64px min-h-22px" :class="{ mine: isUser }">{{ body }}</div>
 
-      <div v-if="showBranch || showRegen" class="msg-ops">
+      <div v-if="showBranch || showRegen" class="msg-ops flex items-center gap-3px pt-2px px-2px text-ink-4">
         <template v-if="showBranch">
           <button
             type="button"
@@ -40,7 +40,7 @@
           >
             <el-icon :size="13"><ArrowLeft /></el-icon>
           </button>
-          <span class="branch-idx tnum">{{ msg.siblingIndex + 1 }}/{{ msg.siblingCount }}</span>
+          <span class="branch-idx tnum min-w-34px text-center text-11px">{{ msg.siblingIndex + 1 }}/{{ msg.siblingCount }}</span>
           <button
             type="button"
             class="op"
@@ -107,58 +107,15 @@ const time = computed(() => {
 </script>
 
 <style scoped>
-.msg { display: flex; width: 100%; gap: 10px; }
 .msg.mine { flex-direction: row-reverse; }
 
-.avatar {
-  margin-top: 2px;
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--surface-3);
-  color: var(--ink-3);
-}
 .avatar.mine { background: var(--accent-bg); color: var(--accent-ink); }
 
-.msg-col {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  max-width: 76%;
-  align-items: flex-start;
-}
 .msg-col.mine { align-items: flex-end; }
 
-.msg-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 2px;
-  font-size: 11px;
-  color: var(--ink-4);
-}
 .msg-meta.mine { flex-direction: row-reverse; }
-.msg-who { font-weight: 500; color: var(--ink-3); }
 
-.bubble {
-  padding: 9px 14px;
-  border-radius: 12px;
-  border-bottom-left-radius: 4px;
-  font-size: 14px;
-  line-height: 1.625;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  white-space: pre-wrap;
-  word-break: break-word;
-  /* 用户极短消息（如 "试试"）避免塌成小方块 */
-  min-width: 64px;
-  min-height: 22px;
-}
+.bubble { border-bottom-left-radius: 4px; }
 .bubble.mine {
   background: var(--accent-bg);
   border-color: transparent;
@@ -185,14 +142,6 @@ html.dark .bubble.mine { color: var(--ink); }
   color: var(--ink-2);
   word-break: break-word;
 }
-.err-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--err);
-}
-.err-icon { flex-shrink: 0; }
-.err-title { font-weight: 500; font-size: 12.5px; }
 .err-toggle {
   margin-left: auto;
   padding: 1px 8px;
@@ -219,7 +168,6 @@ html.dark .bubble.mine { color: var(--ink); }
   overflow: hidden;
 }
 
-.msg-ops { display: flex; align-items: center; gap: 3px; padding: 2px 2px 0; color: var(--ink-4); }
 .op {
   display: inline-flex;
   align-items: center;
@@ -235,5 +183,4 @@ html.dark .bubble.mine { color: var(--ink); }
 .op:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
 .op:disabled { opacity: 0.3; cursor: not-allowed; }
 .op.text { font-size: 11.5px; }
-.branch-idx { min-width: 34px; text-align: center; font-size: 11px; }
 </style>

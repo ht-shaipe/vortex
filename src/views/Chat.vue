@@ -1,7 +1,10 @@
 <template>
-  <div class="chat-root">
+  <div class="chat-root flex flex-1 h-full min-h-0 bg-bg">
     <!-- 会话侧栏：会话列表与新建/重命名/删除入口 -->
-    <div class="chat-side" :class="{ collapsed: layout.topicListCollapsed }">
+    <div
+      class="chat-side shrink-0 w-208px overflow-hidden"
+      :class="{ 'collapsed w-0': layout.topicListCollapsed }"
+    >
       <TopicList
         :topics="topics"
         :active-id="activeId"
@@ -13,10 +16,12 @@
     </div>
 
     <!-- 主列：头部、消息列表与输入框 -->
-    <div ref="columnEl" class="chat-col">
+    <div ref="columnEl" class="chat-col flex flex-col flex-1 min-w-0 min-h-0">
       <!-- 头部：侧边栏切换、标题与模型选择器 -->
-      <header class="chat-head">
-        <div class="head-left">
+      <header
+        class="chat-head flex items-center justify-between gap-12px shrink-0 px-16px pb-9px border-b border-line bg-surface"
+      >
+        <div class="head-left flex items-center gap-8px">
           <el-tooltip :content="`${sidebarToggleLabel} (Ctrl+[)`" placement="bottom">
             <button
               type="button"
@@ -28,10 +33,10 @@
               <el-icon :size="15"><Fold /></el-icon>
             </button>
           </el-tooltip>
-          <h1 class="chat-title">对话</h1>
+          <h1 class="chat-title m-0 text-15px font-semibold tracking-[-0.01em]">对话</h1>
         </div>
 
-        <div class="head-right">
+        <div class="head-right flex items-center gap-6px">
           <!-- 无可用模型时引导去配置 -->
           <template v-if="modelGroups.length === 0">
             <button type="button" class="btn sm" @click="goConfigure">去配置端点</button>
@@ -49,14 +54,17 @@
       </header>
 
       <!-- 消息滚动区 -->
-      <el-scrollbar class="chat-scroll">
+      <el-scrollbar class="chat-scroll flex-1 min-h-0">
         <!-- 空态提示 -->
-        <div v-if="messages.length === 0" class="chat-empty">
-          <p class="empty-main">选择模型后开始对话</p>
-          <p class="empty-sub">非核心功能，对话无工具支持，可用于测试连通性</p>
+        <div
+          v-if="messages.length === 0"
+          class="chat-empty flex flex-col items-center justify-center gap-4px h-full text-ink-4"
+        >
+          <p class="empty-main m-0 text-14px">选择模型后开始对话</p>
+          <p class="empty-sub m-0 text-12px text-ink-5">非核心功能，对话无工具支持，可用于测试连通性</p>
         </div>
         <!-- 消息气泡列表 -->
-        <div v-else class="chat-list">
+        <div v-else class="chat-list flex flex-col gap-16px w-full max-w-780px my-0 mx-auto">
           <MessageBubble
             v-for="m in messages"
             :key="m.id"
@@ -87,7 +95,7 @@
       width="400"
       :close-on-click-modal="!deleting"
     >
-      <p class="del-text">
+      <p class="del-text m-0 text-14px text-ink-2 leading-1.6">
         确定删除「{{ deletingTopic?.title || '新对话' }}」吗？该会话下的消息会一并删除，且无法恢复。
       </p>
       <template #footer>
@@ -582,74 +590,18 @@ function goConfigure(): void {
 </script>
 
 <style scoped>
-.chat-root {
-  display: flex;
-  flex: 1;
-  height: 100%;
-  min-height: 0;
-  background: var(--bg);
-}
-
+/* 侧边栏折叠过渡动画（transition 难以用原子类表达，保留） */
 .chat-side {
-  flex-shrink: 0;
-  width: 208px;
-  overflow: hidden;
   transition: width 0.2s ease-in-out;
 }
-.chat-side.collapsed { width: 0; }
 
-.chat-col {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
+/* 头部：拖动由 AppLayout 顶部的 WindowChrome 统一处理 */
 .chat-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-  padding: 9px 16px;
-  padding-top: calc(38px + 9px);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  -webkit-app-region: drag;
-}
-.chat-head .btn,
-.chat-head .model-selector,
-.chat-head [class*="model"] {
-  -webkit-app-region: no-drag;
-}
-.head-left { display: flex; align-items: center; gap: 8px; }
-.chat-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.head-right { display: flex; align-items: center; gap: 6px; }
-
-.chat-scroll { flex: 1; min-height: 0; }
-.chat-scroll :deep(.el-scrollbar__view) { padding: 20px 20px 12px; }
-
-.chat-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 100%;
-  color: var(--ink-4);
-}
-.empty-main { margin: 0; font-size: 14px; }
-.empty-sub { margin: 0; font-size: 12px; color: var(--ink-5); }
-
-.chat-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  max-width: 780px;
-  margin: 0 auto;
+  padding-top: 9px;
 }
 
-.del-text { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+/* el-scrollbar 内部 padding（:deep() 穿透选择器，保留） */
+.chat-scroll :deep(.el-scrollbar__view) {
+  padding: 20px 20px 12px;
+}
 </style>

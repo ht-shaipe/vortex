@@ -1,7 +1,7 @@
 <template>
-  <div class="trend">
-    <div class="trend-head">
-      <h2 class="sec-title">调用趋势</h2>
+  <div class="trend flex flex-col">
+    <div class="trend-head flex items-center justify-between">
+      <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">调用趋势</h2>
       <div class="range-tabs">
         <button
           v-for="t in METRIC_TABS"
@@ -15,7 +15,7 @@
         </button>
       </div>
     </div>
-    <VChart class="trend-chart" :option="option" autoresize />
+    <VChart class="trend-chart h-224px w-full" :option="option" autoresize />
   </div>
 </template>
 
@@ -65,6 +65,15 @@ const option = computed(() => {
       borderColor: c.line,
       borderWidth: 1,
       textStyle: { color: c.ink, fontSize: 12 },
+      axisPointer: {
+        type: 'line',
+        lineStyle: {
+          color: c.accent,
+          type: 'dashed',
+          width: 1,
+          opacity: 0.4,
+        },
+      },
       formatter: (params: unknown) => {
         const arr = params as { dataIndex: number; value: number }[]
         const first = arr?.[0]
@@ -97,6 +106,12 @@ const option = computed(() => {
         data: points.map((p) => (metric.value === 'requests' ? p.requests : p.tokens)),
         lineStyle: { width: 2, color: c.accent },
         itemStyle: { color: c.accent },
+        emphasis: {
+          focus: 'series',
+          lineStyle: { width: 2, color: c.accent },
+          itemStyle: { color: c.accent },
+          areaStyle: { opacity: 0.45 },
+        },
         areaStyle: {
           color: {
             type: 'linear',
@@ -118,8 +133,5 @@ const option = computed(() => {
 </script>
 
 <style scoped>
-.trend { display: flex; flex-direction: column; gap: var(--gap-md); }
-.trend-head { display: flex; align-items: center; justify-content: space-between; }
-.sec-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.trend-chart { height: 224px; width: 100%; }
+.trend { gap: var(--gap-md); }
 </style>

@@ -57,20 +57,11 @@ pub async fn anthropic_messages(
     // 获取代理引擎读锁，处理请求
     let engine = state.proxy_engine.read();
     match engine.handle_request(&state, request).await {
-        Ok(ProxyOutput::Response(response)) => {
+        Ok(ProxyOutput::Response(body)) => {
             // 非流式：上游 OpenAI JSON → Anthropic Messages 响应
-            let body_bytes = actix_web::body::to_bytes(response.into_body())
-                .await
-                .unwrap_or_default();
-            match serde_json::from_slice::<Value>(&body_bytes) {
-                Ok(v) => HttpResponse::Ok().json(
-                    crate::translator::openai_to_anthropic_response(&v, &original_model),
-                ),
-                Err(_) => HttpResponse::BadGateway().json(json!({
-                    "type": "error",
-                    "error": {"type": "api_error", "message": "Invalid upstream response"}
-                })),
-            }
+            HttpResponse::Ok().json(
+                crate::translator::openai_to_anthropic_response(&body, &original_model),
+            )
         }
         Ok(ProxyOutput::Stream(stream)) => {
             // 流式：将 OpenAI chunk 流转换为 Anthropic SSE 事件流

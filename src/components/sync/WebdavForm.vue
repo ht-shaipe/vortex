@@ -9,20 +9,20 @@
       后即可启用云端备份与恢复。
     </p>
 
-    <div class="form-grid">
-      <div v-for="f in FIELDS" :key="f.k" class="field">
-        <label class="field-label" :for="`wd-${f.k}`">{{ f.label }}</label>
+    <div class="form-grid grid grid-cols-2 gap-12px">
+      <div v-for="f in FIELDS" :key="f.k" class="field flex flex-col gap-5px min-w-0">
+        <label class="field-label text-sm text-ink-3" :for="`wd-${f.k}`">{{ f.label }}</label>
         <input
           :id="`wd-${f.k}`"
           v-model="form[f.k]"
-          class="field-input"
+          class="field-input h-32px px-9px border border-line rounded-sm bg-surface text-ink text-body outline-none transition-colors duration-120ms"
           :type="f.type ?? 'text'"
           :placeholder="f.ph"
         />
       </div>
     </div>
 
-    <div class="form-foot">
+    <div class="form-foot flex gap-8px">
       <button type="button" class="btn" :disabled="testing" @click="onTest">
         {{ testing ? '测试中…' : '测试连接' }}
       </button>
@@ -94,21 +94,6 @@ async function onSave(): Promise<void> {
 </script>
 
 <style scoped>
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.field-label { font-size: var(--fs-sm); color: var(--ink-3); }
-.field-input {
-  height: 32px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: var(--fs-body);
-  outline: none;
-  transition: border-color 0.12s;
-}
 .field-input:focus { border-color: var(--accent); }
 .field-input::placeholder { color: var(--ink-4); }
-.form-foot { display: flex; gap: 8px; }
 </style>

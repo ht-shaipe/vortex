@@ -1,9 +1,8 @@
 /**
- * 统计适配层（对齐 ccMesh statsApi / usageApi 的数据形状）。
+ * 统计适配层。
  *
- * 背景：ccMesh 的统计由 Rust 侧 `daily_stats` / `request_logs` 两张聚合表直接供数；
- * vortex 后端目前只有 `usage_history` 明细表（`GET /api/usage`，snake_case JSON）。
- * 因此本模块把明细在前端聚合成 ccMesh 的各类形状，让统计页拿真实数据跑起来，
+ * 背景：vortex 后端目前只有 `usage_history` 明细表（`GET /api/usage`，snake_case JSON）。
+ * 本模块把明细在前端聚合成各类统计形状，让统计页拿真实数据跑起来，
  * 后端补齐聚合接口后只需替换本文件的实现，组件层无需改动。
  *
  * 注意：后端 JSON 为 snake_case（Rust struct 未加 serde rename_all），
@@ -38,7 +37,7 @@ export interface RawUsageEntry {
   timestamp: string
 }
 
-/* ============ ccMesh 数据形状 ============ */
+/* ============ 统计数据形状 ============ */
 
 /** 单个端点的统计指标 */
 export interface EndpointStat {
@@ -534,14 +533,14 @@ function passFilter(e: NormEntry, f: UsageFilter): boolean {
   return true
 }
 
-/** ccMesh 的「来源」在 vortex 对应 provider。 */
+/** 「来源」对应 provider。 */
 function appTypeOf(e: NormEntry): string {
   return e.raw.provider ?? 'unknown'
 }
 
 /** usageApi：用量统计面板的数据接口 */
 export const usageApi = {
-  /** ccMesh 是扫本机会话日志；vortex 数据本就在库里，这里等价于刷新缓存。 */
+  /** 数据本就在库里，这里等价于刷新缓存。 */
   async sync(): Promise<{ imported: number; filesScanned: number; errors: number }> {
     invalidateStatsCache()
     const rows = await fetchEntries()
@@ -576,7 +575,7 @@ export const usageApi = {
     return s
   },
 
-  /** date 倒序、组内 token 降序（与 ccMesh 后端排序一致，前端表格按 date 合并行）。 */
+  /** date 倒序、组内 token 降序，前端表格按 date 合并行。 */
   async getByDayModel(f: UsageFilter = {}): Promise<DayModelUsage[]> {
     const rows = await normalized()
     const map = new Map<string, DayModelUsage>()

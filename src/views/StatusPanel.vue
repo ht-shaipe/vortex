@@ -1,37 +1,53 @@
 <template>
-  <div class="status-panel">
+  <div
+    class="status-panel w-full h-screen box-border p-14px flex flex-col gap-10px bg-surface rounded-14px border border-line overflow-hidden"
+  >
     <!-- 顶部标题栏 -->
-    <div class="sp-header">
-      <div class="sp-brand">
-        <span class="sp-logo">V</span>
-        <div class="sp-brand-text">
-          <span class="sp-name">Vortex</span>
-          <span class="sp-version">v{{ status?.version ?? '—' }}</span>
+    <div class="sp-header flex items-center justify-between shrink-0">
+      <div class="sp-brand flex items-center gap-8px">
+        <span
+          class="sp-logo w-28px h-28px rounded-7px bg-ink text-accent grid place-items-center font-extrabold text-14px"
+          >V</span
+        >
+        <div class="sp-brand-text flex flex-col leading-1.15">
+          <span class="sp-name text-14px font-bold text-ink">Vortex</span>
+          <span class="sp-version text-10.5px text-ink-4">v{{ status?.version ?? '—' }}</span>
         </div>
       </div>
-      <div class="sp-proxy-badge" :class="status?.proxy_running ? 'on' : 'off'">
-        <span class="sp-dot" />
+      <div
+        class="sp-proxy-badge inline-flex items-center gap-5px py-3px px-8px rounded-full text-11px font-semibold"
+        :class="status?.proxy_running ? 'on bg-ok-bg text-ok' : 'off bg-err-bg text-err'"
+      >
+        <span class="sp-dot w-6px h-6px rounded-full bg-current" />
         {{ status?.proxy_running ? '运行中' : '已停止' }}
       </div>
     </div>
 
     <!-- 代理状态卡片 -->
-    <div class="sp-card">
-      <div class="sp-card-row">
-        <span class="sp-label">代理端口</span>
-        <span class="sp-value tnum">{{ status?.proxy_port ?? '—' }}</span>
+    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
+      <div class="sp-card-row flex items-center justify-between py-3px">
+        <span class="sp-label text-12.5px text-ink-3">代理端口</span>
+        <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
+          status?.proxy_port ?? '—'
+        }}</span>
       </div>
-      <div class="sp-card-row">
-        <span class="sp-label">数据库</span>
-        <span class="sp-value" :class="status?.database_ok ? 'ok' : 'err'">
+      <div class="sp-card-row flex items-center justify-between py-3px">
+        <span class="sp-label text-12.5px text-ink-3">数据库</span>
+        <span
+          class="sp-value text-12.5px font-semibold text-ink"
+          :class="status?.database_ok ? 'text-ok' : 'text-err'"
+        >
           {{ status?.database_ok ? '正常' : '异常' }}
         </span>
       </div>
-      <div class="sp-card-actions">
+      <div class="sp-card-actions mt-8px pt-8px border-t border-line">
         <button
           type="button"
-          class="sp-btn"
-          :class="{ primary: !status?.proxy_running, danger: status?.proxy_running }"
+          class="sp-btn w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer"
+          :class="{
+            'primary bg-accent text-white': !status?.proxy_running,
+            'danger bg-err-bg text-err': status?.proxy_running,
+          }"
           :disabled="busy"
           @click="toggleProxy"
         >
@@ -41,48 +57,76 @@
     </div>
 
     <!-- 连接统计 -->
-    <div class="sp-card">
-      <p class="sp-card-title">连接统计</p>
-      <div class="sp-stats-grid">
-        <div class="sp-stat">
-          <span class="sp-stat-num tnum">{{ status?.provider_count ?? 0 }}</span>
-          <span class="sp-stat-label">提供商</span>
+    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
+      <p
+        class="sp-card-title m-0 mb-8px text-11px font-semibold tracking-0.05em uppercase text-ink-4"
+      >
+        连接统计
+      </p>
+      <div class="sp-stats-grid grid grid-cols-2 gap-8px">
+        <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
+          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 tabular-nums">{{
+            status?.provider_count ?? 0
+          }}</span>
+          <span class="sp-stat-label text-10.5px text-ink-4">提供商</span>
         </div>
-        <div class="sp-stat">
-          <span class="sp-stat-num tnum ok">{{ status?.active_provider_count ?? 0 }}</span>
-          <span class="sp-stat-label">活跃连接</span>
+        <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
+          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 text-ok tabular-nums">{{
+            status?.active_provider_count ?? 0
+          }}</span>
+          <span class="sp-stat-label text-10.5px text-ink-4">活跃连接</span>
         </div>
-        <div class="sp-stat">
-          <span class="sp-stat-num tnum">{{ status?.api_key_count ?? 0 }}</span>
-          <span class="sp-stat-label">API Key</span>
+        <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
+          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 tabular-nums">{{
+            status?.api_key_count ?? 0
+          }}</span>
+          <span class="sp-stat-label text-10.5px text-ink-4">API Key</span>
         </div>
-        <div class="sp-stat">
-          <span class="sp-stat-num tnum ok">{{ status?.active_api_key_count ?? 0 }}</span>
-          <span class="sp-stat-label">有效 Key</span>
+        <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
+          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 text-ok tabular-nums">{{
+            status?.active_api_key_count ?? 0
+          }}</span>
+          <span class="sp-stat-label text-10.5px text-ink-4">有效 Key</span>
         </div>
       </div>
     </div>
 
     <!-- 今日用量 -->
-    <div class="sp-card">
-      <p class="sp-card-title">今日用量</p>
-      <div class="sp-card-row">
-        <span class="sp-label">请求数</span>
-        <span class="sp-value tnum">{{ fmt(status?.today_requests) }}</span>
+    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
+      <p
+        class="sp-card-title m-0 mb-8px text-11px font-semibold tracking-0.05em uppercase text-ink-4"
+      >
+        今日用量
+      </p>
+      <div class="sp-card-row flex items-center justify-between py-3px">
+        <span class="sp-label text-12.5px text-ink-3">请求数</span>
+        <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
+          fmt(status?.today_requests)
+        }}</span>
       </div>
-      <div class="sp-card-row">
-        <span class="sp-label">输入 Token</span>
-        <span class="sp-value tnum">{{ fmt(status?.today_tokens_input) }}</span>
+      <div class="sp-card-row flex items-center justify-between py-3px">
+        <span class="sp-label text-12.5px text-ink-3">输入 Token</span>
+        <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
+          fmt(status?.today_tokens_input)
+        }}</span>
       </div>
-      <div class="sp-card-row">
-        <span class="sp-label">输出 Token</span>
-        <span class="sp-value tnum">{{ fmt(status?.today_tokens_output) }}</span>
+      <div class="sp-card-row flex items-center justify-between py-3px">
+        <span class="sp-label text-12.5px text-ink-3">输出 Token</span>
+        <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
+          fmt(status?.today_tokens_output)
+        }}</span>
       </div>
     </div>
 
     <!-- 底部操作 -->
-    <div class="sp-footer">
-      <button type="button" class="sp-btn ghost" @click="showMainWindow">打开主窗口</button>
+    <div class="sp-footer mt-auto shrink-0">
+      <button
+        type="button"
+        class="sp-btn ghost w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer bg-surface-3 text-ink-2"
+        @click="showMainWindow"
+      >
+        打开主窗口
+      </button>
     </div>
   </div>
 </template>
@@ -183,193 +227,47 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 透明窗口下的面板背景 */
+/* 透明窗口下的面板背景：box-shadow 与 font-family 难以用原子类表达，保留 */
 .status-panel {
-  width: 100%;
-  height: 100vh;
-  box-sizing: border-box;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: var(--surface);
-  border-radius: 14px;
-  border: 1px solid var(--line);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* 顶部标题栏 */
-.sp-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-.sp-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sp-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: var(--ink);
-  color: var(--accent);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 14px;
-}
-.sp-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-.sp-name {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.sp-version {
-  font-size: 10.5px;
-  color: var(--ink-4);
-}
-.sp-proxy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.sp-proxy-badge.on {
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-.sp-proxy-badge.off {
-  background: var(--err-bg);
-  color: var(--err);
-}
-.sp-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
+/* 代理状态徽标的脉冲动画（复杂选择器 + @keyframes，保留） */
 .sp-proxy-badge.on .sp-dot {
   animation: pulse 1.8s ease-in-out infinite;
 }
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
-/* 卡片 */
-.sp-card {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 12px;
-  flex-shrink: 0;
-}
-.sp-card-title {
-  margin: 0 0 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.sp-card-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 3px 0;
-}
+/* 卡片行分隔线（兄弟选择器，保留） */
 .sp-card-row + .sp-card-row {
   border-top: 1px solid var(--line);
 }
-.sp-label {
-  font-size: 12.5px;
-  color: var(--ink-3);
-}
-.sp-value {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.sp-value.ok { color: var(--ok); }
-.sp-value.err { color: var(--err); }
-.tnum { font-variant-numeric: tabular-nums; }
 
-.sp-card-actions {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-/* 统计网格 */
-.sp-stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.sp-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  background: var(--surface);
-  border-radius: 7px;
-}
-.sp-stat-num {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ink);
-  line-height: 1.1;
-}
-.sp-stat-num.ok { color: var(--ok); }
-.sp-stat-label {
-  font-size: 10.5px;
-  color: var(--ink-4);
-}
-
-/* 按钮 */
+/* 按钮：transition 与伪类样式保留 */
 .sp-btn {
-  width: 100%;
-  padding: 7px 12px;
-  border: none;
-  border-radius: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
   transition: opacity 0.15s, background 0.15s;
 }
-.sp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.sp-btn.primary {
-  background: var(--accent);
-  color: #fff;
+.sp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
-.sp-btn.primary:hover { opacity: 0.9; }
-.sp-btn.danger {
-  background: var(--err-bg);
-  color: var(--err);
+.sp-btn.primary:hover {
+  opacity: 0.9;
 }
-.sp-btn.danger:hover { opacity: 0.85; }
-.sp-btn.ghost {
-  background: var(--surface-3);
-  color: var(--ink-2);
+.sp-btn.danger:hover {
+  opacity: 0.85;
 }
-.sp-btn.ghost:hover { background: var(--line); color: var(--ink); }
-
-/* 底部 */
-.sp-footer {
-  margin-top: auto;
-  flex-shrink: 0;
+.sp-btn.ghost:hover {
+  background: var(--line);
+  color: var(--ink);
 }
 </style>

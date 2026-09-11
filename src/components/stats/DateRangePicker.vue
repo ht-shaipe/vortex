@@ -8,14 +8,14 @@
     @before-enter="initDraft"
   >
     <template #reference>
-      <button type="button" class="btn sm range-trigger">
+      <button type="button" class="btn sm range-trigger h-30px font-normal">
         <el-icon :size="13"><Calendar /></el-icon>
         {{ triggerLabel }}
       </button>
     </template>
 
     <!-- 快捷项：点击即生效 -->
-    <div class="presets">
+    <div class="presets flex flex-wrap gap-6px pb-12px border-b border-line">
       <button
         v-for="p in presetList"
         :key="p.key"
@@ -28,28 +28,28 @@
       </button>
     </div>
 
-    <div class="body">
+    <div class="body flex pt-12px">
       <!-- 左：起止时间输入 -->
-      <div class="fields">
+      <div class="fields flex flex-col w-232px shrink-0">
         <div
           v-for="f in fields"
           :key="f.field"
-          class="field"
+          class="field flex flex-col gap-6px py-9px px-10px border border-line rounded-sm cursor-pointer"
           :class="{ active: activeField === f.field }"
           @click="activeField = f.field"
         >
           <span class="field-label">{{ f.label }}</span>
-          <div class="field-inputs">
+          <div class="field-inputs flex gap-6px">
             <input
               type="date"
-              class="ipt"
+              class="ipt flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
               :value="ymd(f.ms)"
               @focus="activeField = f.field"
               @input="onDateInput(f.field, $event)"
             />
             <input
               type="time"
-              class="ipt time"
+              class="ipt time flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
               step="60"
               :value="fmtTimeInput(f.ms)"
               @focus="activeField = f.field"
@@ -58,34 +58,34 @@
           </div>
         </div>
 
-        <p v-if="error" class="err-text">{{ error }}</p>
+        <p v-if="error" class="err-text m-0 text-xs text-err">{{ error }}</p>
 
-        <div class="field-actions">
+        <div class="field-actions mt-auto flex justify-end gap-6px">
           <button type="button" class="btn sm" @click="open = false">取消</button>
           <button type="button" class="btn sm primary" @click="apply">确定</button>
         </div>
       </div>
 
       <!-- 右：月历 -->
-      <div class="cal">
-        <div class="cal-head">
+      <div class="cal flex-1 flex flex-col gap-6px min-w-0">
+        <div class="cal-head flex items-center justify-between">
           <button type="button" class="btn bare icon" aria-label="上个月" @click="shiftMonth(-1)">
             <el-icon :size="14"><ArrowLeft /></el-icon>
           </button>
-          <span class="cal-title">{{ viewYear }}年{{ viewMonth + 1 }}月</span>
+          <span class="cal-title text-13px font-semibold">{{ viewYear }}年{{ viewMonth + 1 }}月</span>
           <button type="button" class="btn bare icon" aria-label="下个月" @click="shiftMonth(1)">
             <el-icon :size="14"><ArrowRight /></el-icon>
           </button>
         </div>
-        <div class="cal-week">
+        <div class="cal-week grid text-center text-xs text-ink-4">
           <span v-for="w in WEEKDAYS" :key="w">{{ w }}</span>
         </div>
-        <div class="cal-grid">
+        <div class="cal-grid grid gap-1px">
           <button
             v-for="dayMs in days"
             :key="dayMs"
             type="button"
-            class="cal-day"
+            class="cal-day h-28px border-none bg-transparent rounded-5px text-sm text-ink-2 cursor-pointer"
             :class="dayClass(dayMs)"
             @click="pickDay(dayMs)"
           >
@@ -275,88 +275,22 @@ function apply(): void {
 </script>
 
 <style scoped>
-.range-trigger { height: 30px; font-weight: 400; }
-
-.presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.body { display: flex; gap: var(--gap-lg); padding-top: 12px; }
-
-.fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-md);
-  width: 232px;
-  flex-shrink: 0;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
-}
+.body { gap: var(--gap-lg); }
+.fields { gap: var(--gap-md); }
+.field { transition: border-color 0.12s, box-shadow 0.12s; }
 .field:hover { border-color: var(--line-2); }
 .field.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
-.field-inputs { display: flex; gap: 6px; }
-.ipt {
-  flex: 1;
-  min-width: 0;
-  height: 28px;
-  padding: 0 6px;
-  font-size: var(--fs-sm);
-  font-family: var(--font-mono);
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  outline: none;
-}
+.ipt { font-family: var(--font-mono); }
 .ipt:focus { border-color: var(--accent); }
 .ipt.time { flex: 0 0 82px; }
 html.dark .ipt { color-scheme: dark; }
-
-.err-text { margin: 0; font-size: var(--fs-xs); color: var(--err); }
-.field-actions {
-  margin-top: auto;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.cal { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.cal-head { display: flex; align-items: center; justify-content: space-between; }
-.cal-title { font-size: 13px; font-weight: 600; }
-.cal-week {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  text-align: center;
-  font-size: var(--fs-xs);
-  color: var(--ink-4);
-}
+.cal-week { grid-template-columns: repeat(7, 1fr); }
 .cal-week span { padding: 3px 0; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
-.cal-day {
-  height: 28px;
-  border: none;
-  background: transparent;
-  border-radius: 5px;
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
+.cal-grid { grid-template-columns: repeat(7, 1fr); }
+.cal-day { transition: background 0.12s, color 0.12s; }
 .cal-day:hover { background: var(--surface-3); }
 .cal-day.out { color: var(--ink-5); }
 .cal-day.in-range { background: var(--accent-bg); color: var(--accent-ink); }

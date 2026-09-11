@@ -18,7 +18,7 @@ use std::time::Instant;
 /// 流式响应以归一化 SSE 流返回，由入站协议层（OpenAI/Anthropic）决定如何包装。
 pub enum ProxyOutput {
     /// 非流式响应（OpenAI 格式 JSON）
-    Response(actix_web::HttpResponse),
+    Response(serde_json::Value),
     /// 流式响应（归一化为 OpenAI chunk 格式的 SSE 流）
     Stream(SseStream),
 }
@@ -27,6 +27,9 @@ pub enum ProxyOutput {
 ///
 /// 核心代理逻辑入口，持有执行器工厂与重试策略，
 /// 负责将请求路由到上游提供商并处理重试、熔断与用量记录。
+/// 实现 Clone 以便 Tauri IPC 命令把引擎克隆出读锁后异步执行
+///（parking_lot 读锁守卫非 Send，不能跨 await 持有）。
+#[derive(Clone)]
 pub struct ProxyEngine {
     /// 执行器工厂，按 API 格式创建对应执行器
     executor_factory: ExecutorFactory,
@@ -254,7 +257,7 @@ impl ProxyEngine {
                     };
                     let _ = db_usage::record(conn, &entry);
 
-                    return Ok(ProxyOutput::Response(actix_web::HttpResponse::Ok().json(body)));
+                    return Ok(ProxyOutput::Response(body));
                 }
                 Ok(ExecutorOutput::Stream(stream)) => {
                     // 流式响应直接透传，不缓冲（缓冲会破坏 SSE 实时性）

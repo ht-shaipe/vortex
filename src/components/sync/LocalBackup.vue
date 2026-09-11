@@ -8,13 +8,13 @@
       导出的文件可能包含明文 API Key，请妥善保管。
     </p>
 
-    <div class="ops-row">
+    <div class="ops-row flex flex-wrap items-center gap-8px">
       <button type="button" class="btn" :disabled="busy" @click="onExport">
         <el-icon :size="13"><Download /></el-icon>导出配置
       </button>
 
-      <div class="import-group">
-        <select v-model="strategy" class="strategy-select" aria-label="同名处理策略">
+      <div class="import-group flex items-center gap-8px">
+        <select v-model="strategy" class="strategy-select h-30px px-8px border border-line rounded-sm bg-surface text-ink text-sm outline-none" aria-label="同名处理策略">
           <option value="skip">跳过同名</option>
           <option value="overwrite">覆盖同名</option>
         </select>
@@ -72,17 +72,4 @@ async function onImport(): Promise<void> {
 }
 </script>
 
-<style scoped>
-.ops-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.import-group { display: flex; align-items: center; gap: 8px; }
-.strategy-select {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: var(--fs-sm);
-  outline: none;
-}
-</style>
+

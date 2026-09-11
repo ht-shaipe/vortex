@@ -1,5 +1,5 @@
 /**
- * 对话页布局状态（移植自 ccMesh layout store 的 chat 切片）。
+ * 对话页布局状态。
  * 会话列表折叠 + 输入框高度/展开态，持久化到 localStorage。
  */
 import { defineStore } from 'pinia'

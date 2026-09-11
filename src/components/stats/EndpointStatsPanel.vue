@@ -1,6 +1,6 @@
 <template>
-  <div class="panel">
-    <div class="panel-bar">
+  <div class="panel flex flex-col gap-[var(--gap-xl)]">
+    <div class="panel-bar flex items-center justify-end gap-[var(--gap-sm)]">
       <DateRangePicker v-model="range" :presets="PERIOD_PRESETS" />
       <HistoryDialog @changed="reload" />
       <button type="button" class="btn sm" :disabled="loading" @click="reload">
@@ -8,10 +8,10 @@
       </button>
     </div>
 
-    <p v-if="loading && !overview" class="hint">加载中…</p>
+    <p v-if="loading && !overview" class="hint m-0 text-body text-ink-4">加载中…</p>
 
     <template v-else>
-      <div class="kpi-row">
+      <div class="kpi-row grid grid-cols-4 gap-[var(--gap-md)]">
         <StatCard label="请求" :value="stats?.requests ?? 0">
           <template v-if="showTrend" #hint>
             <TrendBadge :pct="overview!.trend.requestsPct" />
@@ -30,14 +30,14 @@
         </StatCard>
       </div>
 
-      <section class="sec">
-        <h2 class="sec-title">调用热力图</h2>
-        <div class="card sec-body">
+      <section class="sec flex flex-col gap-[var(--gap-sm)]">
+        <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">调用热力图</h2>
+        <div class="card sec-body p-[var(--pad-card)]">
           <UsageHeatmap :totals="dayTotals" />
         </div>
       </section>
 
-      <section class="card sec-body">
+      <section class="card sec-body p-[var(--pad-card)]">
         <UsageTrendChart :data="trendData" />
       </section>
 
@@ -250,12 +250,5 @@ const showTrend = computed(() => activePeriod.value === 'today' && !!overview.va
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: var(--gap-xl); }
-.panel-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--gap-sm); }
-.hint { margin: 0; font-size: var(--fs-body); color: var(--ink-4); }
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-md); }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
-.sec { display: flex; flex-direction: column; gap: var(--gap-sm); }
-.sec-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.sec-body { padding: var(--pad-card); }
 </style>

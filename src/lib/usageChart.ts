@@ -1,6 +1,6 @@
 /**
  * 用量图表的纯数据逻辑：按日合并、热力图网格、强度分级、趋势切片补零（按日 / 按小时）。
- * 移植自 ccMesh src/pages/Statistics/_components/usageChart.ts，与组件分离便于复用。
+ * 与组件分离便于复用。
  */
 import { startOfDayMs } from '@/lib/dateRange'
 import { ymd, type RangeValue, type TrendWindow } from '@/lib/range'

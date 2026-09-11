@@ -1,7 +1,7 @@
 <template>
-  <div class="card stat-card">
+  <div class="card stat-card flex flex-col gap-6px py-14px px-18px">
     <span class="stat-label">{{ label }}</span>
-    <div class="stat-line" :class="{ below: hintBelow }">
+    <div class="stat-line flex items-center justify-between min-h-30px" :class="{ below: hintBelow }">
       <span class="stat-val tnum">{{ display }}</span>
       <slot name="hint" />
     </div>
@@ -33,19 +33,7 @@ const display = computed(() =>
 </script>
 
 <style scoped>
-.stat-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 18px;
-}
-.stat-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-sm);
-  min-height: 30px;
-}
+.stat-line { gap: var(--gap-sm); }
 .stat-line.below {
   flex-direction: column;
   align-items: flex-start;

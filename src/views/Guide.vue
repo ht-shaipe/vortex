@@ -19,16 +19,16 @@
         </div>
       </div>
       <div class="card-body">
-        <p class="para">Vortex 在本地启动 API 服务器，对外提供 OpenAI 兼容与 Anthropic 兼容两种协议：</p>
-        <div class="url-row">
-          <span class="url-label">OpenAI</span>
+        <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px">Vortex 在本地启动 API 服务器，对外提供 OpenAI 兼容与 Anthropic 兼容两种协议：</p>
+        <div class="url-row flex items-center gap-12px mb-8px">
+          <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">OpenAI</span>
           <CopyableBlock :text="openaiBaseUrl" variant="inline">{{ openaiBaseUrl }}</CopyableBlock>
         </div>
-        <div class="url-row">
-          <span class="url-label">Anthropic</span>
+        <div class="url-row flex items-center gap-12px mb-8px">
+          <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">Anthropic</span>
           <CopyableBlock :text="anthropicBaseUrl" variant="inline">{{ anthropicBaseUrl }}</CopyableBlock>
         </div>
-        <p class="para">在管理界面「订阅」页添加提供商连接与 API 密钥后即可使用。</p>
+        <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px">在管理界面「订阅」页添加提供商连接与 API 密钥后即可使用。</p>
       </div>
     </div>
 
@@ -43,18 +43,18 @@
       <div class="card-body">
         <!-- OpenAI 协议示例：SDK 与 cURL -->
         <template v-if="active === 'openai'">
-          <p class="para">使用 OpenAI Python SDK：</p>
+          <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px">使用 OpenAI Python SDK：</p>
           <CopyableBlock :text="openaiSdkSnippet" lang="python" />
-          <p class="para" style="margin-top: 16px">使用 cURL：</p>
+          <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px" style="margin-top: 16px">使用 cURL：</p>
           <CopyableBlock :text="openaiCurlSnippet" lang="bash" />
         </template>
         <!-- Anthropic 协议示例：SDK、Claude Code 环境变量与 cURL -->
         <template v-else>
-          <p class="para">使用 Anthropic Python SDK：</p>
+          <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px">使用 Anthropic Python SDK：</p>
           <CopyableBlock :text="anthropicSdkSnippet" lang="python" />
-          <p class="para" style="margin-top: 16px">使用 Claude Code（设置环境变量）：</p>
+          <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px" style="margin-top: 16px">使用 Claude Code（设置环境变量）：</p>
           <CopyableBlock :text="claudeSnippet" lang="bash" />
-          <p class="para" style="margin-top: 16px">使用 cURL：</p>
+          <p class="para text-13px text-ink-2 leading-1.7 m-0 mb-12px" style="margin-top: 16px">使用 cURL：</p>
           <CopyableBlock :text="anthropicCurlSnippet" lang="bash" />
         </template>
       </div>
@@ -154,7 +154,5 @@ export ANTHROPIC_API_KEY=your-vortex-api-key`
 
 <style scoped>
 .section { margin-bottom: var(--gap-lg); }
-.para { font-size: 13px; color: var(--ink-2); line-height: 1.7; margin: 0 0 12px; }
-.url-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.url-label { width: 90px; flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+
 </style>

@@ -9,57 +9,57 @@
     <template #reference>
       <button
         type="button"
-        class="ms-trigger"
+        class="ms-trigger inline-flex items-center gap-7px min-w-200px max-w-340px h-32px px-10px border border-line rounded-sm bg-surface text-ink-2 text-sm transition"
         :class="{ placeholder: isPlaceholder }"
         :title="triggerTitle"
       >
-        <img v-if="triggerLogo" :src="triggerLogo" class="ms-trigger-logo" alt="" />
-        <el-icon v-else :size="14" class="ms-trigger-icon"><Cpu /></el-icon>
-        <span v-if="selected && !isPlaceholder && groupPrefix" class="ms-group-chip">{{ groupPrefix }}</span>
-        <span class="ms-trigger-text">{{ triggerText }}</span>
-        <el-icon :size="12" class="ms-caret" :class="{ flipped: open }"><ArrowDown /></el-icon>
+        <img v-if="triggerLogo" :src="triggerLogo" class="ms-trigger-logo w-16px h-16px shrink-0 object-contain" alt="" />
+        <el-icon v-else :size="14" class="ms-trigger-icon shrink-0 text-ink-4"><Cpu /></el-icon>
+        <span v-if="selected && !isPlaceholder && groupPrefix" class="ms-group-chip shrink-0 max-w-96px overflow-hidden text-ellipsis whitespace-nowrap text-10.5px leading-1 px-7px py-3px rounded-999px bg-surface-3 text-ink-3">{{ groupPrefix }}</span>
+        <span class="ms-trigger-text flex-1 min-w-0 text-left overflow-hidden text-ellipsis whitespace-nowrap font-mono text-12.5px">{{ triggerText }}</span>
+        <el-icon :size="12" class="ms-caret shrink-0 text-ink-4 transition" :class="{ flipped: open }"><ArrowDown /></el-icon>
       </button>
     </template>
 
-    <div class="ms-panel">
-      <div class="ms-search">
+    <div class="ms-panel flex flex-col">
+      <div class="ms-search flex items-center gap-6px pt-7px px-10px border-b border-line text-ink-4">
         <el-icon :size="13"><Search /></el-icon>
         <input
           ref="searchInput"
           v-model="query"
-          class="ms-search-input"
+          class="ms-search-input flex-1 min-w-0 border-none outline-none bg-transparent text-sm text-ink"
           placeholder="搜索模型..."
         />
       </div>
 
-      <el-scrollbar class="ms-list" height="320px">
-        <p v-if="filtered.length === 0" class="ms-empty">无匹配模型</p>
+      <el-scrollbar class="ms-list pt-4px pb-4px" height="320px">
+        <p v-if="filtered.length === 0" class="ms-empty m-0 pt-22px px-8px text-center text-sm text-ink-4">无匹配模型</p>
         <div v-for="g in filtered" :key="g.id" class="ms-group">
-          <p class="ms-group-name">
-            <img v-if="groupLogo(g.id)" :src="groupLogo(g.id) || ''" class="ms-group-logo" alt="" />
+          <p class="ms-group-name m-0 pt-5px px-10px pb-3px text-xs font-semibold tracking-0.06em uppercase text-ink-4">
+            <img v-if="groupLogo(g.id)" :src="groupLogo(g.id) || ''" class="ms-group-logo w-14px h-14px mr-5px object-contain" alt="" />
             {{ g.name }}
           </p>
           <ul>
             <li v-for="m in g.models" :key="m">
               <button
                 type="button"
-                class="ms-item"
+                class="ms-item relative flex items-center gap-7px w-full px-10px py-6px border-none bg-transparent text-left text-body text-ink-2 transition"
                 :class="{ active: modelKey(g.id, m) === value }"
                 @click="pick(g.id, m)"
               >
                 <span v-if="modelKey(g.id, m) === value" class="ms-bar" aria-hidden="true" />
-                <span v-if="groupHasItemLogos(g.id)" class="ms-item-logo">
-                  <img v-if="itemLogo(g.id, m)" :src="itemLogo(g.id, m) || ''" alt="" />
+                <span v-if="groupHasItemLogos(g.id)" class="ms-item-logo w-16px h-16px shrink-0 inline-flex items-center justify-center">
+                  <img v-if="itemLogo(g.id, m)" :src="itemLogo(g.id, m) || ''" class="w-full h-full object-contain" alt="" />
                 </span>
-                <span class="ms-item-text" :title="m">{{ stripPrefix(g.id, m) }}</span>
-                <el-icon v-if="modelKey(g.id, m) === value" :size="13" class="ms-check"><Check /></el-icon>
+                <span class="ms-item-text flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" :title="m">{{ stripPrefix(g.id, m) }}</span>
+                <el-icon v-if="modelKey(g.id, m) === value" :size="13" class="ms-check shrink-0"><Check /></el-icon>
               </button>
             </li>
           </ul>
         </div>
       </el-scrollbar>
 
-      <button type="button" class="ms-config" @click="onConfigure">
+      <button type="button" class="ms-config flex items-center gap-7px px-10px py-8px border-none border-t border-line bg-transparent text-sm text-ink-3 transition" @click="onConfigure">
         <el-icon :size="13"><Setting /></el-icon>
         {{ configureText }}
       </button>
@@ -225,116 +225,17 @@ function groupHasItemLogos(groupId: string): boolean {
 </script>
 
 <style scoped>
-.ms-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 200px;
-  max-width: 340px;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
-}
 .ms-trigger:hover { border-color: var(--line-2); color: var(--ink); background: var(--surface-2); }
 .ms-trigger.placeholder { border-style: dashed; color: var(--warn, #b8860b); }
 .ms-trigger.placeholder .ms-trigger-text { color: var(--warn, #b8860b); }
-.ms-trigger-icon { flex-shrink: 0; color: var(--ink-4); }
-.ms-trigger-logo { width: 16px; height: 16px; flex-shrink: 0; object-fit: contain; }
-.ms-group-logo {
-  width: 14px;
-  height: 14px;
-  vertical-align: -2px;
-  margin-right: 5px;
-  object-fit: contain;
-}
-.ms-item-logo {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.ms-item-logo img { width: 100%; height: 100%; object-fit: contain; }
-.ms-group-chip {
-  flex-shrink: 0;
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10.5px;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  color: var(--ink-3);
-}
-.ms-trigger-text {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-.ms-caret { flex-shrink: 0; color: var(--ink-4); transition: transform 0.15s; }
+.ms-group-logo { vertical-align: -2px; }
+
 .ms-caret.flipped { transform: rotate(180deg); }
 
-.ms-panel { display: flex; flex-direction: column; }
-.ms-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-4);
-}
-.ms-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: var(--fs-sm);
-  color: var(--ink);
-}
 .ms-search-input::placeholder { color: var(--ink-4); }
 
-.ms-list { padding: 4px 0; }
-.ms-empty { margin: 0; padding: 22px 8px; text-align: center; font-size: var(--fs-sm); color: var(--ink-4); }
-
-.ms-group-name {
-  margin: 0;
-  padding: 5px 10px 3px;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
 .ms-group ul { list-style: none; margin: 0; padding: 0; }
 
-.ms-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  background: transparent;
-  text-align: left;
-  font-size: var(--fs-body);
-  color: var(--ink-2);
-  transition: background 0.1s, color 0.1s;
-}
 .ms-item:hover { background: var(--surface-3); color: var(--ink); }
 .ms-item.active { background: var(--accent-bg); color: var(--accent-ink); }
 html.dark .ms-item.active { color: var(--ink); }
@@ -347,21 +248,7 @@ html.dark .ms-item.active { color: var(--ink); }
   border-radius: 0 2px 2px 0;
   background: var(--accent);
 }
-.ms-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-check { flex-shrink: 0; }
 
-.ms-config {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 10px;
-  border: none;
-  border-top: 1px solid var(--line);
-  background: transparent;
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
-  transition: background 0.1s, color 0.1s;
-}
 .ms-config:hover { background: var(--surface-3); color: var(--ink); }
 </style>
 

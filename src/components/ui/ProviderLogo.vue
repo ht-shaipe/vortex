@@ -1,6 +1,6 @@
 <template>
-  <span class="logo" :style="logoStyle">
-    <img v-if="logoUrl" :src="logoUrl" class="logo-img" alt="" />
+  <span class="logo inline-flex items-center justify-center rounded-5px shrink-0 text-ink-2 font-bold overflow-hidden" :style="logoStyle">
+    <img v-if="logoUrl" :src="logoUrl" class="logo-img w-full h-full object-contain block" alt="" />
     <el-icon v-else :size="iconSize"><component :is="iconComp" /></el-icon>
   </span>
 </template>
@@ -35,21 +35,4 @@ const logoStyle = computed(() => ({
 }))
 </script>
 
-<style scoped>
-.logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  flex-shrink: 0;
-  color: var(--ink-2);
-  font-weight: 700;
-  overflow: hidden;
-}
-.logo-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-</style>
+

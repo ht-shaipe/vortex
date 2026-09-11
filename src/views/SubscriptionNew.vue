@@ -1,13 +1,13 @@
 <template>
-  <div class="wizard">
+  <div class="wizard max-w-560px mx-auto">
     <!-- 页面头部：标题与副标题 -->
     <PageHeader title="添加提供方" sub="从内置提供商中选择一个接入 AI 服务" />
 
     <div class="card">
-      <div class="card-body form">
+      <div class="card-body form flex flex-col pt-24px">
         <!-- 提供方选择 -->
-        <div class="field">
-          <label class="field-label">提供方</label>
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">提供方</label>
           <el-select v-model="form.provider" placeholder="选择预置的提供商" filterable style="width: 100%">
             <el-option
               v-for="p in allProviders"
@@ -16,60 +16,60 @@
               :value="p.id"
             >
               <span style="float: left">{{ p.name }}</span>
-              <span class="opt-id">{{ p.id }}</span>
-              <span v-if="p.hasFree" class="provider-free">免费</span>
+              <span class="opt-id text-11px text-ink-4 ml-8px font-mono">{{ p.id }}</span>
+              <span v-if="p.hasFree" class="provider-free float-right text-10px text-ok bg-ok-bg py-1px px-5px rounded-3px">免费</span>
             </el-option>
           </el-select>
-          <div v-if="selectedDef" class="field-hint">{{ providerHint }}</div>
+          <div v-if="selectedDef" class="field-hint text-11.5px text-ink-4">{{ providerHint }}</div>
         </div>
 
         <!-- API 密钥：无需鉴权的提供方不显示 -->
-        <div v-if="form.provider && !isNoAuth" class="field">
-          <label class="field-label">API 密钥</label>
+        <div v-if="form.provider && !isNoAuth" class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">API 密钥</label>
           <el-input
             v-model="form.apiKey"
             type="password"
             show-password
             :placeholder="authPlaceholder"
           />
-          <div v-if="authHint" class="field-hint">{{ authHint }}</div>
+          <div v-if="authHint" class="field-hint text-11.5px text-ink-4">{{ authHint }}</div>
         </div>
 
         <!-- 自定义设置：可折叠，用于覆盖默认 base_url -->
-        <details class="custom-block" :open="needsBaseUrl">
+        <details class="custom-block border-t border-line pt-14px" :open="needsBaseUrl">
           <summary>自定义设置</summary>
-          <div class="custom-body">
-            <div class="field">
-              <label class="field-label">API 地址 <em v-if="needsBaseUrl">*</em></label>
+          <div class="custom-body flex flex-col gap-14px pt-14px pb-4px">
+            <div class="field flex flex-col gap-6px">
+              <label class="field-label text-12px font-medium text-ink-2">API 地址 <em v-if="needsBaseUrl">*</em></label>
               <el-input v-model="form.baseUrl" :placeholder="needsBaseUrl ? 'https://api.your-provider.com/v1' : '提供方默认'" />
-              <div class="field-hint">{{ needsBaseUrl ? '请填写实际可用的 API 端点地址' : '仅在官方端点被墙或你想走代理/中转时填写' }}</div>
+              <div class="field-hint text-11.5px text-ink-4">{{ needsBaseUrl ? '请填写实际可用的 API 端点地址' : '仅在官方端点被墙或你想走代理/中转时填写' }}</div>
             </div>
           </div>
         </details>
 
         <!-- 模型目录：可拉取可用模型并多选 -->
-        <div class="field">
-          <div class="row-between">
-            <span class="field-label static">模型目录</span>
+        <div class="field flex flex-col gap-6px">
+          <div class="row-between flex items-center justify-between">
+            <span class="field-label static text-12px font-medium text-ink-2">模型目录</span>
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels" @click="fetchModels">
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
           </div>
           <!-- 已选模型列表：第一个为默认模型 -->
-          <div v-if="selectedModels.length" class="model-list">
-            <div class="model-row" v-for="(m, i) in selectedModels" :key="m.id">
-              <span class="model-idx" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
-              <span class="model-id mono" :title="m.id">{{ m.id }}</span>
-              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name" />
+          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
+            <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
+              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
+              <span class="model-id mono shrink-0 w-150px text-12px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis" :title="m.id">{{ m.id }}</span>
+              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1" />
               <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
             </div>
           </div>
-          <div v-else class="model-line">尚未选择模型</div>
-          <div class="model-actions">
+          <div v-else class="model-line text-12px text-ink-3 py-8px px-12px bg-surface-2 border border-line rounded-sm">尚未选择模型</div>
+          <div class="model-actions flex items-center gap-10px mt-8px">
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
               选择模型
             </button>
-            <span class="model-hint-inline">
+            <span class="model-hint-inline text-11.5px text-ink-4">
               点击「获取可用模型」从远程加载，再通过弹窗勾选；首个即默认模型。
             </span>
           </div>
@@ -87,7 +87,7 @@
     />
 
     <!-- 底部操作按钮 -->
-    <div class="wizard-actions">
+    <div class="wizard-actions flex justify-end">
       <button type="button" class="btn" @click="$router.back()">取消</button>
       <button type="button" class="btn primary" :disabled="!canSubmit || saving" @click="submit">
         {{ saving ? '保存中…' : '添加模型' }}
@@ -280,30 +280,10 @@ watch(() => form.provider, () => resetForm())
 </script>
 
 <style scoped>
-.wizard { max-width: 560px; margin: 0 auto; }
-.form { display: flex; flex-direction: column; gap: var(--gap-lg); padding-top: 24px; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.form { gap: var(--gap-lg); }
 .field-label.static { font-weight: 600; }
-.field-hint { font-size: 11.5px; color: var(--ink-4); }
-.wizard-actions { display: flex; justify-content: flex-end; gap: var(--gap-sm); margin-top: var(--gap-lg); }
+.wizard-actions { gap: var(--gap-sm); margin-top: var(--gap-lg); }
 
-.row-between { display: flex; align-items: center; justify-content: space-between; }
-
-.opt-id { font-size: 11px; color: var(--ink-4); margin-left: 8px; font-family: var(--font-mono); }
-.provider-free {
-  float: right;
-  font-size: 10px;
-  color: var(--ok);
-  background: var(--ok-bg);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-
-.custom-block {
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-}
 .custom-block > summary {
   font-size: 12px;
   font-weight: 600;
@@ -322,53 +302,10 @@ watch(() => form.provider, () => resetForm())
 }
 .custom-block[open] > summary::before { transform: rotate(90deg); }
 .custom-block > summary::-webkit-details-marker { display: none; }
-.custom-body { padding: 14px 0 4px; display: flex; flex-direction: column; gap: 14px; }
 
-.model-line {
-  font-size: 12px;
-  color: var(--ink-3);
-  padding: 8px 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.model-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.model-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.model-idx {
-  flex-shrink: 0;
-  width: 34px;
-  font-size: 11px;
-  color: var(--ink-4);
-  text-align: center;
-}
 .model-idx.primary {
   color: var(--ok);
   font-weight: 600;
-}
-.model-id {
-  flex-shrink: 0;
-  width: 150px;
-  font-size: 12px;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.model-name {
-  flex: 1;
 }
 .model-name :deep(.el-input__inner) { font-size: 12px; }
 .btn.sm.ghost {
@@ -380,23 +317,4 @@ watch(() => form.provider, () => resetForm())
   background: transparent;
 }
 .btn.sm.ghost:hover { color: var(--err); border-color: var(--err); }
-.model-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-.model-hint-inline {
-  font-size: 11.5px;
-  color: var(--ink-4);
-}
-.model-hint {
-  font-size: 11.5px;
-  color: var(--ink-4);
-  padding: 10px 12px;
-  background: var(--surface-2);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-sm);
-  text-align: center;
-}
 </style>

@@ -1,21 +1,20 @@
 /**
- * 对话适配层（对齐 ccMesh chatApi 的数据形状与分支语义）。
+ * 对话适配层。
  *
- * 背景差异：
- * - ccMesh 的会话树落在 Rust 侧 SQLite，前端通过 Tauri command 读写；
+ * 背景：
  * - vortex 后端目前没有 chat 相关接口，但它本身就是 OpenAI 兼容网关
  *   （`POST /v1/chat/completions`，支持 `stream: true`）。
  *
  * 因此这里的实现是：
- * - 会话/消息的**分支树**在前端完整实现并持久化到 localStorage（语义与 ccMesh 一致：
- *   parentId 链 + activeNodeId 指向当前分支叶子 + 兄弟节点切换 + 重生成开新分支）；
- * - 发送走 vortex 网关自己的 `/v1/chat/completions` SSE 流，
- *   与 ccMesh「对话页用于测试连通性」的定位一致。
+ * - 会话/消息的**分支树**在前端完整实现并持久化到 localStorage
+ *   （parentId 链 + activeNodeId 指向当前分支叶子 + 兄弟节点切换 + 重生成开新分支）；
+ * - 发送走 vortex 网关自己的 `/v1/chat/completions` SSE 流。
  *
  * 后端补齐 chat 表后，替换本文件的 CRUD 实现即可，组件层无需改动。
  */
 import { listKeys } from './keys'
 import { listProviders, type ProviderConnection } from './providers'
+import { runtime } from '@/lib/runtime'
 
 const STORAGE_KEY = 'vortex-chat-v1'
 const GATEWAY_BASE = 'http://localhost:10168'
@@ -145,7 +144,7 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-/* ============ 事件总线（对齐 ccMesh 的 onChunk/onDone/onError） ============ */
+/* ============ 事件总线 ============ */
 
 /** 类型别名：事件监听回调 */
 type Listener<T> = (p: T) => void
@@ -174,7 +173,12 @@ const doneBus = bus<ChatDonePayload>()
 const errorBus = bus<ChatErrorPayload>()
 
 /** 每个 topic 一个 AbortController，实现「按会话并行 + 单独取消」。 */
-const aborters = new Map<string, AbortController>()
+/** 进行中请求的取消句柄（Web 端为 AbortController，桌面端为 IPC 取消函数）。 */
+interface AbortHandle {
+  abort: () => void
+}
+
+const aborters = new Map<string, AbortHandle>()
 
 /* ============ 树操作 ============ */
 
@@ -277,8 +281,92 @@ function extractDelta(json: string): string {
   }
 }
 
+/** 喂入一段 SSE 原始文本，解析出全部 data 行增量并回调；返回未消费完的缓冲尾部。 */
+function feedSseText(buf: string, text: string, onDelta: (delta: string) => void): string {
+  buf += text
+  // SSE 以空行分隔事件；保留最后一段不完整数据等下一批
+  const parts = buf.split(/\r?\n\r?\n/)
+  buf = parts.pop() ?? ''
+  for (const part of parts) {
+    for (const line of part.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (!payload || payload === '[DONE]') continue
+      const delta = extractDelta(payload)
+      if (!delta) continue
+      onDelta(delta)
+    }
+  }
+  return buf
+}
+
 /**
- * 走网关 SSE 流并把增量派发到事件总线。
+ * 桌面端：走 Tauri IPC Channel 流式对话。
+ *
+ * webview 的 fetch 流式在 WKWebView 下不可靠，桌面端改为 invoke
+ * `chat_completions_stream`，Rust 侧直接驱动代理引擎，把归一化 SSE
+ * 增量经 IPC Channel 逐块推回；取消通过 `cancel_chat_stream` 协作完成。
+ */
+async function streamCompletionViaIpc(
+  requestId: string,
+  topicId: string,
+  assistantId: string,
+  model: string,
+  messages: { role: string; content: string }[],
+  isCancelled: () => boolean,
+): Promise<void> {
+  const { Channel, invoke } = await import('@tauri-apps/api/core')
+
+  let buf = ''
+  let sawComplete = false
+  let upstreamError = ''
+
+  const onEvent = new Channel<{
+    type: 'delta' | 'complete' | 'done' | 'error'
+    data?: { text?: string; body?: string; message?: string }
+  }>()
+  onEvent.onmessage = (ev) => {
+    if (ev.type === 'delta' && ev.data?.text) {
+      buf = feedSseText(buf, ev.data.text, (delta) => {
+        chunkBus.emit({ topicId, messageId: assistantId, delta })
+      })
+    } else if (ev.type === 'complete' && ev.data?.body) {
+      // 上游忽略 stream 参数时的完整 JSON 响应
+      sawComplete = true
+      const delta = extractDelta(ev.data.body)
+      if (delta) chunkBus.emit({ topicId, messageId: assistantId, delta })
+    } else if (ev.type === 'error') {
+      upstreamError = ev.data?.message || '上游请求失败'
+    }
+  }
+
+  await invoke('chat_completions_stream', {
+    onEvent,
+    requestId,
+    model,
+    messages,
+    stream: true,
+  })
+
+  if (isCancelled()) throw new CancelledError()
+  if (upstreamError) throw new Error(upstreamError)
+  if (sawComplete) return
+
+  // 流结束但一个增量都没有：与 HTTP 路径同样的空响应语义
+  throw new Error('网关返回了空响应（无内容），可能未配置上游提供商或模型不可用')
+}
+
+/** 用户主动取消的标记错误（区别于超时/上游错误）。 */
+class CancelledError extends Error {
+  constructor() {
+    super('cancelled')
+    this.name = 'CancelledError'
+  }
+}
+
+/**
+ * 执行流式对话（桌面端走 Tauri IPC，Web 端走网关 SSE fetch），
+ * 把增量派发到事件总线。
  * 完成/失败都会落库（更新消息 content 与 status），保证刷新后不丢内容。
  */
 async function streamCompletion(topicId: string, assistantId: string): Promise<void> {
@@ -290,71 +378,106 @@ async function streamCompletion(topicId: string, assistantId: string): Promise<v
   const path = activePath(s.messages, topic)
   const idx = path.findIndex((m) => m.id === assistantId)
   const history = (idx >= 0 ? path.slice(0, idx) : path).filter((m) => m.content.trim() !== '')
+  const payloadMessages = history.map((m) => ({ role: m.role, content: m.content }))
 
-  const controller = new AbortController()
-  aborters.set(topicId, controller)
+  let cancelled = false
+  const isCancelled = () => cancelled
+
+  // 请求标识：桌面端用于协作取消（cancel_chat_stream）
+  const requestId = `${topicId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
+
+  // 取消句柄：桌面端触发 IPC 取消命令，Web 端触发 fetch abort
+  let cancelFn: () => void = () => {}
+  aborters.set(topicId, {
+    abort: () => {
+      cancelled = true
+      cancelFn()
+    },
+  })
+
+  // Web 端超时兜底：180s ≈ 后端 60s 首字节超时 × 3 次尝试
+  //（桌面端无此限时，由 Rust 侧首字节/逐块超时保护）
+  let timeoutId = 0
 
   let acc = ''
+  const onDelta = (delta: string) => {
+    acc += delta
+    chunkBus.emit({ topicId, messageId: assistantId, delta })
+  }
+
   try {
-    const key = await gatewayKey()
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (key) headers.Authorization = `Bearer ${key}`
-
-    const res = await fetch(`${GATEWAY_BASE}/v1/chat/completions`, {
-      method: 'POST',
-      headers,
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: topic.model,
-        stream: true,
-        messages: history.map((m) => ({ role: m.role, content: m.content })),
-      }),
-    })
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(parseGatewayError(text) || `网关返回 ${res.status}`)
-    }
-    if (!res.body) throw new Error('网关未返回流式响应体')
-
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      // SSE 以空行分隔事件；保留最后一段不完整数据等下一批
-      const parts = buf.split(/\r?\n\r?\n/)
-      buf = parts.pop() ?? ''
-      for (const part of parts) {
-        for (const line of part.split(/\r?\n/)) {
-          if (!line.startsWith('data:')) continue
-          const payload = line.slice(5).trim()
-          if (!payload || payload === '[DONE]') continue
-          const delta = extractDelta(payload)
-          if (!delta) continue
-          acc += delta
-          chunkBus.emit({ topicId, messageId: assistantId, delta })
-        }
+    if (runtime.kind === 'desktop') {
+      // 预绑定 IPC 取消；invoke 完成即流结束
+      cancelFn = () => {
+        import('@tauri-apps/api/core')
+          .then(({ invoke }) => invoke('cancel_chat_stream', { requestId }))
+          .catch(() => {})
       }
+      await streamCompletionViaIpc(requestId, topicId, assistantId, topic.model, payloadMessages, isCancelled)
+    } else {
+      const controller = new AbortController()
+      cancelFn = () => controller.abort()
+      timeoutId = window.setTimeout(() => controller.abort(), 180000)
+
+      const key = await gatewayKey()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (key) headers.Authorization = `Bearer ${key}`
+
+      const url = `${GATEWAY_BASE}/v1/chat/completions`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({ model: topic.model, stream: true, messages: payloadMessages }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        const hint = parseGatewayError(text) || `网关返回 ${res.status}`
+        throw new Error(hint)
+      }
+      if (!res.body) throw new Error('网关未返回流式响应体')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf = feedSseText(buf, decoder.decode(value, { stream: true }), onDelta)
+      }
+
+      if (!acc) {
+        throw new Error('网关返回了空响应（无内容），可能未配置上游提供商或模型不可用')
+      }
+    }
+
+    if (!acc) {
+      throw new Error('网关返回了空响应（无内容），可能未配置上游提供商或模型不可用')
     }
 
     patchMessage(assistantId, { content: acc, status: 'success' })
     touchTopicTitle(topicId)
     doneBus.emit({ topicId, messageId: assistantId, content: acc })
   } catch (e) {
-    const aborted = e instanceof DOMException && e.name === 'AbortError'
-    if (aborted) {
-      // 已取消：保留已生成内容，标记为完成（与 ccMesh 的取消语义一致）
+    const isCancel = cancelled || e instanceof CancelledError
+    const isAbort = e instanceof DOMException && e.name === 'AbortError'
+    if (isCancel && acc) {
+      // 用户手动取消：保留已生成内容
       patchMessage(assistantId, { content: acc, status: 'success' })
       errorBus.emit({ topicId, messageId: assistantId, error: '已取消' })
+    } else if (isCancel || (isAbort && !acc)) {
+      // 超时取消（Web 端）
+      const msg = '请求超时（180 秒无响应），请检查网关是否已启动且上游提供商可用'
+      patchMessage(assistantId, { content: msg, status: 'error' })
+      errorBus.emit({ topicId, messageId: assistantId, error: msg })
     } else {
       const msg = e instanceof Error ? e.message : String(e)
       patchMessage(assistantId, { content: msg, status: 'error' })
       errorBus.emit({ topicId, messageId: assistantId, error: msg })
     }
   } finally {
+    if (timeoutId) window.clearTimeout(timeoutId)
     aborters.delete(topicId)
   }
 }
@@ -562,7 +685,7 @@ export interface ModelOptionGroup {
   models: string[]
 }
 
-/** `endpointId::model` 复合键，与 ccMesh 的 modelKey 语义一致。 */
+/** `endpointId::model` 复合键。 */
 export function modelKey(endpointId: string, model: string): string {
   return `${endpointId}::${model}`
 }

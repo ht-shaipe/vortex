@@ -8,21 +8,21 @@
     class="model-select-dialog"
   >
     <!-- 顶部工具栏：搜索 + 全选/反选 + 计数 -->
-    <div class="dialog-toolbar">
+    <div class="dialog-toolbar flex items-center gap-12px mb-16px">
       <el-input
         v-model="searchKey"
         placeholder="搜索模型名称…"
         clearable
         size="small"
-        class="search-input"
+        class="search-input flex-1"
       >
         <template #prefix>
           <el-icon :size="14"><Search /></el-icon>
         </template>
       </el-input>
-      <div class="toolbar-right">
-        <span class="count-text">
-          已选 <strong>{{ checkedCount }}</strong> / {{ models.length }}
+      <div class="toolbar-right flex items-center gap-10px shrink-0">
+        <span class="count-text text-12px text-ink-3 whitespace-nowrap">
+          已选 <strong class="text-accent">{{ checkedCount }}</strong> / {{ models.length }}
         </span>
         <button type="button" class="btn sm" @click="toggleAll">
           {{ isAllChecked ? '取消全选' : '全选' }}
@@ -31,41 +31,41 @@
     </div>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="loading-wrap">
+    <div v-if="loading" class="loading-wrap flex flex-col items-center justify-center gap-12px py-48px text-ink-3 text-13px">
       <el-icon class="spin" :size="24"><Loading /></el-icon>
       <p>正在从远程加载模型列表…</p>
     </div>
 
     <!-- 空状态 -->
-    <div v-else-if="models.length === 0" class="empty-wrap">
+    <div v-else-if="models.length === 0" class="empty-wrap flex flex-col items-center justify-center gap-12px py-48px text-ink-3 text-13px">
       <p>未获取到任何模型，请先点击「获取可用模型」。</p>
     </div>
 
     <!-- 模型 checkbox 列表 -->
-    <el-scrollbar v-else class="model-scroll" max-height="420">
-      <div class="model-grid">
+    <el-scrollbar v-else class="model-scroll border border-line rounded-sm" max-height="420">
+      <div class="model-grid grid grid-cols-2 gap-2px p-8px">
         <label
           v-for="m in filteredModels"
           :key="m"
-          class="model-item"
+          class="model-item flex items-center gap-8px px-10px py-7px rounded-sm cursor-pointer transition hover:bg-surface-2"
           :class="{ checked: isChecked(m) }"
         >
           <el-checkbox :model-value="isChecked(m)" @change="toggleModel(m)" />
-          <span class="model-label" :title="m">{{ m }}</span>
+          <span class="model-label text-12.5px text-ink-2 font-mono whitespace-nowrap overflow-hidden text-ellipsis min-w-0" :title="m">{{ m }}</span>
         </label>
       </div>
-      <div v-if="filteredModels.length === 0" class="no-match">
+      <div v-if="filteredModels.length === 0" class="no-match p-32px text-center text-13px text-ink-4">
         未找到匹配「{{ searchKey }}」的模型
       </div>
     </el-scrollbar>
 
     <!-- 底部操作 -->
     <template #footer>
-      <div class="dialog-footer">
-        <span v-if="checkedCount > 0" class="footer-hint">
+      <div class="dialog-footer flex items-center gap-10px">
+        <span v-if="checkedCount > 0" class="footer-hint text-12px text-ink-4">
           确认后选中的模型将显示在主界面，首个作为默认模型
         </span>
-        <span class="spacer" />
+        <span class="spacer flex-1" />
         <button type="button" class="btn" @click="$emit('update:visible', false)">取消</button>
         <button type="button" class="btn primary" :disabled="checkedCount === 0" @click="confirm">
           确认选择 ({{ checkedCount }})
@@ -168,41 +168,6 @@ function confirm(): void {
 </script>
 
 <style scoped>
-.dialog-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.search-input {
-  flex: 1;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.count-text {
-  font-size: 12px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-.count-text strong {
-  color: var(--accent);
-}
-
-.loading-wrap,
-.empty-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 48px 0;
-  color: var(--ink-3);
-  font-size: 13px;
-}
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -210,56 +175,8 @@ function confirm(): void {
   to { transform: rotate(360deg); }
 }
 
-.model-scroll {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.model-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px;
-  padding: 8px;
-}
-.model-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.model-item:hover {
-  background: var(--surface-2);
-}
 .model-item.checked {
   background: var(--accent-bg, rgba(99, 102, 241, 0.08));
-}
-.model-label {
-  font-size: 12.5px;
-  color: var(--ink-2);
-  font-family: var(--font-mono, monospace);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-.no-match {
-  padding: 32px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--ink-4);
-}
-
-.dialog-footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.spacer { flex: 1; }
-.footer-hint {
-  font-size: 12px;
-  color: var(--ink-4);
 }
 
 .btn {

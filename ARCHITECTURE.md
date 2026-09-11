@@ -11,7 +11,7 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │            Vortex 桌面应用 (Tauri 2)            │
                           │                                                 │
    AI 客户端 ─────────────│  ┌───────────────────────────────────────────┐  │
-              (OpenAI SDK,│  │       Actix-Web HTTP Server :20128        │  │
+              (OpenAI SDK,                           │  │       Actix-Web HTTP Server :10168        │  │
                cURL, etc.)│  │                                           │  │
                           │  │/v1/chat/completions    ──┐                │  │
                           │  │/v1/models                │                │  │
@@ -44,10 +44,10 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │  └───────────────────────────────────────────┘  │
                           │                                                 │
                           │  ┌───────────────────────────────────────────┐  │
-                          │  │        Vue 3 管理界面 (11 个页面)         │  │
+                          │  │        Vue 3 管理界面 (10 个页面)         │  │
                           │  │接入指南 | 实时路由 | 订阅 | 免费 Token    │  │
                           │  │请求日志 | 统计 | 同步 | 对话              │  │
-                          │  │检查更新 | 设置 | 关于                     │  │
+                          │  │设置 | 关于                                │  │
                           │  └───────────────────────────────────────────┘  │
                           └─────────────────────────────────────────────────┘
                                           │
@@ -81,7 +81,7 @@ pub struct AppState {
 1. 加载配置 (`AppConfig::load()`)
 2. 创建应用状态 (`create_app_state()`) — 初始化 DB 连接池、运行迁移、创建各引擎
 3. 启动 API 服务器 (`start_api_server()`) — 独立线程中运行 Actix-Web
-4. 启动 Tauri 应用 — 带系统托盘菜单（显示窗口 / 启动代理 / 停止代理 / 退出）
+4. 启动 Tauri 应用 — 注册插件（updater / process / shell）、命令处理器与系统托盘菜单（显示窗口 / 启动代理 / 停止代理 / 退出）
 
 ### 2. 代理引擎 (`proxy/engine.rs`)
 
@@ -231,6 +231,7 @@ pub struct ProviderDef {
 | `GET/POST /api/providers` | 提供商连接列表/创建 |
 | `GET/PATCH/DELETE /api/providers/{id}` | 单个连接 CRUD |
 | `POST /api/providers/{id}/test` | 测试连接可用性 |
+| `POST /api/providers/preview-models` | 预览远程可用模型列表（无需先保存连接） |
 | `GET/POST /api/keys` | API 密钥列表/创建 |
 | `GET/DELETE /api/keys/{id}` | 单个密钥操作 |
 | `GET /api/usage` | 用量记录列表 |
@@ -249,6 +250,16 @@ pub struct ProviderDef {
 - `start_proxy`, `stop_proxy` — 运行时启停网关服务器
 - 托盘事件通过 `tray-action` 事件向前端广播（`start` / `stop`）
 
+### 11. Tauri 插件
+
+| 插件 | 用途 |
+|------|------|
+| `tauri-plugin-updater` | 自动更新：检查 GitHub Releases 新版本、下载并安装 |
+| `tauri-plugin-process` | 进程管理：更新安装后重启应用 |
+| `tauri-plugin-shell` | Shell 命令执行 |
+
+前端通过 `composables/useUpdater.ts` 封装更新逻辑：启动时静默检查 → 发现新版本弹出通知 → 用户确认后下载 → 下载完成提示重启。
+
 ## 前端架构
 
 ### 技术栈
@@ -256,11 +267,13 @@ pub struct ProviderDef {
 - **Vue 3.5** — Composition API + `<script setup>`
 - **TypeScript** — 严格模式 (`strict: true`)
 - **Element Plus** — UI 组件库（图标全局注册）
+- **Ant Design Vue** — 辅助组件库（a-card、a-timeline 等）
 - **UnoCSS** — 原子化 CSS (`presetUno` + `presetAttributify`)
 - **Pinia** — 状态管理 (Composition API 风格)
 - **Vue Router** — SPA 路由（Web 端 hash 模式 / Tauri 端 history 模式）
 - **ECharts 6 + vue-echarts** — 图表可视化
-- **Axios** — HTTP 客户端 (baseURL: `http://localhost:20128/api`, 超时 30s)
+- **highlight.js** — 语法高亮
+- **Axios** — HTTP 客户端 (baseURL: `http://localhost:10168/api`, 超时 30s)
 
 ### 页面结构
 
@@ -269,8 +282,8 @@ AppLayout
 ├── WindowChrome (32px, data-tauri-drag-region 拖拽条)
 ├── Sidebar (204px, 可折叠)
 │   ├── 品牌标识
-│   ├── 导航菜单 (主区 9 项 + 底部 2 项 + 折叠按钮)
-│   └── 订阅项带连接数徽标
+│   ├── 导航菜单 (主区 8 项 + 底部 2 项 + 折叠按钮)
+│   └── 订阅项带连接数徽章
 └── <main class="main"> (部分路由 flush 满高布局)
     ├── Header (56px)
     │   ├── 页面标题
@@ -278,18 +291,24 @@ AppLayout
     └── <router-view />
         ├── Guide        — 接入指南
         ├── LiveRouting  — 实时路由 + 网关状态（默认首页）
-        ├── Subscriptions — 提供商连接管理（含新建 / 编辑子路由）
+        ├── Subscriptions — 提供商连接管理（含新建 / 自定义 / 编辑子路由）
         ├── FreeTokens   — 免费 Token 站点目录（卡片 / 表格双视图）
         ├── RequestLogs  — 请求日志
         ├── Statistics   — 端点统计 / 用量统计
         ├── Sync         — 备份与配置迁移
-        ├── Chat         — 对话
-        ├── Updates      — 检查更新
+        ├── Chat         — 对话（会话分支树 + 流式输出）
         ├── Settings     — 通用设置 / 高级设置
-        └── About        — 关于
+        └── About        — 关于（含检查更新）
 ```
 
 > `flush` 路由（`/live-routing`、`/subscriptions/*`、`/chat`）走满高布局，不套 Header 的内边距滚动容器；例外是 `/subscriptions/new`。
+
+### 独立窗口
+
+| 窗口 label | 用途 |
+|------------|------|
+| `main` | 主窗口（1000×680，可调整大小） |
+| `status-panel` | 状态面板小窗口（340×460，无边框透明置顶，托盘可切换显隐） |
 
 ### API 适配层 (`src/api/`)
 
@@ -302,6 +321,7 @@ AppLayout
 | `stats.ts` | 前端聚合 | 后端无 `daily_stats` 表，`statsApi` 从 `/api/usage` 原始记录聚合出端点统计（KPI / 热力图 / 趋势 / 日模型明细）；`usageApi` 的同步与清理类方法为 TODO 桩 |
 | `chat.ts` | 前端 + 网关 | 分支树（`parentId` / `activeNodeId` / `siblingIds`）持久化在 localStorage；发送走网关 `POST /v1/chat/completions` SSE，鉴权自动取第一个可用 API Key |
 | `sync.ts` | 混合 | cc-switch 迁移预览、本地配置导出/导入为真实实现；WebDAV 云端备份/恢复与云端备份列表为 TODO 桩，UI 降级提示「后端未接入」 |
+| `notifications.ts` | 远程通知中心 | 从远程服务端拉取站内通知列表，与本地后端无关 |
 
 后端补齐接口后，只需替换 `stats.ts` / `sync.ts` 中标注 TODO 的函数，组件层无需改动。
 
@@ -314,16 +334,25 @@ AppLayout
 | `usage.ts` | 用量统计 |
 | `chatLayout.ts` | 对话页布局(侧栏折叠/输入栏高度)，持久化到 localStorage |
 
+### Composables
+
+| Composable | 职责 |
+|------------|------|
+| `useTheme.ts` | 主题管理（light / dark / system），持久化到 localStorage |
+| `useThemeColors.ts` | CSS 变量解析为具体色值供 ECharts / Canvas 使用 |
+| `useUpdater.ts` | 自动更新：检查 / 下载 / 安装 / 重启，启动时静默检查 |
+| `useNotifications.ts` | 通知管理：每 5 分钟轮询远程通知，未读弹出桌面通知 |
+
 ### 主题
 
 亮 / 暗双主题，由 `composables/useTheme.ts` 在 `<html>` 上切换 `.dark` 类（模式：`light` / `dark` / `system`，持久化到 `localStorage['vortex-theme']`）：
 
 | | 亮色 | 暗色 |
 |---|---|---|
-| `--bg` | `#f6f5f2`（暖中性灰） | `#0b0b0e` |
-| `--surface` | `#ffffff` | `#16161a` |
-| `--ink` | `#1a1916` | `#e8e8ec` |
-| `--accent` | `oklch(0.63 0.14 42)` 铁锈橙（两种主题共用） | 同左 |
+| `--bg` | `#f6f5f2`（暖中性灰） | `#0a0a0e` |
+| `--surface` | `#ffffff` | `#151519` |
+| `--ink` | `#1a1a22` | `#e8e8ec` |
+| `--accent` | `oklch(0.55 0.20 280)` 深紫（亮色）/ `oklch(0.65 0.20 280)` 深紫（暗色） | 同左 |
 
 变量定义在 `src/styles/cc-theme.css`（`:root` 亮色 / `.dark` 暗色，并映射 Element Plus 暗色变量），基础类（`.card` / `.btn` / `.table` / `.tabs` / `.pill` 等）在 `src/styles/cc-components.css`。ECharts / Canvas 无法读取 `var()`，由 `composables/useThemeColors.ts` 解析为具体色值。
 
@@ -357,7 +386,7 @@ AppLayout
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `VORTEX_PORT` | 20128 | API 服务器端口 |
+| `VORTEX_PORT` | 10168 | API 服务器端口 |
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成并持久化 | 加密密钥 (32字节十六进制) |
 | `VORTEX_REQUIRE_API_KEY` | false | 是否要求客户端 API Key |

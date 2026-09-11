@@ -10,42 +10,42 @@
     </PageHeader>
 
     <!-- 加载中占位 -->
-    <div v-if="loading" class="spin-wrap">
+    <div v-if="loading" class="spin-wrap p-40px text-center text-ink-4">
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
 
     <template v-else>
       <!-- KPI 概览行：总请求数、Token 用量、成本、成功率、平均延迟 -->
-      <div class="kpi-row">
-        <div class="card stat">
+      <div class="kpi-row grid grid-cols-6 gap-[var(--gap-md)] mb-[var(--gap-lg)]">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">总请求数</div>
           <div class="stat-val">{{ fmtInt(stats.totalRequests) }}</div>
         </div>
-        <div class="card stat">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">输入 Tokens</div>
           <div class="stat-val">{{ fmtInt(stats.totalTokensInput) }}</div>
         </div>
-        <div class="card stat">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">输出 Tokens</div>
           <div class="stat-val">{{ fmtInt(stats.totalTokensOutput) }}</div>
         </div>
-        <div class="card stat">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">总成本</div>
           <div class="stat-val">${{ fmtCost(stats.totalCost) }}</div>
         </div>
-        <div class="card stat">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">成功率</div>
           <div class="stat-val">{{ fmtPct(stats.successRate) }}</div>
         </div>
-        <div class="card stat">
+        <div class="card stat py-18px px-20px">
           <div class="stat-label">平均延迟</div>
           <div class="stat-val">{{ stats.avgLatencyMs != null ? `${Math.round(stats.avgLatencyMs)}ms` : '—' }}</div>
         </div>
       </div>
 
       <!-- 分布统计：按提供商 / 按模型 -->
-      <div class="grid-2">
-        <div class="card section">
+      <div class="grid-2 grid grid-cols-2 gap-[var(--gap-md)]">
+        <div class="card section h-[fit-content]">
           <div class="card-head">
             <div>
               <div class="card-title">按提供商</div>
@@ -56,7 +56,7 @@
             <ShareList :items="byProvider" />
           </div>
         </div>
-        <div class="card section">
+        <div class="card section h-[fit-content]">
           <div class="card-head">
             <div>
               <div class="card-title">按模型</div>
@@ -150,17 +150,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.spin-wrap { padding: 40px; text-align: center; color: var(--ink-4); }
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--gap-md);
-  margin-bottom: var(--gap-lg);
-}
 @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
-.stat { padding: 18px 20px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap-md); }
 @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
-.section { height: fit-content; }
 </style>

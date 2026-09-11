@@ -11,7 +11,7 @@
     </div>
 
     <!-- 加载中占位 -->
-    <div v-if="loading" class="spin-wrap">
+    <div v-if="loading" class="spin-wrap p-40px text-center text-ink-4">
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
 
@@ -72,8 +72,8 @@
               <div class="setting-label">访问令牌</div>
               <div class="setting-desc">请妥善保管，重新生成会使旧 token 失效</div>
             </div>
-            <div class="token-controls">
-              <el-input v-model="form.security.token" class="token-input" readonly placeholder="未生成" />
+            <div class="token-controls flex items-center gap-10px flex-nowrap">
+              <el-input v-model="form.security.token" class="token-input w-300px" readonly placeholder="未生成" />
               <button type="button" class="btn sm" :disabled="!form.security.token" @click="copyToken">
                 <el-icon :size="13"><CopyDocument /></el-icon> 复制
               </button>
@@ -98,9 +98,9 @@
               <div class="setting-label">允许的来源</div>
               <div class="setting-desc">多个来源用逗号分隔，<span class="mono">*</span> 表示允许全部</div>
             </div>
-            <div class="cors-controls">
-              <el-input v-model="form.security.corsOrigins" class="cors-input" placeholder="*" @blur="saveSecurity('corsOrigins', form.security.corsOrigins)" />
-              <span class="header-tag">Access-Control-Allow-Origin</span>
+            <div class="cors-controls flex items-center gap-10px flex-nowrap">
+              <el-input v-model="form.security.corsOrigins" class="cors-input w-260px" placeholder="*" @blur="saveSecurity('corsOrigins', form.security.corsOrigins)" />
+              <span class="header-tag font-mono text-11px text-ink-4 bg-surface-3 border border-line rounded-sm py-3px px-8px whitespace-nowrap">Access-Control-Allow-Origin</span>
             </div>
           </div>
         </div>
@@ -134,12 +134,12 @@
         </div>
 
         <!-- 危险区域：恢复出厂设置 -->
-        <div class="danger-card section">
-          <div class="danger-head">
+        <div class="danger-card section border border-err rounded-lg bg-err-bg py-16px px-20px">
+          <div class="danger-head flex items-center gap-6px text-13px font-semibold text-err mb-12px">
             <el-icon :size="14"><WarningFilled /></el-icon>
             <span>危险区域</span>
           </div>
-          <div class="danger-body">
+          <div class="danger-body flex items-center justify-between gap-16px">
             <div>
               <div class="setting-label">恢复出厂设置</div>
               <div class="setting-desc">清空所有订阅、API Key、请求日志与设置，不可撤销</div>
@@ -327,53 +327,11 @@ onMounted(load)
 </script>
 
 <style scoped>
-.spin-wrap { padding: 40px; text-align: center; color: var(--ink-4); }
 .section { margin-bottom: var(--gap-lg); }
-.save-row { display: flex; justify-content: flex-end; }
 
-.danger-card {
-  border: 1px solid var(--err);
-  border-radius: var(--r-lg);
-  background: var(--err-bg);
-  padding: 16px 20px;
-}
-.danger-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--err);
-  margin-bottom: 12px;
-}
-.danger-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-/* 安全与访问：与通用/高级一致的标准两栏行（复用全局 .setting-row） */
 .mono { font-family: var(--font-mono); font-size: 12px; }
-.token-controls,
-.cors-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-.token-input { width: 300px; flex: 0 0 auto; }
-.cors-input { width: 260px; flex: 0 0 auto; }
-.header-tag {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-4);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 3px 8px;
-  white-space: nowrap;
-}
+.token-input { flex: 0 0 auto; }
+.cors-input { flex: 0 0 auto; }
 </style>
 
 <style>

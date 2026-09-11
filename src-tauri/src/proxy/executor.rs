@@ -36,6 +36,7 @@ pub enum ExecutorOutput {
 /// 执行器工厂
 ///
 /// 根据提供商的 API 格式创建对应的执行器实例。
+#[derive(Clone)]
 pub struct ExecutorFactory;
 
 impl ExecutorFactory {

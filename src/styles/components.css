@@ -327,10 +327,13 @@ html.dark .nav-item.active .badge { background: var(--accent-line); color: var(-
   overflow: hidden;
 }
 .main-inner {
-  padding: 44px 28px 36px;
+  padding: 6px 28px 36px;
 }
 .main.flush {
-  padding: 0;
+  /* 顶部预留窗口拖拽区（WindowChrome 固定 38px，z-index 9999，覆盖整窗顶部）。
+     不预留会导致页面顶栏（返回按钮等）落在拖拽区之下、点击被拦截。
+     与 .main-inner 的 44px 顶部内边距保持一致。 */
+  padding: 44px 0 0;
   height: 100vh;
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar" :class="{ collapsed }">
+  <aside class="sidebar" :class="{ collapsed }" data-tauri-drag-region>
     <div class="brand">
       <img class="brand-logo" src="@/images/logo.png" alt="Vortex" />
       <div v-if="!collapsed" class="brand-text">

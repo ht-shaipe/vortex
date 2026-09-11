@@ -1,9 +1,9 @@
 <template>
-  <el-header class="vortex-header" height="56px">
+  <el-header class="vortex-header flex items-center justify-between px-24px" height="56px" data-tauri-drag-region>
     <div class="header-left">
-      <h2 class="page-title">{{ pageTitle }}</h2>
+      <h2 class="page-title m-0 text-18px font-semibold">{{ pageTitle }}</h2>
     </div>
-    <div class="header-right">
+    <div class="header-right flex items-center gap-12px">
       <el-tag :type="healthStatus === 'ok' ? 'success' : 'danger'" size="small" effect="dark">
         {{ healthStatus === 'ok' ? 'Online' : 'Offline' }}
       </el-tag>
@@ -49,23 +49,4 @@ checkHealth() // 首次检查
 setInterval(checkHealth, 30000) // 每 30 秒轮询一次
 </script>
 
-<style scoped>
-.vortex-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-}
 
-.page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-</style>

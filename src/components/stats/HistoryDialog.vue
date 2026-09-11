@@ -4,34 +4,34 @@
   </button>
 
   <el-dialog v-model="open" title="历史记录" width="1000px" align-center>
-    <p v-if="loading" class="hint">加载中…</p>
-    <p v-else-if="rows.length === 0" class="hint">暂无历史记录</p>
-    <div v-else class="hist">
-      <el-scrollbar class="hist-scroll" max-height="58vh">
+    <p v-if="loading" class="hint m-0 text-body text-ink-4">加载中…</p>
+    <p v-else-if="rows.length === 0" class="hint m-0 text-body text-ink-4">暂无历史记录</p>
+    <div v-else class="hist flex flex-col gap-[var(--gap-md)]">
+      <el-scrollbar class="hist-scroll border border-line rounded-md" max-height="58vh">
         <table class="table">
           <thead>
             <tr>
               <th>日期</th>
               <th>端点</th>
-              <th class="right">请求</th>
-              <th class="right">错误</th>
-              <th class="right">输入</th>
-              <th class="right">输出</th>
-              <th class="right">缓存</th>
-              <th class="right">操作</th>
+              <th class="right text-right">请求</th>
+              <th class="right text-right">错误</th>
+              <th class="right text-right">输入</th>
+              <th class="right text-right">输出</th>
+              <th class="right text-right">缓存</th>
+              <th class="right text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(r, i) in rows" :key="`${r.date}-${r.endpointName}-${i}`">
               <td class="num">{{ r.date }}</td>
               <td>{{ r.endpointName }}</td>
-              <td class="right num">{{ fmtInt(r.requests) }}</td>
-              <td class="right num" :class="{ bad: r.errors > 0 }">{{ fmtInt(r.errors) }}</td>
-              <td class="right num">{{ fmtInt(r.inputTokens) }}</td>
-              <td class="right num">{{ fmtInt(r.outputTokens) }}</td>
-              <td class="right num">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
-              <td class="right">
-                <div class="ops">
+              <td class="right num text-right">{{ fmtInt(r.requests) }}</td>
+              <td class="right num text-right" :class="{ 'text-err': r.errors > 0 }">{{ fmtInt(r.errors) }}</td>
+              <td class="right num text-right">{{ fmtInt(r.inputTokens) }}</td>
+              <td class="right num text-right">{{ fmtInt(r.outputTokens) }}</td>
+              <td class="right num text-right">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
+              <td class="right text-right">
+                <div class="ops inline-flex items-center gap-2px">
                   <button
                     type="button"
                     class="btn bare icon"
@@ -148,13 +148,6 @@ async function delDay(date: string): Promise<void> {
 </script>
 
 <style scoped>
-.hint { margin: 0; font-size: var(--fs-body); color: var(--ink-4); }
-.hist { display: flex; flex-direction: column; gap: var(--gap-md); }
-.hist-scroll {
-
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-}
 .hist-scroll .table thead th {
   position: sticky;
   top: 0;
@@ -162,7 +155,4 @@ async function delDay(date: string): Promise<void> {
   background: var(--surface);
 }
 .table tbody tr { cursor: default; }
-.right { text-align: right; }
-.bad { color: var(--err); }
-.ops { display: inline-flex; align-items: center; gap: 2px; }
 </style>

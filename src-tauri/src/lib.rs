@@ -242,6 +242,8 @@ pub fn run() {
             tauri_cmds::proxy_cmds::start_proxy,
             tauri_cmds::proxy_cmds::stop_proxy,
             tauri_cmds::status_cmds::get_system_status,
+            tauri_cmds::chat_cmds::chat_completions_stream,
+            tauri_cmds::chat_cmds::cancel_chat_stream,
         ])
         // 应用初始化回调：创建系统托盘
         .setup(|app| {
@@ -302,31 +304,18 @@ pub fn run() {
                 })
                 // 托盘图标点击事件处理
                 .on_tray_icon_event(|tray, event| {
-                    // 左键点击时切换状态面板窗口的显示/隐藏
+                    // 左键点击直接显示并聚焦主窗口
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
-                        position,
                         ..
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(panel) = app.get_webview_window("status-panel") {
-                            if panel.is_visible().unwrap_or(false) {
-                                let _ = panel.hide();
-                            } else {
-                                // 将状态面板定位到托盘图标点击位置附近
-                                // macOS 菜单栏图标在右上角，窗口右对齐点击点，避免超出屏幕右边界
-                                let scale_factor = panel.scale_factor().unwrap_or(1.0);
-                                let mut x = position.x / scale_factor - 330.0; // 右对齐，留 10px 边距
-                                let mut y = position.y / scale_factor + 8.0; // 图标下方
-                                // 左边界保护
-                                if x < 4.0 { x = 4.0; }
-                                if y < 4.0 { y = 4.0; }
-                                let _ = panel.set_position(tauri::LogicalPosition::new(x, y));
-                                let _ = panel.show();
-                                let _ = panel.set_focus();
-                            }
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
                         }
                     }
                 });

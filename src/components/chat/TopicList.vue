@@ -1,34 +1,34 @@
 <template>
-  <aside class="topics">
-    <div class="topics-head">
-      <span class="topics-title">会话</span>
-      <button type="button" class="btn bare icon topics-new" title="新建对话" aria-label="新建对话" @click="emit('new')">
+  <aside class="topics flex flex-col h-full w-full border-r border-line bg-surface-2">
+    <div class="topics-head flex items-center justify-between shrink-0 pt-14px pr-10px pb-12px pl-16px border-b border-line">
+      <span class="topics-title text-13px font-semibold tracking-0.03em text-ink-2">会话</span>
+      <button type="button" class="btn bare icon topics-new w-24px h-24px rounded-6px text-ink-3 transition" title="新建对话" aria-label="新建对话" @click="emit('new')">
         <el-icon :size="15"><Plus /></el-icon>
       </button>
     </div>
 
-    <el-scrollbar class="topics-body">
-      <p v-if="topics.length === 0" class="topics-empty">暂无会话</p>
-      <ul v-else class="topics-list">
+    <el-scrollbar class="topics-body flex-1 min-h-0 pt-6px px-6px pb-8px">
+      <p v-if="topics.length === 0" class="topics-empty m-0 pt-28px px-8px text-center text-12.5px text-ink-4">暂无会话</p>
+      <ul v-else class="topics-list list-none m-0 p-0 flex flex-col gap-1px">
         <li v-for="t in topics" :key="t.id">
-          <div class="topic-row" :class="{ active: activeId === t.id }">
+          <div class="topic-row relative flex items-center gap-2px pt-7px pr-8px pb-7px pl-10px rounded-8px text-13.5px text-ink-2 cursor-pointer transition" :class="{ active: activeId === t.id }">
             <span class="topic-indicator" />
             <input
               v-if="editingId === t.id"
               ref="editInput"
               v-model="editingTitle"
-              class="topic-input"
+              class="topic-input flex-1 min-w-0 h-26px px-8px text-13.5px text-ink bg-surface border border-accent rounded-6px outline-none"
               @click.stop
               @blur="onBlur(t)"
               @keydown.enter.prevent="commitRename(t)"
               @keydown.esc.prevent="cancelRename(true)"
             />
-            <button v-else type="button" class="topic-name" @click="emit('select', t.id)">
+            <button v-else type="button" class="topic-name flex-1 min-w-0 text-left overflow-hidden text-ellipsis whitespace-nowrap" @click="emit('select', t.id)">
               {{ t.title || '新对话' }}
             </button>
             <button
               type="button"
-              class="topic-op"
+              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition"
               title="重命名"
               aria-label="重命名"
               @click.stop="beginRename(t)"
@@ -37,7 +37,7 @@
             </button>
             <button
               type="button"
-              class="topic-op"
+              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition"
               title="删除"
               aria-label="删除"
               @click.stop="emit('delete', t)"
@@ -117,62 +117,12 @@ function commitRename(topic: ChatTopic): void {
 </script>
 
 <style scoped>
-.topics {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  border-right: 1px solid var(--line);
-  background: var(--surface-2);
-}
-.topics-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-sm);
-  padding: 14px 10px 12px 16px;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.topics-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--ink-2);
-}
-.topics-new {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  color: var(--ink-3);
-  transition: background 0.15s, color 0.15s;
-}
+.topics-head { gap: var(--gap-sm); }
 .topics-new:hover {
   background: var(--surface-3);
   color: var(--ink);
 }
-.topics-body { flex: 1; min-height: 0; padding: 6px 6px 8px; }
-.topics-empty {
-  margin: 0;
-  padding: 28px 8px;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--ink-4);
-}
-.topics-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
-.topic-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 7px 8px 7px 10px;
-  border-radius: 8px;
-  font-size: 13.5px;
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
 .topic-row:hover { background: var(--surface-3); color: var(--ink); }
 .topic-row.active {
   background: var(--accent-bg);
@@ -195,48 +145,14 @@ html.dark .topic-row.active { background: var(--surface-3); color: var(--ink); }
 .topic-row.active .topic-indicator { transform: translateY(-50%) scaleY(1); }
 
 .topic-name {
-  flex: 1;
-  min-width: 0;
   border: none;
   background: transparent;
-  text-align: left;
   padding: 0;
   font: inherit;
   color: inherit;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.topic-input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  padding: 0 8px;
-  font-size: 13.5px;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  outline: none;
 }
 
-.topic-op {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--ink-4);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
-}
 .topic-row:hover .topic-op,
 .topic-row.active .topic-op { opacity: 1; }
 .topic-op:hover { color: var(--ink); background: var(--surface-3); }

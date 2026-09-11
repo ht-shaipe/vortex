@@ -1,5 +1,5 @@
 <template>
-  <div class="copyable" :class="variant">
+  <div class="copyable relative" :class="variant">
     <div class="copy-body">
       <template v-if="variant === 'block' && lang">
         <!-- eslint-disable-next-line vue/no-v-html -->
@@ -7,7 +7,7 @@
       </template>
       <slot v-else>{{ text }}</slot>
     </div>
-    <button type="button" class="btn bare sm copy-btn" @click="copy">
+    <button type="button" class="btn bare sm copy-btn shrink-0" @click="copy">
       <el-icon v-if="!copied" :size="13"><DocumentCopy /></el-icon>
       <el-icon v-else :size="13"><Check /></el-icon>
     </button>
@@ -65,7 +65,7 @@ async function copy() {
 
 
 <style scoped>
-.copyable { position: relative; }
+
 .copyable.block .copy-body {
   background: var(--surface-3);
   border: 1px solid var(--line);
@@ -98,7 +98,7 @@ async function copy() {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.copy-btn { flex-shrink: 0; }
+
 </style>
 
 <style>

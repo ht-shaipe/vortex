@@ -47,14 +47,22 @@ export interface ProviderConnection {
   name: string
   /** 关联邮箱 */
   email?: string
-  /** API 密钥 */
+  /** API 密钥（已脱敏）。判断「是否配置」请一律用 hasApiKey，不要用本字段是否为空 */
   apiKey?: string
+  /** 是否已配置 API 密钥 */
+  hasApiKey?: boolean
+  /** 是否已配置 OAuth access token */
+  hasAccessToken?: boolean
   /** 项目 ID */
   projectId?: string
   /** 是否活跃 */
   isActive: boolean
   /** 连接测试状态 */
   testStatus: string
+  /** 最近一次测试时间 */
+  lastTestedAt?: string
+  /** 最近一次测试的响应延迟（毫秒）。列表首列展示，未测试时为 undefined */
+  lastLatencyMs?: number
   /** 错误码 */
   errorCode?: string
   /** 最近错误信息 */

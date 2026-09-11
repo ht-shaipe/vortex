@@ -1,12 +1,12 @@
 <template>
-  <div class="share-list">
-    <div v-if="items.length === 0" class="share-empty">暂无数据</div>
-    <div v-for="it in sorted" :key="it.name" class="share-row">
-      <span class="share-name mono">{{ it.name }}</span>
-      <div class="share-track">
-        <div class="share-bar" :style="{ width: pct(it.value) + '%' }" />
+  <div class="share-list flex flex-col gap-8px">
+    <div v-if="items.length === 0" class="share-empty text-12.5px text-ink-4 py-8px">暂无数据</div>
+    <div v-for="it in sorted" :key="it.name" class="share-row grid grid-cols-[140px_1fr_80px] gap-10px items-center">
+      <span class="share-name mono text-12px text-ink-2 overflow-hidden text-ellipsis whitespace-nowrap">{{ it.name }}</span>
+      <div class="share-track h-6px bg-surface-3 rounded-3px overflow-hidden">
+        <div class="share-bar h-full bg-accent rounded-3px" :style="{ width: pct(it.value) + '%' }" />
       </div>
-      <span class="share-val num">{{ it.value.toLocaleString() }}</span>
+      <span class="share-val num text-12px text-ink-3 text-right">{{ it.value.toLocaleString() }}</span>
     </div>
   </div>
 </template>
@@ -31,11 +31,5 @@ function pct(v: number): number {
 </script>
 
 <style scoped>
-.share-list { display: flex; flex-direction: column; gap: 8px; }
-.share-empty { font-size: 12.5px; color: var(--ink-4); padding: 8px 0; }
-.share-row { display: grid; grid-template-columns: 140px 1fr 80px; gap: 10px; align-items: center; }
-.share-name { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-track { height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
-.share-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
-.share-val { font-size: 12px; color: var(--ink-3); text-align: right; }
+.share-bar { transition: width 0.3s; }
 </style>

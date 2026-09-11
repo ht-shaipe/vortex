@@ -1,7 +1,7 @@
 <template>
-  <div class="panel">
-    <div class="panel-bar">
-      <div class="tabs slim">
+  <div class="panel flex flex-col">
+    <div class="panel-bar flex items-center justify-between flex-wrap">
+      <div class="tabs slim mb-0 border-b-none">
         <button
           v-for="t in appTabs"
           :key="t.key"
@@ -13,7 +13,7 @@
           {{ t.label }}
         </button>
       </div>
-      <div class="panel-actions">
+      <div class="panel-actions flex items-center">
         <DateRangePicker v-model="range" />
         <button type="button" class="btn sm" :disabled="syncing" @click="sync">
           <el-icon :size="13" :class="{ spin: syncing }"><Refresh /></el-icon>刷新
@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div class="kpi-row">
+    <div class="kpi-row grid">
       <StatCard label="请求数" :value="summary?.totalRequests ?? 0" />
       <StatCard label="输入 Token" :value="summary?.totalInputTokens ?? 0" hint-below>
         <template #hint>
@@ -40,8 +40,8 @@
       </StatCard>
     </div>
 
-    <section class="sec">
-      <h2 class="sec-title">调用热力图</h2>
+    <section class="sec flex flex-col">
+      <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">调用热力图</h2>
       <div class="card sec-body">
         <UsageHeatmap :totals="dayTotals" />
       </div>
@@ -51,31 +51,31 @@
       <UsageTrendChart :data="trendData" />
     </section>
 
-    <section v-if="dayModelRows.length > 0" class="sec">
-      <h2 class="sec-title">按日期 · 模型</h2>
-      <div class="card table-wrap">
+    <section v-if="dayModelRows.length > 0" class="sec flex flex-col">
+      <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">按日期 · 模型</h2>
+      <div class="card table-wrap overflow-hidden">
         <table class="table">
           <thead>
             <tr>
               <th>日期</th>
               <th>来源</th>
               <th>模型</th>
-              <th class="right">请求</th>
-              <th class="right">输入</th>
-              <th class="right">输出</th>
-              <th class="right">缓存</th>
+              <th class="right text-right">请求</th>
+              <th class="right text-right">输入</th>
+              <th class="right text-right">输出</th>
+              <th class="right text-right">缓存</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="g in groups" :key="g.date">
               <tr v-for="(r, i) in g.rows" :key="`${g.date}-${r.appType}-${r.model}-${i}`">
-                <td v-if="i === 0" :rowspan="g.rows.length" class="num date-cell">{{ g.date }}</td>
-                <td class="small">{{ r.appType || '—' }}</td>
-                <td class="mono small">{{ r.model || '—' }}</td>
-                <td class="right num">{{ fmtInt(r.requests) }}</td>
-                <td class="right num">{{ fmtInt(r.inputTokens) }}</td>
-                <td class="right num">{{ fmtInt(r.outputTokens) }}</td>
-                <td class="right num">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
+                <td v-if="i === 0" :rowspan="g.rows.length" class="num date-cell border-r border-line">{{ g.date }}</td>
+                <td class="small text-sm text-ink-3">{{ r.appType || '—' }}</td>
+                <td class="mono small text-sm text-ink-3">{{ r.model || '—' }}</td>
+                <td class="right num text-right">{{ fmtInt(r.requests) }}</td>
+                <td class="right num text-right">{{ fmtInt(r.inputTokens) }}</td>
+                <td class="right num text-right">{{ fmtInt(r.outputTokens) }}</td>
+                <td class="right num text-right">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
               </tr>
             </template>
           </tbody>
@@ -116,8 +116,8 @@ import {
 } from '@/api/stats'
 
 /**
- * 用量统计：ccMesh 里「来源」是本机 Claude Code / Codex 会话日志；
- * vortex 语义下对应 provider，故来源 Tab 由数据里出现过的 provider 动态生成。
+ * 用量统计：「来源」语义下对应 provider，
+ * 故来源 Tab 由数据里出现过的 provider 动态生成。
  */
 const app = ref<string>('all') // 当前选中的来源 Tab
 const range = ref<RangeValue>({ kind: 'preset', key: 'today' }) // 日期范围筛选值
@@ -136,7 +136,7 @@ const appTabs = computed(() => [
   ...appTypes.value.map((t) => ({ key: t, label: appLabel(t) })),
 ])
 
-/** provider → 展示名（保留 ccMesh 对已知客户端的中文命名习惯）。 */
+/** provider → 展示名。 */
 function appLabel(t: string): string {
   if (t === 'claude' || t === 'anthropic') return 'Claude'
   if (t === 'codex') return 'Codex'
@@ -237,25 +237,14 @@ void loadAppTypes() // 初始加载来源列表
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: var(--gap-xl); }
-.panel-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-lg);
-  flex-wrap: wrap;
-}
-.panel-actions { display: flex; align-items: center; gap: var(--gap-sm); }
-.tabs.slim { margin-bottom: 0; border-bottom: none; }
+.panel { gap: var(--gap-xl); }
+.panel-bar { gap: var(--gap-lg); }
+.panel-actions { gap: var(--gap-sm); }
 .tabs.slim .tab { padding: 5px 12px; }
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-md); }
+.kpi-row { grid-template-columns: repeat(4, 1fr); gap: var(--gap-md); }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
-.sec { display: flex; flex-direction: column; gap: var(--gap-sm); }
-.sec-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.sec { gap: var(--gap-sm); }
 .sec-body { padding: var(--pad-card); }
-.table-wrap { overflow: hidden; }
 .table tbody tr { cursor: default; }
-.right { text-align: right; }
-.small { font-size: var(--fs-sm); color: var(--ink-3); }
-.date-cell { vertical-align: top; border-right: 1px solid var(--line); }
+.date-cell { vertical-align: top; }
 </style>

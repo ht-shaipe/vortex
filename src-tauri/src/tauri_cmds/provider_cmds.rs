@@ -191,7 +191,8 @@ pub async fn test_provider(
                             // 将测试结果回写到数据库
                             let _ = db_providers::update_test_status(&conn, &id,
                                 if ok { "ok" } else { "error" },
-                                status_msg.as_deref()
+                                status_msg.as_deref(),
+                                None
                             );
                             Ok(json!({
                                 "status": if ok { "ok" } else { "error" },
@@ -201,7 +202,7 @@ pub async fn test_provider(
                         }
                         Err(e) => {
                             // 请求发送失败，记录错误状态到数据库
-                            let _ = db_providers::update_test_status(&conn, &id, "error", Some(&e.to_string()));
+                            let _ = db_providers::update_test_status(&conn, &id, "error", Some(&e.to_string()), None);
                             Ok(json!({
                                 "status": "error",
                                 "error": e.to_string(),

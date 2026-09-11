@@ -9,6 +9,7 @@ use std::time::Duration;
 /// 重试策略配置
 ///
 /// 控制请求失败后的重试行为，采用指数退避算法。
+#[derive(Clone)]
 pub struct RetryPolicy {
     /// 最大重试次数（不包含首次请求）
     max_retries: u32,

@@ -1,28 +1,28 @@
 <template>
-  <div class="edit-root">
+  <div class="edit-root flex-1 min-h-0 flex flex-col">
     <!-- 顶部标题栏：返回按钮、连接名、状态徽标、ID 与测试结果 -->
-    <div class="page-bar">
+    <div class="page-bar shrink-0 flex items-center gap-10px px-24px bg-surface border-b border-line">
       <button type="button" class="btn bare" @click="$router.push('/subscriptions')">
         <el-icon :size="15"><ArrowLeft /></el-icon>
       </button>
-      <span class="page-head">{{ conn?.name ?? '订阅详情' }}</span>
+      <span class="page-head text-15px font-semibold text-ink min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ conn?.name ?? '订阅详情' }}</span>
       <StatusBadge v-if="conn" :tone="statusTone(conn)" :label="statusLabel(conn)" />
-      <span class="spacer" />
-      <span v-if="conn" class="mono conn-id">{{ conn.id }}</span>
+      <span class="spacer flex-1" />
+      <span v-if="conn" class="mono conn-id text-11px text-ink-4 py-2px px-6px bg-surface-2 rounded-4px shrink-0">{{ conn.id }}</span>
       <StatusBadge v-if="testResult" :tone="testResult.status === 'ok' ? 'ok' : 'err'" :label="testResult.status === 'ok' ? `可用 · ${testResult.latencyMs}ms` : '不可用'" />
     </div>
 
-    <el-scrollbar class="edit-scroll">
-      <div class="page-col edit-col" v-if="conn">
+    <el-scrollbar class="edit-scroll flex-1">
+      <div class="page-col edit-col pt-16px px-24px pb-32px max-w-880px mx-auto w-full" v-if="conn">
         <!-- 测试失败的醒目提示 -->
-        <div v-if="testResult && testResult.status !== 'ok'" class="callout err">
-          <div class="callout-title">连接测试失败</div>
-          <div class="callout-body">{{ testResult.error || '未返回详细错误' }}</div>
+        <div v-if="testResult && testResult.status !== 'ok'" class="callout err flex flex-col gap-4px py-10px px-14px rounded-md border border-line text-12.5px">
+          <div class="callout-title font-medium text-12px uppercase tracking-0.04em">连接测试失败</div>
+          <div class="callout-body text-ink-2 break-words">{{ testResult.error || '未返回详细错误' }}</div>
         </div>
 
         <!-- 基本信息 -->
         <div class="card section">
-          <div class="card-head">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">基本信息</div>
               <div class="card-sub">连接的展示名、提供方与默认启用状态</div>
@@ -35,10 +35,10 @@
                 <div class="setting-label">提供方</div>
                 <div class="setting-desc">底层服务识别符，由创建时决定，不可修改</div>
               </div>
-              <div class="row">
+              <div class="row flex items-center gap-8px">
                 <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :size="20" />
                 <span class="mono">{{ conn.provider }}</span>
-                <span class="auth-tag">{{ authTypeLabel }}</span>
+                <span class="auth-tag text-11px text-ink-3 bg-surface-2 py-2px px-8px rounded-full border border-line">{{ authTypeLabel }}</span>
               </div>
             </div>
             <!-- 名称：可编辑 -->
@@ -78,7 +78,7 @@
 
         <!-- 认证凭据 -->
         <div class="card section">
-          <div class="card-head">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">认证凭据</div>
               <div class="card-sub">API 密钥与 OAuth 令牌（仅 API Key 字段可直接覆盖，其余为只读）</div>
@@ -91,17 +91,22 @@
                 <div class="setting-label">API 密钥</div>
                 <div class="setting-desc">明文保存于本地数据库（已加密）；留空则保持原值</div>
               </div>
-              <div class="field-controls">
+              <div class="field-controls flex items-center gap-10px shrink-0 min-w-0">
                 <el-input
                   v-model="form.apiKey"
                   type="password"
                   show-password
-                  :placeholder="conn.apiKey ? '已设置（已掩码）— 留空保持不变' : '请填写 API Key'"
+                  :placeholder="hasApiKey ? '已设置（已掩码）— 留空保持不变' : '尚未配置密钥，填写后保存'"
                   style="max-width: 360px"
                 />
-                <el-tooltip v-if="conn.apiKey" :content="`当前：${conn.apiKey}`" placement="top">
-                  <span class="mono masked">{{ conn.apiKey }}</span>
+                <!-- 已配置：展示掩码，hover 可看完整掩码串 -->
+                <el-tooltip v-if="hasApiKey" :content="`当前：${conn.apiKey}`" placement="top">
+                  <span class="mono masked text-12px text-ink-3 bg-surface-2 py-4px px-10px rounded-sm font-mono max-w-260px overflow-hidden text-ellipsis whitespace-nowrap">{{ conn.apiKey }}</span>
                 </el-tooltip>
+                <!-- 未配置：明确告知，不再用「请填写」暗示为空 -->
+                <span v-else class="key-missing text-11.5px text-warn py-3px px-8px rounded-full border border-line bg-warn-bg shrink-0">
+                  {{ hasAccessToken ? 'OAuth 令牌已配置' : '未配置密钥' }}
+                </span>
               </div>
             </div>
 
@@ -127,7 +132,7 @@
 
         <!-- 自定义协议（仅自定义提供方） -->
         <div v-if="isCustom" class="card section">
-          <div class="card-head">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">自定义协议</div>
               <div class="card-sub">自定义网关地址与上游 API 协议；用于替换官方端点或接入第三方中转</div>
@@ -159,7 +164,7 @@
 
         <!-- 模型列表 -->
         <div class="card section">
-          <div class="card-head">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">模型列表</div>
               <div class="card-sub">该连接下挂载的模型，第一个作为默认模型用于路由回退</div>
@@ -170,16 +175,16 @@
           </div>
           <div class="card-body">
             <!-- 已选模型列表：首位为默认模型 -->
-            <div v-if="selectedModels.length" class="model-list">
-              <div class="model-row" v-for="(m, i) in selectedModels" :key="m.id">
-                <span class="model-idx" :class="{ primary: i === 0 }">{{ i === 0 ? '默认' : i + 1 }}</span>
-                <span class="model-id mono" :title="m.id">{{ m.id }}</span>
-                <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name" />
+            <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
+              <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
+                <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }">{{ i === 0 ? '默认' : i + 1 }}</span>
+                <span class="model-id mono min-w-120px text-12px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis" :title="m.id">{{ m.id }}</span>
+                <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1" />
                 <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
               </div>
             </div>
-            <div v-else class="empty-tip">尚未选择任何模型，路由时将无法匹配该连接</div>
-            <div class="model-actions">
+            <div v-else class="empty-tip text-12px text-ink-4 p-12px bg-surface-2 border border-dashed border-line rounded-sm mt-8px text-center">尚未选择任何模型，路由时将无法匹配该连接</div>
+            <div class="model-actions flex items-center gap-12px mt-10px">
               <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
                 选择模型
               </button>
@@ -201,7 +206,7 @@
 
         <!-- 路由与限制 -->
         <div class="card section">
-          <div class="card-head">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">路由与限制</div>
               <div class="card-sub">多连接调度时的优先级与并发/限流策略</div>
@@ -260,13 +265,13 @@
         </div>
 
         <!-- 状态（只读） -->
-        <div class="card section readonly-card">
-          <div class="card-head">
+        <div class="card section readonly-card bg-surface-2">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">状态</div>
               <div class="card-sub">由系统自动维护的运行状态字段</div>
             </div>
-            <span class="readonly-tag">只读</span>
+            <span class="readonly-tag text-11px text-ink-4 bg-surface border border-line rounded-full py-2px px-10px">只读</span>
           </div>
           <div class="card-body">
             <!-- 最近测试结果 -->
@@ -283,7 +288,7 @@
                 <div class="setting-label">最近错误</div>
                 <div class="setting-desc">{{ conn.lastErrorAt ? fmtTime(conn.lastErrorAt) : '无时间' }}</div>
               </div>
-              <div class="error-text mono">{{ conn.lastError }}</div>
+              <div class="error-text mono text-12px text-err py-6px px-12px rounded-sm max-w-480px break-words">{{ conn.lastError }}</div>
             </div>
             <!-- 累计使用次数 -->
             <div class="setting-row">
@@ -313,13 +318,13 @@
         </div>
 
         <!-- 元数据（只读） -->
-        <div class="card section readonly-card">
-          <div class="card-head">
+        <div class="card section readonly-card bg-surface-2">
+          <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">元数据</div>
               <div class="card-sub">账号归属与时间戳信息，仅供查阅</div>
             </div>
-            <span class="readonly-tag">只读</span>
+            <span class="readonly-tag text-11px text-ink-4 bg-surface border border-line rounded-full py-2px px-10px">只读</span>
           </div>
           <div class="card-body">
             <!-- 连接 ID -->
@@ -366,10 +371,10 @@
         </div>
 
         <!-- 底部操作：测试、删除、保存 -->
-        <div class="actions">
+        <div class="actions sticky bottom-0 flex items-center pt-14px pb-6px">
           <button type="button" class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
           <button type="button" class="btn danger" @click="remove">删除</button>
-          <span class="spacer" />
+          <span class="spacer flex-1" />
           <button type="button" class="btn primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
         </div>
       </div>
@@ -444,6 +449,10 @@ const form = reactive({
 
 // 是否为自定义提供方
 const isCustom = computed(() => conn.value?.provider === 'custom-openai')
+// 是否已配置 API 密钥：以后端 hasApiKey 为准，不再用掩码串是否为空推断
+const hasApiKey = computed(() => !!conn.value?.hasApiKey)
+// 是否已配置 OAuth access token
+const hasAccessToken = computed(() => !!conn.value?.hasAccessToken)
 // 认证类型标签
 const authTypeLabel = computed(() => {
   const t = (conn.value?.authType || '').toLowerCase()
@@ -468,9 +477,20 @@ function hasField(_k: string) {
 function statusLabel(c: ProviderConnection): string {
   if (!c.isActive) return '已禁用'
   const s = c.testStatus?.toLowerCase() ?? ''
-  if (['ok', 'healthy', 'success'].includes(s)) return '健康'
+  if (['ok', 'healthy', 'success'].includes(s)) {
+    return typeof c.lastLatencyMs === 'number' ? fmtLatency(c.lastLatencyMs) : '通过'
+  }
   if (['failed', 'error'].includes(s)) return '失败'
   return '未测试'
+}
+
+/**
+ * 格式化耗时：小于 1000ms 用毫秒，否则折算为秒并保留一位小数。
+ * @param ms 毫秒
+ */
+function fmtLatency(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '通过'
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 /**
  * 根据连接状态计算徽标色调。
@@ -483,11 +503,13 @@ function statusTone(c: ProviderConnection): 'ok' | 'warn' | 'err' | 'neutral' {
   if (['failed', 'error'].includes(s)) return 'err'
   return 'neutral'
 }
-// 测试状态中文标签
+// 测试状态中文标签：健康时直接展示响应耗时，未测到耗时则显示「通过」
 const testStatusLabel = computed(() => {
   if (!conn.value) return '未测试'
   const s = conn.value.testStatus?.toLowerCase() ?? ''
-  if (['ok', 'healthy', 'success'].includes(s)) return '通过'
+  if (['ok', 'healthy', 'success'].includes(s)) {
+    return typeof conn.value.lastLatencyMs === 'number' ? fmtLatency(conn.value.lastLatencyMs) : '通过'
+  }
   if (['failed', 'error'].includes(s)) return '失败'
   return '未测试'
 })
@@ -684,35 +706,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.edit-root { height: 100vh; display: flex; flex-direction: column; }
-.page-bar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-.spacer { flex: 1; }
-.page-head { font-size: 15px; font-weight: 600; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conn-id { font-size: 11px; color: var(--ink-4); padding: 2px 6px; background: var(--surface-2); border-radius: 4px; flex-shrink: 0; }
-
-.edit-scroll { flex: 1; }
-.edit-col { padding: 16px 24px 32px; max-width: 880px; margin: 0 auto; width: 100%; }
 .section { margin-bottom: var(--gap-lg); }
-.readonly-card { background: var(--surface-2); }
-.readonly-tag {
-  font-size: 11px;
-  color: var(--ink-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 10px;
-}
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-
-.row { display: flex; align-items: center; gap: 8px; }
 
 /* 设置行：左侧标签区允许收缩，右侧控件不被挤压 */
 .setting-row > :first-child { min-width: 0; }
@@ -721,55 +715,12 @@ onMounted(load)
 /* 纵向设置行：标签在上，控件占满整行 */
 .setting-row.col { flex-direction: column; align-items: stretch; gap: 8px; }
 
-.field-controls { display: flex; align-items: center; gap: 10px; flex-shrink: 0; min-width: 0; }
-.masked {
-  font-size: 12px;
-  color: var(--ink-3);
-  background: var(--surface-2);
-  padding: 4px 10px;
-  border-radius: var(--r-sm);
-  font-family: var(--font-mono);
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .mono.readonly { font-size: 12px; color: var(--ink-3); background: var(--surface-2); padding: 4px 10px; border-radius: var(--r-sm); }
-.auth-tag { font-size: 11px; color: var(--ink-3); background: var(--surface-2); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
-.error-text { font-size: 12px; color: var(--err); background: rgba(220, 80, 80, 0.06); padding: 6px 12px; border-radius: var(--r-sm); max-width: 480px; word-break: break-word; }
+.error-text { background: rgba(220, 80, 80, 0.06); }
 
-.model-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-.model-row { display: flex; align-items: center; gap: 8px; }
-.model-idx {
-  flex-shrink: 0;
-  width: 34px;
-  font-size: 11px;
-  color: var(--ink-4);
-  text-align: center;
-}
+.model-id { flex: 0 1 220px; }
 .model-idx.primary { color: var(--ok); font-weight: 600; }
-.model-id {
-  flex: 0 1 220px;
-  min-width: 120px;
-  font-size: 12px;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.model-name { flex: 1; }
 .model-name :deep(.el-input__inner) { font-size: 12px; }
-.empty-tip { font-size: 12px; color: var(--ink-4); padding: 12px; background: var(--surface-2); border: 1px dashed var(--line); border-radius: var(--r-sm); margin-top: 8px; text-align: center; }
-.model-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .model-actions .setting-desc { font-size: 12px; color: var(--ink-4); }
 
 .btn.sm.ghost {
@@ -784,38 +735,14 @@ onMounted(load)
 
 /* 底部操作栏：吸底 + 渐变背景，长表单滚动时保存按钮始终可见 */
 .actions {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  align-items: center;
   gap: var(--gap-sm);
   margin-top: var(--gap-md);
-  padding: 14px 0 6px;
   background: linear-gradient(to top, var(--bg) 55%, transparent);
 }
 
 /* 统一数字输入宽度，各行控件右缘对齐 */
 .card-body :deep(.el-input-number) { width: 150px; }
-.callout {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--line);
-  margin-bottom: var(--gap-md);
-  font-size: 12.5px;
-}
-.callout-title {
-  font-weight: 500;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.callout-body {
-  color: var(--ink-2);
-  word-break: break-word;
-}
+.callout { margin-bottom: var(--gap-md); }
 .callout.err {
   background: rgba(220, 80, 80, 0.08);
   border-color: rgba(220, 80, 80, 0.35);

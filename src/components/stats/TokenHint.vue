@@ -1,5 +1,5 @@
 <template>
-  <span v-if="value >= 1e4" class="token-hint">{{ formatTokenCompact(value) }}</span>
+  <span v-if="value >= 1e4" class="token-hint text-sm text-ink-3">{{ formatTokenCompact(value) }}</span>
 </template>
 
 <script setup lang="ts">
@@ -17,6 +17,4 @@ import { formatTokenCompact } from '@/lib/format'
 defineProps<{ value: number }>()
 </script>
 
-<style scoped>
-.token-hint { font-size: var(--fs-sm); color: var(--ink-3); }
-</style>
+

@@ -10,7 +10,7 @@
     </PageHeader>
 
     <!-- 加载中占位 -->
-    <div v-if="loading" class="spin-wrap">
+    <div v-if="loading" class="spin-wrap p-40px text-center text-ink-4">
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
 
@@ -146,7 +146,3 @@ async function load() {
 
 onMounted(load)
 </script>
-
-<style scoped>
-.spin-wrap { padding: 40px; text-align: center; color: var(--ink-4); }
-</style>

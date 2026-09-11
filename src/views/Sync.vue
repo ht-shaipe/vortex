@@ -1,7 +1,7 @@
 <template>
-  <div class="sync-page">
+  <div class="sync-page flex flex-col gap-[var(--gap-lg)] w-full max-w-780px mx-auto">
     <!-- 页面标题 -->
-    <h1 class="page-title">同步</h1>
+    <h1 class="page-title m-0 text-h1 font-light tracking-[-0.02em]">同步</h1>
 
     <!-- 各同步能力区块：CC Switch 导入、WebDAV、远程备份列表、本地备份 -->
     <CcSwitchImport />
@@ -22,23 +22,6 @@ import WebdavForm from '@/components/sync/WebdavForm.vue'
 import BackupList from '@/components/sync/BackupList.vue'
 import LocalBackup from '@/components/sync/LocalBackup.vue'
 </script>
-
-<style scoped>
-.sync-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-lg);
-  width: 100%;
-  max-width: 780px;
-  margin: 0 auto;
-}
-.page-title {
-  margin: 0;
-  font-size: var(--fs-h1);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-}
-</style>
 
 <!-- 同步页各区块的公共外壳：子组件共用，故非 scoped -->
 <style>

@@ -1,14 +1,14 @@
 <template>
-  <div class="composer-wrap">
+  <div class="composer-wrap pt-8px px-20px pb-16px">
     <div
       ref="cardRef"
-      class="composer"
+      class="composer relative flex flex-col w-full max-w-780px mx-auto overflow-hidden border border-line rounded-lg bg-surface transition"
       :class="{ resizing: dragH !== null }"
       :style="{ height: shellPx + 'px' }"
     >
       <!-- 顶部拖拽条：手往上 = 变高 -->
       <div
-        class="composer-grip"
+        class="composer-grip flex items-center justify-center h-12px shrink-0 cursor-ns-resize"
         :class="{ locked: expanded }"
         role="separator"
         aria-orientation="horizontal"
@@ -21,11 +21,11 @@
         @pointerup="onPointerUp"
         @pointercancel="onPointerCancel"
       >
-        <span class="grip-bar" :class="{ on: gripHover || dragH !== null }" />
+        <span class="grip-bar block w-32px h-3px rounded-999px bg-ink-5 opacity-0 transition" :class="{ on: gripHover || dragH !== null }" />
       </div>
 
       <!-- 右上角展开/收起 -->
-      <div class="composer-corner" @pointerenter="cornerHover = true" @pointerleave="cornerHover = false">
+      <div class="composer-corner absolute top-0 right-0 z-2 w-32px h-30px" @pointerenter="cornerHover = true" @pointerleave="cornerHover = false">
         <button
           type="button"
           class="corner-btn"
@@ -42,7 +42,7 @@
       <textarea
         ref="taRef"
         v-model="draft"
-        class="composer-input"
+        class="composer-input flex-1 min-h-0 w-full pt-6px px-14px pb-2px border-none outline-none resize-none overflow-y-auto bg-transparent text-ink text-14px leading-1.6"
         rows="1"
         :disabled="disabled"
         placeholder="输入消息…"
@@ -51,9 +51,9 @@
         @keydown="onKeydown"
       ></textarea>
 
-      <div class="composer-foot">
-        <span v-if="busy" class="foot-hint">生成中…</span>
-        <span v-else class="foot-hint">Enter 发送 · Shift+Enter 换行</span>
+      <div class="composer-foot flex items-center justify-between gap-8px shrink-0 pt-2px pr-10px pb-10px pl-14px">
+        <span v-if="busy" class="foot-hint text-11px text-ink-4 tracking-0.01em">生成中…</span>
+        <span v-else class="foot-hint text-11px text-ink-4 tracking-0.01em">Enter 发送 · Shift+Enter 换行</span>
 
         <button
           v-if="busy"
@@ -149,7 +149,7 @@ watch(
 
 /**
  * 输入变化时仅在需要时增高；已收缩到下限不会被已有内容顶回去。
- * 与 ccMesh 一致：手动拖小后保持小高度。
+ * 手动拖小后保持小高度。
  */
 watch(
   () => props.value,
@@ -249,21 +249,7 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <style scoped>
-.composer-wrap { padding: 8px 20px 16px; }
-.composer {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 780px;
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  transition: height 0.2s;
-}
+.composer { box-shadow: var(--shadow-sm); }
 /* 拖拽时关掉过渡，否则不跟手 */
 .composer.resizing { transition: none; }
 .composer:focus-within {
@@ -271,27 +257,9 @@ function onKeydown(e: KeyboardEvent): void {
   box-shadow: 0 0 0 3px var(--accent-bg, rgba(0, 0, 0, 0.03));
 }
 
-.composer-grip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 12px;
-  flex-shrink: 0;
-  cursor: ns-resize;
-}
 .composer-grip.locked { cursor: default; }
-.grip-bar {
-  display: block;
-  width: 32px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--ink-5);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
 .grip-bar.on { opacity: 1; }
 
-.composer-corner { position: absolute; top: 0; right: 0; z-index: 2; width: 32px; height: 30px; }
 .corner-btn {
   position: absolute;
   top: 6px;
@@ -316,36 +284,8 @@ function onKeydown(e: KeyboardEvent): void {
 }
 .corner-btn:hover { color: var(--ink); background: var(--line); }
 
-.composer-input {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  padding: 6px 14px 2px;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow-y: auto;
-  background: transparent;
-  color: var(--ink);
-  font-size: 14px;
-  line-height: 1.6;
-}
 .composer-input::placeholder { color: var(--ink-4); }
 .composer-input:disabled { opacity: 0.5; }
-
-.composer-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 2px 10px 10px 14px;
-}
-.foot-hint {
-  font-size: 11px;
-  color: var(--ink-4);
-  letter-spacing: 0.01em;
-}
 
 .send-btn {
   display: grid;

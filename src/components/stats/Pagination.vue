@@ -1,10 +1,10 @@
 <template>
-  <div class="pager">
+  <div class="pager flex items-center justify-between text-sm text-ink-3">
     <span>
       共 <span class="tnum">{{ total }}</span> 条 · 第
       <span class="tnum">{{ page }}</span>/<span class="tnum">{{ totalPages }}</span> 页
     </span>
-    <div class="pager-btns">
+    <div class="pager-btns flex items-center gap-4px">
       <button
         type="button"
         class="btn sm icon"
@@ -44,13 +44,5 @@ const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.page
 </script>
 
 <style scoped>
-.pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-sm);
-  font-size: var(--fs-sm);
-  color: var(--ink-3);
-}
-.pager-btns { display: flex; align-items: center; gap: 4px; }
+.pager { gap: var(--gap-sm); }
 </style>

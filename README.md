@@ -17,7 +17,11 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本
 - **免费 Token 目录** — 内置 43 个可申请免费额度的 AI 平台（国内 / 海外 / 本地部署），标注是否支持 API、是否需绑卡与实名，支持自行提交推荐并保存到本地
-- **桌面应用** — 系统托盘常驻（显示窗口 / 启动代理 / 停止代理 / 退出），Vue 3 管理界面
+- **内置对话** — 应用内直接对话测试，支持会话分支树、模型选择、流式输出，数据持久化到 localStorage
+- **模型选择对话框** — 获取远程模型后弹出对话框，checkbox 多选批量管理，支持搜索与全选
+- **自动更新** — 基于 tauri-plugin-updater，启动时静默检查 GitHub Releases，发现新版本提示下载安装
+- **通知系统** — 从远程通知中心拉取站内通知，未读通知弹出桌面提示，已读状态持久化到本地
+- **桌面应用** — 系统托盘常驻（显示窗口 / 启动代理 / 停止代理 / 退出），Vue 3 管理界面，多窗口支持（主窗口 + 状态面板小窗口）
 
 ## 快速开始
 
@@ -58,14 +62,14 @@ bun run tauri build
 
 开发模式下：
 - 前端开发服务器：`http://localhost:1420`
-- API 网关服务器：`http://localhost:20128`
+- API 网关服务器：`http://localhost:10168`
 
 ### 使用网关
 
 启动后，将你的 AI 客户端的 `base_url` 指向 Vortex：
 
 ```
-http://localhost:20128/v1
+http://localhost:10168/v1
 ```
 
 **示例 — 使用 OpenAI Python SDK：**
@@ -74,7 +78,7 @@ http://localhost:20128/v1
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:20128/v1",
+    base_url="http://localhost:10168/v1",
     api_key="vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40"  # 通过 POST /api/keys 创建的网关密钥
 )
 
@@ -87,7 +91,7 @@ response = client.chat.completions.create(
 **示例 — 使用 cURL：**
 
 ```bash
-curl http://localhost:20128/v1/chat/completions \
+curl http://localhost:10168/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer vx-4f2a9c1e8b7d4a6f9c3e2b1a8d5f7c40" \
   -d '{
@@ -136,7 +140,7 @@ curl http://localhost:20128/v1/chat/completions \
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VORTEX_PORT` | `20128` | API 服务器端口 |
+| `VORTEX_PORT` | `10168` | API 服务器端口 |
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成 | API 密钥加密密钥（32 字节十六进制） |
 | `VORTEX_REQUIRE_API_KEY` | `false` | 是否要求客户端提供 API Key |
@@ -150,15 +154,14 @@ curl http://localhost:20128/v1/chat/completions \
 |------|------|------|
 | 接入指南 | `/guide` | 客户端接入示例与模型指定方式 |
 | 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
-| 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 编辑子页 |
+| 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 自定义 / 编辑子页 |
 | 免费 Token | `/free-tokens` | 免费额度站点目录 —— 卡片 / 表格双视图、按区域与「是否支持 API」筛选、提交与删除本地推荐 |
-| 请求日志 | `/request-logs` | 请求流水与用量明细 |
+| 请求日志 | `/request-log` | 请求流水与用量明细 |
 | 统计 | `/statistics` | 端点统计（KPI / 热力图 / 趋势 / 端点表）、用量统计（应用来源 / 日模型明细） |
 | 同步 | `/sync` | cc-switch 迁移、WebDAV 云备份、本地配置导出与导入 |
 | 对话 | `/chat` | 内置对话客户端 —— 会话分支树、模型选择、流式输出 |
-| 检查更新 | `/updates` | 版本更新检查 |
 | 设置 | `/settings` | 通用设置 / 高级设置 |
-| 关于 | `/about` | 版本与项目信息 |
+| 关于 | `/about` | 版本与项目信息、检查更新 |
 
 > **同步页现状**：cc-switch 迁移与本地配置导出 / 导入已可用；WebDAV 的测试、备份、恢复与云端备份列表需要后端命令支持，当前 UI 已就绪，调用会提示「后端未接入」。适配层位于 `src/api/sync.ts`，接入后只需替换其中的桩函数。
 
@@ -180,6 +183,7 @@ curl http://localhost:20128/v1/chat/completions \
 | GET/POST | `/api/providers` | 提供商连接列表/创建 |
 | GET/PATCH/DELETE | `/api/providers/{id}` | 单个提供商连接操作 |
 | POST | `/api/providers/{id}/test` | 测试提供商连接 |
+| POST | `/api/providers/preview-models` | 预览远程可用模型列表（无需先保存连接） |
 | GET/POST | `/api/keys` | API 密钥列表/创建 |
 | GET/DELETE | `/api/keys/{id}` | 单个 API 密钥操作 |
 | GET | `/api/usage` | 用量记录 |
@@ -200,14 +204,18 @@ curl http://localhost:20128/v1/chat/completions \
 - reqwest — HTTP 客户端（rustls-tls）
 - aes-gcm — API 密钥加密
 - tokio — 异步运行时
+- tauri-plugin-updater — 自动更新
+- tauri-plugin-process — 进程管理（重启应用）
 
 ### 前端 (Vue 3)
 - Vue 3.5 + TypeScript (strict) — UI 框架
 - Element Plus — UI 组件库
+- Ant Design Vue — 辅助组件库（a-card、a-timeline 等）
 - UnoCSS — 原子化 CSS
 - Pinia — 状态管理
 - Vue Router — 路由（Web 端 hash / Tauri 端 history 模式）
 - ECharts 6 + vue-echarts — 图表可视化
+- highlight.js — 语法高亮
 - Vite — 构建工具
 
 ## 项目结构
@@ -215,15 +223,15 @@ curl http://localhost:20128/v1/chat/completions \
 ```
 vortex/
 ├── src/                    # 前端源代码 (Vue 3 + TypeScript)
-│   ├── api/                # 请求层与适配层 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens)
+│   ├── api/                # 请求层与适配层 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens / notifications)
 │   ├── components/         # Vue 组件 (layout / chat / stats / sync / ui)
-│   ├── composables/        # 组合式函数 (useTheme / useThemeColors)
+│   ├── composables/        # 组合式函数 (useTheme / useThemeColors / useUpdater / useNotifications)
 │   ├── lib/                # 工具函数 (range / dateRange / format / usageChart / runtime)
 │   ├── router/             # 路由配置
 │   ├── stores/             # Pinia 状态管理
 │   ├── styles/             # 设计系统 (cc-theme.css / cc-components.css)
 │   ├── types/              # 类型定义
-│   └── views/              # 页面视图
+│   └── views/              # 页面视图 (15 个 .vue 文件)
 ├── src-tauri/              # 后端源代码 (Rust + Tauri)
 │   └── src/
 │       ├── api/            # HTTP API 端点 (v1 OpenAI 兼容 + management 管理接口)
@@ -277,8 +285,6 @@ python3 -m http.server 8080 --directory docs/website
 
 > 下载区的按钮由 `assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
 > 静态 HTML 里只放「指向 Releases 页面」的兜底链接 —— 因为安装包文件名带版本号，写死必然过期。
-> 三种状态都已验证：有发布（直链各平台产物）、部分平台缺产物（该卡片降级为「到 Releases 查看」）、
-> 尚无发布（显示「尚未发布预编译版本」并引导去源码构建）。
 
 > 官网刻意不逐个列出上游平台的厂商名：站点只讲接入能力（云端 API / 聚合中转 / 本地推理 / 自定义端点）与协议兼容性，具体清单以应用内「订阅」页和本 README 的「内置提供商」表为准，避免站点与注册表脱节。
 

@@ -27,10 +27,18 @@ export interface ProviderConnection {
   authType: string // 鉴权方式
   name: string // 连接名称
   email?: string // 关联邮箱
-  apiKey?: string // API 密钥
+  /** API 密钥（已脱敏，仅末尾 4 位可见）。判断「是否配置」请用 hasApiKey，不要用本字段是否为空 */
+  apiKey?: string
+  /** 是否已配置 API 密钥。与 apiKey 掩码解耦，避免把「未配置」误判成「已配置」 */
+  hasApiKey?: boolean
+  /** 是否已配置 OAuth access token（OAuth 连接没有 apiKey，但凭据有效） */
+  hasAccessToken?: boolean
   projectId?: string // 项目 ID
   isActive: boolean // 是否启用
   testStatus: string // 最近测试状态
+  lastTestedAt?: string // 最近一次测试时间
+  /** 最近一次测试的响应延迟（毫秒）。列表首列展示，未测试时为 undefined */
+  lastLatencyMs?: number
   errorCode?: string // 错误码
   lastError?: string // 最近错误信息
   lastErrorAt?: string // 最近错误时间

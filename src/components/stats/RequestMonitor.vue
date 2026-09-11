@@ -1,8 +1,8 @@
 <template>
-  <section v-if="!hidden" class="mon">
-    <div class="mon-head">
-      <h2 class="sec-title">{{ title ?? (mode === 'live' ? '实时请求监控' : '端点请求记录') }}</h2>
-      <div class="mon-actions">
+  <section v-if="!hidden" class="mon flex flex-col">
+    <div class="mon-head flex items-start justify-between">
+      <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">{{ title ?? (mode === 'live' ? '实时请求监控' : '端点请求记录') }}</h2>
+      <div class="mon-actions flex items-center shrink-0">
         <DateRangePicker
           v-if="mode === 'ranged' && !range"
           v-model="ownRange"
@@ -10,9 +10,9 @@
       </div>
     </div>
 
-    <p v-if="loading" class="hint">加载中…</p>
-    <p v-else-if="items.length === 0" class="hint">暂无请求记录</p>
-    <div v-else class="card table-wrap">
+    <p v-if="loading" class="hint m-0 text-body text-ink-4">加载中…</p>
+    <p v-else-if="items.length === 0" class="hint m-0 text-body text-ink-4">暂无请求记录</p>
+    <div v-else class="card table-wrap overflow-hidden">
       <table class="table">
         <thead>
           <tr>
@@ -21,45 +21,45 @@
             <th>入站</th>
             <th style="width: 88px">状态</th>
             <th style="width: 132px">模型</th>
-            <th class="right">用时</th>
-            <th class="right">首字</th>
-            <th class="right">Token</th>
+            <th class="right text-right">用时</th>
+            <th class="right text-right">首字</th>
+            <th class="right text-right">Token</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="r in items" :key="r.id || r.ts">
-            <td class="num nowrap" :title="new Date(r.ts).toLocaleString()">
+            <td class="num nowrap whitespace-nowrap" :title="new Date(r.ts).toLocaleString()">
               {{ fmtDateTime(r.ts) }}
             </td>
-            <td class="ellipsis">{{ r.endpointName }}</td>
-            <td class="mono small">{{ inferPath(r.inboundFormat) }}</td>
+            <td class="ellipsis max-w-160px overflow-hidden text-ellipsis whitespace-nowrap">{{ r.endpointName }}</td>
+            <td class="mono small text-sm text-ink-3">{{ inferPath(r.inboundFormat) }}</td>
             <td>
               <span class="pill" :class="statusTone(r.statusCode)">
                 <span class="dot" />
                 <span class="tnum">{{ r.statusCode ?? 'ERR' }}</span>
               </span>
             </td>
-            <td class="small ellipsis" :title="r.model ?? ''">{{ r.model || '—' }}</td>
-            <td class="right num small">
+            <td class="small ellipsis text-sm text-ink-3 max-w-160px overflow-hidden text-ellipsis whitespace-nowrap" :title="r.model ?? ''">{{ r.model || '—' }}</td>
+            <td class="right num small text-right text-sm text-ink-3">
               {{ !r.isError && r.durationMs != null ? formatDuration(r.durationMs) : '—' }}
             </td>
-            <td class="right num small">
+            <td class="right num small text-right text-sm text-ink-3">
               {{ !r.isError && r.firstByteMs != null ? formatDuration(r.firstByteMs) : '—' }}
             </td>
-            <td class="right">
+            <td class="right text-right">
               <el-tooltip placement="left" :show-after="80">
                 <template #content>
-                  <div class="tok">
-                    <div v-if="r.model" class="tok-model">模型：{{ r.model }}</div>
-                    <div class="tok-row"><span>输入</span><span>{{ formatTokenK(r.inputTokens) }}</span></div>
-                    <div class="tok-row"><span>输出</span><span>{{ formatTokenK(r.outputTokens) }}</span></div>
-                    <div class="tok-row"><span>缓存创建</span><span>{{ formatTokenK(r.cacheCreationTokens) }}</span></div>
-                    <div class="tok-row"><span>缓存读取</span><span>{{ formatTokenK(r.cacheReadTokens) }}</span></div>
+                  <div class="tok flex flex-col gap-4px text-sm min-w-150px">
+                    <div v-if="r.model" class="tok-model text-ink-3">模型：{{ r.model }}</div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输入</span><span>{{ formatTokenK(r.inputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ formatTokenK(r.outputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ formatTokenK(r.cacheCreationTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ formatTokenK(r.cacheReadTokens) }}</span></div>
                     <div class="tok-row total"><span>合计</span><span>{{ formatTokenK(totalTokens(r)) }}</span></div>
-                    <div v-if="r.errorBody" class="tok-err">错误：{{ r.errorBody }}</div>
+                    <div v-if="r.errorBody" class="tok-err text-err max-w-260px break-all">错误：{{ r.errorBody }}</div>
                   </div>
                 </template>
-                <span class="tok-trigger tnum">
+                <span class="tok-trigger tnum inline-flex items-center gap-4px text-ink-3 cursor-default">
                   {{ fmtInt(totalTokens(r)) }}
                   <el-icon :size="12"><InfoFilled /></el-icon>
                 </span>
@@ -174,28 +174,10 @@ function fmtDateTime(ts: number): string {
 </script>
 
 <style scoped>
-.mon { display: flex; flex-direction: column; gap: var(--gap-md); }
-.mon-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap-md); }
-.mon-actions { display: flex; align-items: center; gap: var(--gap-sm); flex-shrink: 0; }
-.sec-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.hint { margin: 0; font-size: var(--fs-body); color: var(--ink-4); }
-.table-wrap { overflow: hidden; }
+.mon { gap: var(--gap-md); }
+.mon-head { gap: var(--gap-md); }
+.mon-actions { gap: var(--gap-sm); }
 .table tbody tr { cursor: default; }
-.right { text-align: right; }
-.nowrap { white-space: nowrap; }
-.small { font-size: var(--fs-sm); color: var(--ink-3); }
-.ellipsis { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tok-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ink-3);
-  cursor: default;
-}
 .tok-trigger:hover { color: var(--ink); }
-.tok { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); min-width: 150px; }
-.tok-model { color: var(--ink-3); }
-.tok-row { display: flex; justify-content: space-between; gap: 16px; }
 .tok-row.total { border-top: 1px solid var(--line-2); padding-top: 4px; font-weight: 600; }
-.tok-err { color: var(--err); max-width: 260px; word-break: break-all; }
 </style>

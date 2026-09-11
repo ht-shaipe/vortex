@@ -1,27 +1,28 @@
 <template>
-  <div class="heat" :style="{ gap: GAP }">
+  <div class="heat flex flex-col" :style="{ gap: GAP }">
     <!-- 月份刻度行（首列占位与星期标签对齐） -->
-    <div class="heat-months" :style="{ gridTemplateColumns: gridColumns, gap: GAP }">
+    <div class="heat-months grid h-14px text-10px leading-1 text-ink-4" :style="{ gridTemplateColumns: gridColumns, gap: GAP }">
       <span
         v-for="m in monthLabels"
         :key="m.col"
+        class="whitespace-nowrap"
         :style="{ gridColumnStart: m.col + 2 }"
       >{{ m.text }}</span>
     </div>
 
     <!-- 星期标签列 + 格子：同一 grid（列流式填充，前 7 项为标签列） -->
     <div
-      class="heat-grid"
+      class="heat-grid grid"
       :style="{ gridTemplateColumns: gridColumns, gap: GAP }"
       @mouseleave="tooltip = null"
     >
-      <span v-for="i in 7" :key="`wd-${i}`" class="heat-wd">
+      <span v-for="i in 7" :key="`wd-${i}`" class="heat-wd flex items-center text-10px leading-1 text-ink-4">
         {{ WEEKDAY_LABELS[i - 1] ?? '' }}
       </span>
       <div
         v-for="cell in cells"
         :key="cell.date"
-        class="heat-cell"
+        class="heat-cell aspect-square w-full rounded-2px"
         :style="{ backgroundColor: cellColor(cell.date) }"
         @mouseenter="showTip(cell, $event)"
       />
@@ -129,33 +130,11 @@ function showTip(cell: HeatmapCell, ev: MouseEvent): void {
 </script>
 
 <style scoped>
-.heat { display: flex; flex-direction: column; }
-.heat-months {
-  display: grid;
-  height: 14px;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--ink-4);
-}
-.heat-months span { white-space: nowrap; }
 .heat-grid {
-  display: grid;
   grid-template-rows: repeat(7, auto);
   grid-auto-flow: column;
 }
-.heat-wd {
-  display: flex;
-  align-items: center;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--ink-4);
-}
-.heat-cell {
-  aspect-ratio: 1;
-  width: 100%;
-  border-radius: 2px;
-  transition: transform 0.1s;
-}
+.heat-cell { transition: transform 0.1s; }
 .heat-cell:hover { transform: scale(1.35); }
 </style>
 

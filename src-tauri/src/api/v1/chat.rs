@@ -35,8 +35,8 @@ pub async fn chat_completions(
     // 获取代理引擎读锁，处理请求
     let engine = state.proxy_engine.read();
     match engine.handle_request(&state, request).await {
-        // 非流式响应：直接返回
-        Ok(crate::proxy::engine::ProxyOutput::Response(response)) => response,
+        // 非流式响应：包装为 JSON HTTP 响应
+        Ok(crate::proxy::engine::ProxyOutput::Response(body)) => HttpResponse::Ok().json(body),
         // 流式响应：包装为 SSE HTTP 响应
         Ok(crate::proxy::engine::ProxyOutput::Stream(stream)) => {
             crate::proxy::sse::sse_http_response(stream)

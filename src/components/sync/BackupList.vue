@@ -7,11 +7,11 @@
       </button>
     </div>
 
-    <p v-if="loadError" class="sync-desc err">无法连接 WebDAV：{{ loadError }}。请先在上方配置并保存。</p>
+    <p v-if="loadError" class="sync-desc err text-err">无法连接 WebDAV：{{ loadError }}。请先在上方配置并保存。</p>
     <p v-else-if="!loaded" class="sync-desc">读取中…</p>
     <p v-else-if="list.length === 0" class="sync-desc">暂无备份</p>
 
-    <div v-else class="table-wrap">
+    <div v-else class="table-wrap border border-line rounded-md overflow-hidden">
       <table class="table">
         <thead>
           <tr>
@@ -27,7 +27,7 @@
             <td class="num">{{ (b.size / 1024).toFixed(1) }} KB</td>
             <td class="num">{{ new Date(b.modTime).toLocaleString('zh-CN') }}</td>
             <td>
-              <div class="ops">
+              <div class="ops flex justify-end gap-2px">
                 <button
                   type="button"
                   class="btn bare icon"
@@ -119,8 +119,4 @@ async function onDelete(filename: string): Promise<void> {
 }
 </script>
 
-<style scoped>
-.table-wrap { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
-.ops { display: flex; justify-content: flex-end; gap: 2px; }
-.err { color: var(--err); }
-</style>
+

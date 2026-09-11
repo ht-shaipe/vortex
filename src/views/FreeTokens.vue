@@ -14,8 +14,8 @@
     </PageHeader>
 
     <!-- 筛选工具条：搜索、区域切换、仅 API、我的推荐 -->
-    <div class="card toolbar">
-      <div class="tb-search">
+    <div class="card toolbar flex items-center gap-10px flex-wrap py-10px px-14px mb-12px">
+      <div class="tb-search w-260px">
         <el-input v-model="keyword" placeholder="搜索站点名称、标签或说明" clearable />
       </div>
 
@@ -36,17 +36,17 @@
         <el-icon :size="13"><Star /></el-icon>我的推荐
       </button>
 
-      <div class="tb-count">共 <b>{{ filtered.length }}</b> / {{ sites.length }} 个站点</div>
+      <div class="tb-count ml-auto text-12px text-ink-3">共 <b>{{ filtered.length }}</b> / {{ sites.length }} 个站点</div>
     </div>
 
     <!-- 说明提示 -->
-    <div class="notice">
+    <div class="notice text-12px leading-1.6 text-ink-3 bg-surface-3 border border-line rounded-sm py-8px px-12px mb-14px">
       免费额度与限速随平台政策变动，此处信息仅作参考，请以各平台官网为准。
       「我的推荐」会提交到远程服务器统一管理，本地同时保留副本便于离线查看。
     </div>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="spin-wrap">
+    <div v-if="loading" class="spin-wrap p-48px text-center text-ink-4">
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
 
@@ -65,12 +65,12 @@
     </div>
 
     <!-- 卡片视图 -->
-    <div v-else-if="view === 'card'" class="grid">
-      <div v-for="s in filtered" :key="s.id" class="card site-card">
+    <div v-else-if="view === 'card'" class="grid gap-14px">
+      <div v-for="s in filtered" :key="s.id" class="card site-card flex flex-col gap-9px py-14px px-16px">
         <!-- 卡片头部：站点名与 API 支持标识 -->
-        <div class="sc-head">
-          <div class="sc-name">
-            <span class="sc-title">{{ s.name }}</span>
+        <div class="sc-head flex items-start justify-between gap-10px">
+          <div class="sc-name flex items-center gap-7px flex-wrap min-w-0">
+            <span class="sc-title text-14px font-semibold text-ink leading-1.35">{{ s.name }}</span>
             <span v-if="s.source === 'user'" class="pill warn">我的推荐</span>
           </div>
           <span class="pill" :class="s.apiSupported ? 'ok' : 'neutral'">
@@ -79,30 +79,30 @@
         </div>
 
         <!-- 免费额度说明 -->
-        <div class="sc-quota">{{ s.freeQuota || '免费额度信息待补充' }}</div>
+        <div class="sc-quota text-12.5px leading-1.6 text-ink-2 bg-surface-3 rounded-sm py-7px px-10px">{{ s.freeQuota || '免费额度信息待补充' }}</div>
 
         <!-- 区域与标签 -->
-        <div class="sc-tags">
+        <div class="sc-tags flex flex-wrap gap-5px">
           <span class="pill tag">{{ regionLabel(s.region) }}</span>
           <span v-for="t in s.tags" :key="t" class="pill tag">{{ t }}</span>
         </div>
 
         <!-- 门槛与格式等元信息 -->
-        <div class="sc-meta">
-          <span :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑定信用卡' : '免绑卡' }}</span>
-          <span v-if="s.requiresVerify" class="meta">需实名 / 手机验证</span>
-          <span v-if="s.apiFormat" class="meta mono">{{ s.apiFormat }}</span>
-          <span v-if="s.providerId" class="meta">已内置 · {{ s.providerId }}</span>
+        <div class="sc-meta flex flex-wrap gap-x-12px gap-y-8px">
+          <span class="text-11px text-ink-3" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑定信用卡' : '免绑卡' }}</span>
+          <span v-if="s.requiresVerify" class="meta text-11px text-ink-3">需实名 / 手机验证</span>
+          <span v-if="s.apiFormat" class="meta mono text-11px text-ink-3">{{ s.apiFormat }}</span>
+          <span v-if="s.providerId" class="meta text-11px text-ink-3">已内置 · {{ s.providerId }}</span>
         </div>
 
         <!-- API Base URL -->
         <CopyableBlock v-if="s.apiBase" variant="inline" :text="s.apiBase">{{ s.apiBase }}</CopyableBlock>
 
         <!-- 备注 -->
-        <div v-if="s.note" class="sc-note">{{ s.note }}</div>
+        <div v-if="s.note" class="sc-note text-12px leading-1.6 text-ink-3">{{ s.note }}</div>
 
         <!-- 卡片底部操作：申请入口、官网、删除 -->
-        <div class="sc-foot">
+        <div class="sc-foot flex items-center gap-8px flex-wrap mt-auto pt-4px">
           <button v-if="linkFor(s)" class="btn sm accent" @click="openLink(linkFor(s))">
             <el-icon :size="13"><Link /></el-icon>申请入口
           </button>
@@ -114,25 +114,34 @@
     </div>
 
     <!-- 表格视图 -->
-    <div v-else class="card tbl-wrap">
+    <div v-else class="card tbl-wrap overflow-x-auto">
       <table class="table">
+        <colgroup>
+          <col style="width: 176px" />
+          <col style="width: 58px" />
+          <col style="width: 66px" />
+          <col style="width: 300px" />
+          <col style="width: 118px" />
+          <col style="width: 132px" />
+          <col style="width: 96px" />
+        </colgroup>
         <thead>
           <tr>
-            <th style="width: 190px">站点</th>
-            <th style="width: 62px">区域</th>
-            <th style="width: 70px">API</th>
+            <th>站点</th>
+            <th>区域</th>
+            <th>API</th>
             <th>免费额度</th>
-            <th style="width: 132px">门槛</th>
-            <th style="width: 148px">标签</th>
-            <th style="width: 112px"></th>
+            <th>门槛</th>
+            <th>标签</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="s in filtered" :key="s.id">
             <!-- 站点名与 API 地址 -->
             <td>
-              <div class="tbl-name">{{ s.name }}</div>
-              <div v-if="s.apiBase" class="tbl-base mono">{{ s.apiBase }}</div>
+              <div class="tbl-name text-13px font-medium text-ink">{{ s.name }}</div>
+              <div v-if="s.apiBase" class="tbl-base mono text-11px text-ink-4 mt-2px whitespace-nowrap overflow-hidden text-ellipsis">{{ s.apiBase }}</div>
             </td>
             <!-- 区域 -->
             <td><span class="pill tag">{{ regionLabel(s.region) }}</span></td>
@@ -142,24 +151,29 @@
                 <span class="dot" />{{ s.apiSupported ? '是' : '否' }}
               </span>
             </td>
-            <!-- 免费额度 -->
-            <td><div class="tbl-quota">{{ s.freeQuota || '—' }}</div></td>
+            <!-- 免费额度：最多两行，截断时悬浮显示完整说明 -->
+            <td>
+              <div
+                class="tbl-quota text-12px leading-1.6 text-ink-2"
+                :title="s.freeQuota || undefined"
+              >{{ s.freeQuota || '—' }}</div>
+            </td>
             <!-- 门槛 -->
             <td>
-              <div class="tbl-gates">
-                <span :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑卡' : '免绑卡' }}</span>
-                <span v-if="s.requiresVerify" class="meta">需实名</span>
+              <div class="tbl-gates flex flex-wrap gap-x-8px gap-y-4px">
+                <span class="text-11px text-ink-3" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑卡' : '免绑卡' }}</span>
+                <span v-if="s.requiresVerify" class="meta text-11px text-ink-3">需实名</span>
               </div>
             </td>
             <!-- 标签（最多展示 2 个） -->
             <td>
-              <div class="tbl-tags">
+              <div class="tbl-tags flex flex-wrap gap-4px">
                 <span v-for="t in s.tags.slice(0, 2)" :key="t" class="pill tag">{{ t }}</span>
               </div>
             </td>
             <!-- 操作按钮 -->
             <td>
-              <div class="tbl-actions">
+              <div class="tbl-actions flex gap-6px">
                 <button v-if="linkFor(s)" class="btn sm" @click="openLink(linkFor(s))">申请</button>
                 <button v-if="s.source === 'user'" class="btn sm danger" @click="removeSite(s)">删除</button>
               </div>
@@ -178,48 +192,48 @@
       append-to-body
       class="ft-dialog"
     >
-      <div class="form">
-        <div class="f-group-title">站点信息</div>
+      <div class="form flex flex-col gap-11px">
+        <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">站点信息</div>
 
         <!-- 站点名称 -->
-        <div class="form-row">
-          <div class="f-label">站点名称 <em>*</em></div>
+        <div class="form-row flex flex-col gap-6px">
+          <div class="f-label text-12px font-medium text-ink-2">站点名称 <em>*</em></div>
           <el-input v-model="form.name" placeholder="例如：某某 AI 开放平台" />
         </div>
 
         <!-- 官网与申请地址 -->
-        <div class="form-2col">
-          <div class="form-row">
-            <div class="f-label">官网地址</div>
+        <div class="form-2col grid grid-cols-2 gap-11px items-start">
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">官网地址</div>
             <el-input v-model="form.homeUrl" placeholder="https://" />
           </div>
-          <div class="form-row">
-            <div class="f-label">申请 / 控制台地址</div>
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">申请 / 控制台地址</div>
             <el-input v-model="form.applyUrl" placeholder="https://" />
           </div>
         </div>
 
-        <div class="f-group-title">额度与接口</div>
+        <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">额度与接口</div>
 
         <!-- 区域与 API Base URL -->
-        <div class="form-2col">
-          <div class="form-row">
-            <div class="f-label">所在区域</div>
+        <div class="form-2col grid grid-cols-2 gap-11px items-start">
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">所在区域</div>
             <el-select v-model="form.region" style="width: 100%">
               <el-option label="国内平台" value="cn" />
               <el-option label="海外平台" value="global" />
               <el-option label="本地部署" value="local" />
             </el-select>
           </div>
-          <div class="form-row">
-            <div class="f-label">API Base URL</div>
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">API Base URL</div>
             <el-input v-model="form.apiBase" placeholder="https://api.example.com/v1" />
           </div>
         </div>
 
         <!-- 额度说明 -->
-        <div class="form-row">
-          <div class="f-label">额度说明</div>
+        <div class="form-row flex flex-col gap-6px">
+          <div class="f-label text-12px font-medium text-ink-2">额度说明</div>
           <el-input
             v-model="form.freeQuota"
             type="textarea"
@@ -230,47 +244,47 @@
         </div>
 
         <!-- 三个布尔属性开关卡片 -->
-        <div class="switch-grid">
-          <div class="switch-card" :class="{ on: form.apiSupported }" @click="form.apiSupported = !form.apiSupported">
-            <div class="sc-text">
-              <span class="sc-t">支持 API</span>
-              <span class="sc-d">可编程调用</span>
+        <div class="switch-grid grid grid-cols-3 gap-8px">
+          <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.apiSupported }" @click="form.apiSupported = !form.apiSupported">
+            <div class="sc-text flex flex-col leading-1.3 min-w-0">
+              <span class="sc-t text-12px font-medium text-ink-2">支持 API</span>
+              <span class="sc-d text-10.5px text-ink-4">可编程调用</span>
             </div>
             <el-switch v-model="form.apiSupported" @click.stop />
           </div>
-          <div class="switch-card" :class="{ on: form.requiresCard }" @click="form.requiresCard = !form.requiresCard">
-            <div class="sc-text">
-              <span class="sc-t">需绑卡</span>
-              <span class="sc-d">要信用卡</span>
+          <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.requiresCard }" @click="form.requiresCard = !form.requiresCard">
+            <div class="sc-text flex flex-col leading-1.3 min-w-0">
+              <span class="sc-t text-12px font-medium text-ink-2">需绑卡</span>
+              <span class="sc-d text-10.5px text-ink-4">要信用卡</span>
             </div>
             <el-switch v-model="form.requiresCard" @click.stop />
           </div>
-          <div class="switch-card" :class="{ on: form.requiresVerify }" @click="form.requiresVerify = !form.requiresVerify">
-            <div class="sc-text">
-              <span class="sc-t">需实名</span>
-              <span class="sc-d">手机 / 实名</span>
+          <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.requiresVerify }" @click="form.requiresVerify = !form.requiresVerify">
+            <div class="sc-text flex flex-col leading-1.3 min-w-0">
+              <span class="sc-t text-12px font-medium text-ink-2">需实名</span>
+              <span class="sc-d text-10.5px text-ink-4">手机 / 实名</span>
             </div>
             <el-switch v-model="form.requiresVerify" @click.stop />
           </div>
         </div>
 
-        <div class="f-group-title">补充信息</div>
+        <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">补充信息</div>
 
         <!-- 标签与推荐人 -->
-        <div class="form-2col">
-          <div class="form-row">
-            <div class="f-label">标签</div>
+        <div class="form-2col grid grid-cols-2 gap-11px items-start">
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">标签</div>
             <el-input v-model="form.tagsText" placeholder="逗号分隔，如：聚合平台,免绑卡" />
           </div>
-          <div class="form-row">
-            <div class="f-label">推荐人</div>
+          <div class="form-row flex flex-col gap-6px">
+            <div class="f-label text-12px font-medium text-ink-2">推荐人</div>
             <el-input v-model="form.submitter" placeholder="选填，留空则匿名" />
           </div>
         </div>
 
         <!-- 备注 -->
-        <div class="form-row">
-          <div class="f-label">备注</div>
+        <div class="form-row flex flex-col gap-6px">
+          <div class="f-label text-12px font-medium text-ink-2">备注</div>
           <el-input
             v-model="form.note"
             type="textarea"
@@ -283,9 +297,9 @@
 
       <!-- 弹窗底部操作 -->
       <template #footer>
-        <div class="dlg-foot">
-          <span class="foot-hint">推荐将提交到远程服务器（本地保留副本）</span>
-          <div class="foot-btns">
+        <div class="dlg-foot flex items-center justify-between gap-12px">
+          <span class="foot-hint text-11.5px text-ink-4">推荐将提交到远程服务器（本地保留副本）</span>
+          <div class="foot-btns flex gap-8px">
             <button class="btn" @click="dialogVisible = false">取消</button>
             <button class="btn primary" :disabled="submitting" @click="submitSite">
               {{ submitting ? '提交中…' : '提交推荐' }}
@@ -566,121 +580,37 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 
 <style scoped>
 /* ---------- 工具条 ---------- */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
-  margin-bottom: 12px;
-}
-.tb-search { width: 260px; }
-.tb-count {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--ink-3);
-}
 .tb-count b { color: var(--ink); font-family: var(--font-mono); }
 
-.notice {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--ink-3);
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 12px;
-  margin-bottom: 14px;
-}
-
-.spin-wrap { padding: 48px; text-align: center; color: var(--ink-4); }
-
 /* ---------- 卡片视图 ---------- */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 14px;
-}
-.site-card {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 14px 16px;
-}
-.sc-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-.sc-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
-.sc-title { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.35; }
-.sc-quota {
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--ink-2);
-  background: var(--surface-3);
-  border-radius: var(--r-sm);
-  padding: 7px 10px;
-}
-.sc-tags { display: flex; flex-wrap: wrap; gap: 5px; }
-.sc-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.grid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+.sc-foot .by { font-size: 11px; color: var(--ink-4); margin-left: auto; }
 
-.meta { font-size: 11px; color: var(--ink-3); }
 .meta.ok { color: var(--ok); }
 .meta.warn { color: var(--warn); }
 .meta.mono { font-family: var(--font-mono); }
 
-.sc-note { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-
-.sc-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: auto;
-  padding-top: 4px;
-}
-.sc-foot .by { font-size: 11px; color: var(--ink-4); margin-left: auto; }
-
 /* ---------- 表格视图 ---------- */
 /* 固定布局锁定列宽（auto 布局下中文会被逐字压成竖排），窄窗口横向滚动 */
-.tbl-wrap { overflow-x: auto; }
 .tbl-wrap .table { min-width: 960px; table-layout: fixed; }
-.tbl-name { font-size: 13px; font-weight: 500; color: var(--ink); }
-.tbl-base {
-  font-size: 11px;
-  color: var(--ink-4);
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tbl-quota { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
-.tbl-gates { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.tbl-wrap .table td { vertical-align: middle; }
 .tbl-gates .meta { white-space: nowrap; }
-.tbl-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.tbl-actions { display: flex; gap: 6px; }
 .table tbody tr { cursor: default; }
 
+/* 免费额度：最多两行，统一行高，截断处显示省略号 */
+.tbl-quota {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: calc(12px * 1.6 * 2);
+}
+
 /* ---------- 弹窗表单 ---------- */
-.form { display: flex; flex-direction: column; gap: 11px; }
-.form-row { display: flex; flex-direction: column; gap: 6px; }
-.form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; align-items: start; }
-.f-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .f-label em { color: var(--err); font-style: normal; }
 
 /* 分区小标题：左侧文案 + 右侧延伸细线 */
-.f-group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-4);
-  letter-spacing: 0.05em;
-  margin-top: 3px;
-}
 .f-group-title::after {
   content: "";
   flex: 1;
@@ -690,30 +620,10 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 .f-group-title:first-child { margin-top: 0; }
 
 /* 三个布尔属性：整块可点击的开关卡片，替代原先裸露的开关 */
-.switch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.switch-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-}
+.switch-card { transition: border-color 0.12s, background 0.12s; }
 .switch-card:hover { border-color: var(--line-2); }
 .switch-card.on { border-color: var(--accent); background: var(--surface); }
-.sc-text { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
-.sc-t { font-size: 12px; font-weight: 500; color: var(--ink-2); }
-.sc-d { font-size: 10.5px; color: var(--ink-4); }
 .switch-card :deep(.el-switch) { flex-shrink: 0; }
-
-/* 底部操作条 */
-.dlg-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.foot-hint { font-size: 11.5px; color: var(--ink-4); }
-.foot-btns { display: flex; gap: 8px; }
 </style>
 
 <!-- 弹窗通过 append-to-body 挂到 body 下，Element Plus 自身的容器元素

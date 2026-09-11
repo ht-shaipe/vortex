@@ -95,6 +95,8 @@ pub struct ProviderConnection {
     pub created_at: String,
     /// 更新时间（RFC3339）
     pub updated_at: String,
+    /// 最近一次连接测试的响应延迟（毫秒）。列表首列展示，未测试时为 None。
+    pub last_latency_ms: Option<i64>,
 }
 
 /// 创建提供商连接的请求体。

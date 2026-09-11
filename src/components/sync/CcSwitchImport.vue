@@ -1,7 +1,7 @@
 <template>
   <section class="sync-card">
     <div class="sync-head">
-      <div class="head-text">
+      <div class="head-text flex flex-col gap-3px min-w-0">
         <h2 class="sync-title">从 cc-switch 迁移配置</h2>
         <p class="sync-desc">
           选择本机 cc-switch 导出的 JSON，识别可迁移的供应商并勾选导入为 vortex 连接
@@ -13,34 +13,34 @@
     </div>
 
     <el-dialog v-model="open" title="cc-switch 配置迁移" width="720" top="8vh">
-      <div class="dlg">
-        <p v-if="loading" class="hint">请选择 cc-switch 导出的 JSON 文件…</p>
-        <p v-else-if="loadError" class="hint err">读取失败：{{ loadError }}</p>
-        <p v-else-if="items.length === 0" class="hint">
+      <div class="dlg flex flex-col gap-10px min-h-260px">
+        <p v-if="loading" class="hint m-0 py-24px px-8px text-center text-sm text-ink-4">请选择 cc-switch 导出的 JSON 文件…</p>
+        <p v-else-if="loadError" class="hint err m-0 py-24px px-8px text-center text-sm text-err">读取失败：{{ loadError }}</p>
+        <p v-else-if="items.length === 0" class="hint m-0 py-24px px-8px text-center text-sm text-ink-4">
           {{ picked ? '未在文件中找到可识别的供应商。' : '已取消选择文件。' }}
         </p>
 
         <template v-else>
-          <div class="dlg-bar">
-            <div class="bar-left">
+          <div class="dlg-bar flex items-center justify-between gap-10px shrink-0">
+            <div class="bar-left flex items-center gap-10px">
               <button
                 type="button"
-                class="sel-all"
+                class="sel-all inline-flex items-center gap-7px border-none bg-transparent text-xs text-ink-3"
                 :disabled="visibleImportable.length === 0"
                 @click="selectAll"
               >
-                <span class="box" :class="{ on: allSelected, dim: visibleImportable.length === 0 }">
+                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms" :class="{ on: allSelected, dim: visibleImportable.length === 0 }">
                   <el-icon v-if="allSelected" :size="11"><Check /></el-icon>
                 </span>
                 全选
               </button>
-              <button type="button" class="link-btn" :disabled="selected.size === 0" @click="deselectAll">
+              <button type="button" class="link-btn border-none bg-transparent py-2px px-6px rounded-4px text-xs text-ink-3 transition-colors duration-120ms" :disabled="selected.size === 0" @click="deselectAll">
                 取消全选
               </button>
-              <div class="filters">
+              <div class="filters flex items-center gap-4px pl-10px border-l border-line">
                 <button
                   type="button"
-                  class="filter-btn"
+                  class="filter-btn h-24px px-8px border border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms"
                   :class="{ on: appFilter.claude }"
                   aria-label="仅显示 Claude"
                   aria-pressed="appFilter.claude"
@@ -50,7 +50,7 @@
                 </button>
                 <button
                   type="button"
-                  class="filter-btn"
+                  class="filter-btn h-24px px-8px border border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms"
                   :class="{ on: appFilter.codex }"
                   aria-label="仅显示 Codex"
                   aria-pressed="appFilter.codex"
@@ -60,18 +60,18 @@
                 </button>
               </div>
             </div>
-            <span class="bar-right tnum">
+            <span class="bar-right tnum text-xs text-ink-4">
               已勾选 {{ selected.size }} / 可迁移 {{ importable.length }}（共 {{ items.length }}）
             </span>
           </div>
 
-          <el-scrollbar class="dlg-list" max-height="46vh">
-            <p v-if="visibleItems.length === 0" class="hint">当前筛选下没有可展示的项</p>
+          <el-scrollbar class="dlg-list flex-1 min-h-0 border border-line rounded-sm" max-height="46vh">
+            <p v-if="visibleItems.length === 0" class="hint m-0 py-24px px-8px text-center text-sm text-ink-4">当前筛选下没有可展示的项</p>
             <template v-else>
               <div
                 v-for="item in visibleItems"
                 :key="item.ccSwitchId"
-                class="row"
+                class="row flex items-start gap-10px py-9px px-12px border-b border-line cursor-pointer outline-none transition-colors duration-100ms"
                 :class="{ dim: item.status === 'skipped' }"
                 role="checkbox"
                 :aria-checked="selected.has(item.ccSwitchId)"
@@ -81,19 +81,19 @@
                 @keydown.enter.prevent="item.status === 'ok' && toggle(item.ccSwitchId)"
                 @keydown.space.prevent="item.status === 'ok' && toggle(item.ccSwitchId)"
               >
-                <span class="box" :class="{ on: selected.has(item.ccSwitchId), dim: item.status === 'skipped' }">
+                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms" :class="{ on: selected.has(item.ccSwitchId), dim: item.status === 'skipped' }">
                   <el-icon v-if="selected.has(item.ccSwitchId)" :size="11"><Check /></el-icon>
                 </span>
-                <div class="row-main">
-                  <span class="row-name">{{ item.name }}</span>
-                  <span v-if="item.apiUrl" class="row-url mono">{{ item.apiUrl }}</span>
-                  <span v-if="item.status === 'skipped'" class="row-sub">{{ skipReasonLabel(item.skipReason) }}</span>
-                  <span v-else class="row-sub">{{ item.apiKeyMasked || '—' }}</span>
+                <div class="row-main flex flex-col gap-1px flex-1 min-w-0">
+                  <span class="row-name text-body text-ink overflow-hidden text-ellipsis whitespace-nowrap">{{ item.name }}</span>
+                  <span v-if="item.apiUrl" class="row-url mono text-xs text-ink-4 overflow-hidden text-ellipsis whitespace-nowrap">{{ item.apiUrl }}</span>
+                  <span v-if="item.status === 'skipped'" class="row-sub text-xs text-ink-4">{{ skipReasonLabel(item.skipReason) }}</span>
+                  <span v-else class="row-sub text-xs text-ink-4">{{ item.apiKeyMasked || '—' }}</span>
                 </div>
-                <div class="row-trail">
-                  <span class="badge" :class="item.appType">{{ item.appType }}</span>
-                  <el-icon :size="11" class="trail-arrow"><Right /></el-icon>
-                  <span class="badge kind" :title="`导入为 provider: ${item.transformer}`">{{ item.transformer }}</span>
+                <div class="row-trail flex items-center gap-5px shrink-0 self-center">
+                  <span class="badge py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3" :class="item.appType">{{ item.appType }}</span>
+                  <el-icon :size="11" class="trail-arrow text-ink-5"><Right /></el-icon>
+                  <span class="badge kind py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3" :title="`导入为 provider: ${item.transformer}`">{{ item.transformer }}</span>
                 </div>
               </div>
             </template>
@@ -237,50 +237,10 @@ async function onImport(): Promise<void> {
 </script>
 
 <style scoped>
-.head-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-
-.dlg { display: flex; flex-direction: column; gap: 10px; min-height: 260px; }
-.hint { margin: 0; padding: 24px 8px; text-align: center; font-size: var(--fs-sm); color: var(--ink-4); }
-.hint.err { color: var(--err); }
-
-.dlg-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
-.bar-left { display: flex; align-items: center; gap: 10px; }
-.bar-right { font-size: var(--fs-xs); color: var(--ink-4); }
-
-.sel-all {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: none;
-  background: transparent;
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-}
 .sel-all:disabled { cursor: not-allowed; opacity: 0.5; }
-.link-btn {
-  border: none;
-  background: transparent;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  transition: background 0.12s, color 0.12s;
-}
 .link-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
 .link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.filters { display: flex; align-items: center; gap: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
-.filter-btn {
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  opacity: 0.65;
-  transition: all 0.12s;
-}
 .filter-btn:hover { opacity: 1; background: var(--surface-3); color: var(--ink); }
 .filter-btn.on {
   opacity: 1;
@@ -289,59 +249,13 @@ async function onImport(): Promise<void> {
   color: var(--accent-ink);
 }
 
-.dlg-list {
-  flex: 1;
-  min-height: 0;
-
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-
-.row {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-  outline: none;
-  transition: background 0.1s;
-}
 .row:last-child { border-bottom: none; }
 .row:hover { background: var(--surface-2); }
 .row.dim { opacity: 0.5; cursor: not-allowed; }
 
-.box {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  border: 1px solid var(--line-2);
-  border-radius: 4px;
-  background: var(--surface);
-  color: #fff;
-  transition: background 0.12s, border-color 0.12s;
-}
 .box.on { background: var(--accent); border-color: var(--accent); }
 .box.dim { opacity: 0.5; }
 
-.row-main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-.row-name { font-size: var(--fs-body); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-url { font-size: var(--fs-xs); color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-sub { font-size: var(--fs-xs); color: var(--ink-4); }
-
-.row-trail { display: flex; align-items: center; gap: 5px; flex-shrink: 0; align-self: center; }
-.trail-arrow { color: var(--ink-5); }
-.badge {
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  background: var(--surface-3);
-  color: var(--ink-3);
-}
 .badge.claude { background: var(--warn-bg); color: var(--warn); }
 .badge.codex { background: var(--accent-bg); color: var(--accent-ink); }
 .badge.kind { font-family: var(--font-mono); }
