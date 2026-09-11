@@ -38,9 +38,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -53,7 +50,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend deps
-        run: bun install
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
 
       - name: Determine version
         id: ver
@@ -79,11 +79,3 @@ jobs:
           releaseDraft: false
           releasePrerelease: false
           args: --target ${{ matrix.target }}
-
-      - name: Upload latest.json
-        if: matrix.label == 'macos-arm64'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          files: |
-            latest.json

@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="mt-4px">
     <!-- 页面头部：标题与新增按钮 -->
     <PageHeader title="订阅管理" sub="管理各 AI 提供商的连接与 API 密钥">
       <template #actions>

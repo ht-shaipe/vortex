@@ -193,7 +193,7 @@ impl ProviderExecutor for OpenAIExecutor {
         if request.stream {
             // 流式：返回归一化 SSE 流
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "openai").await,
+                sse::stream_sse_response(response, "openai", None).await,
             ))
         } else {
             // 非流式：解析 JSON 响应
@@ -298,7 +298,7 @@ impl ProviderExecutor for AnthropicExecutor {
         if request.stream {
             // 流式：Anthropic SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "anthropic").await,
+                sse::stream_sse_response(response, "anthropic", None).await,
             ))
         } else {
             // 非流式：解析 Anthropic 响应并转回 OpenAI 格式
@@ -406,7 +406,7 @@ impl ProviderExecutor for GeminiExecutor {
         if request.stream {
             // 流式：Gemini SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "gemini").await,
+                sse::stream_sse_response(response, "gemini", None).await,
             ))
         } else {
             // 非流式：解析 Gemini 响应并转回 OpenAI 格式

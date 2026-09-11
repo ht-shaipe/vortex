@@ -108,9 +108,9 @@ impl ProxyEngine {
                 let latency = start.elapsed().as_millis() as i64;
                 let entry = UsageEntry {
                     id: 0,
-                    provider: None,
-                    model: Some(request.model.clone()),
-                    connection_id: None,
+                    provider: Some(provider_def.id.clone()),
+                    model: Some(model.clone()),
+                    connection_id: Some(conn_obj.id.clone()),
                     api_key_id: request.api_key.clone(),
                     api_key_name: None,
                     tokens_input: 0,

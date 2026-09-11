@@ -230,6 +230,10 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         // 注入应用全局状态
         .manage(state)
         // 注册 Tauri 命令处理器
@@ -244,6 +248,7 @@ pub fn run() {
             tauri_cmds::status_cmds::get_system_status,
             tauri_cmds::chat_cmds::chat_completions_stream,
             tauri_cmds::chat_cmds::cancel_chat_stream,
+            tauri_cmds::debug_cmds::debug_log,
         ])
         // 应用初始化回调：创建系统托盘
         .setup(|app| {
@@ -320,10 +325,14 @@ pub fn run() {
                     }
                 });
 
-            // 设置托盘图标
-            if let Some(icon) = app.default_window_icon().cloned() {
-                builder = builder.icon(icon);
-            }
+            // 设置托盘图标：单色模板图（黑剪影 + 透明背景）
+            // macOS 菜单栏约定：template 模式下系统只取 alpha 通道，
+            // 浅色栏渲染为黑色、深色栏渲染为白色，与应用原生托盘观感一致
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
+                .expect("failed to load tray template icon");
+            builder = builder
+                .icon(tray_icon)
+                .icon_as_template(true);
 
             // 构建托盘图标
             let _tray = builder.build(app)?;

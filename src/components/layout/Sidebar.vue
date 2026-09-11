@@ -38,9 +38,6 @@
         <span class="nav-icon"><component :is="item.icon" /></span>
         <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
       </router-link>
-      <button class="collapse-btn" :title="collapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggleCollapsed">
-        <el-icon><Fold v-if="!collapsed" /><Expand v-else /></el-icon>
-      </button>
     </div>
   </aside>
 </template>
@@ -53,7 +50,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
-import { Fold, Expand } from '@element-plus/icons-vue'
 import {
   Reading,
   DataLine,
@@ -68,19 +64,11 @@ import {
   Document,
 } from '@element-plus/icons-vue'
 import { listProviders } from '@/api/providers'
+import { useSidebarCollapsed } from '@/composables/useSidebarCollapsed'
 
 const route = useRoute() // 当前路由对象，用于高亮激活项
 
-// 折叠状态的 localStorage 持久化键
-const COLLAPSE_KEY = 'vortex-sidebar-collapsed'
-// 侧边栏是否折叠（从本地存储恢复初始值）
-const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
-
-/** 切换侧边栏折叠/展开状态，并持久化到 localStorage。 */
-function toggleCollapsed() {
-  collapsed.value = !collapsed.value
-  localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
-}
+const { collapsed } = useSidebarCollapsed()
 
 /** 导航项数据结构。 */
 interface NavItem {

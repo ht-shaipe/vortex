@@ -21,6 +21,7 @@ use futures::{Stream, StreamExt};
 use reqwest::Response;
 use serde_json::json;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// 归一化后的 OpenAI 格式 SSE 流（错误以事件形式内嵌，不会以 Err 终止）
@@ -29,6 +30,16 @@ pub type SseStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + 
 const READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// 行缓冲上限，防止异常上游导致内存无限增长
 const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
+
+/// 流式响应收尾时捕获到的 token 用量
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StreamUsage {
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+}
+
+/// 流结束时的用量落库回调
+pub type UsageCallback = Arc<dyn Fn(StreamUsage) + Send + Sync>;
 
 /// 将归一化 SSE 流包装为 OpenAI 兼容的流式 HTTP 响应
 pub fn sse_http_response(stream: SseStream) -> actix_web::HttpResponse {
@@ -47,11 +58,15 @@ pub fn sse_http_response(stream: SseStream) -> actix_web::HttpResponse {
 ///
 /// # 返回
 /// 归一化为 OpenAI chunk 格式的 SSE 流
-pub async fn stream_sse_response(upstream: Response, source_format: &str) -> SseStream {
+pub async fn stream_sse_response(
+    upstream: Response,
+    source_format: &str,
+    usage_cb: Option<UsageCallback>,
+) -> SseStream {
     match source_format {
-        "anthropic" => build_stream(upstream, AnthropicToOpenai::new()),
-        "gemini" => build_stream(upstream, GeminiToOpenai::new()),
-        _ => build_stream(upstream, OpenAiPassthrough::new()),
+        "anthropic" => build_stream(upstream, AnthropicToOpenai::new(), usage_cb),
+        "gemini" => build_stream(upstream, GeminiToOpenai::new(), usage_cb),
+        _ => build_stream(upstream, OpenAiPassthrough::new(), usage_cb),
     }
 }
 
@@ -61,6 +76,32 @@ fn error_event(message: &str) -> String {
         "data: {}\n\n",
         json!({"error": {"message": message, "type": "api_error"}})
     )
+}
+
+/// 将字节追加到缓冲区，超限则返回 false。
+fn push_lossy(buffer: &mut String, bytes: &[u8]) -> bool {
+    if buffer.len() + bytes.len() > MAX_BUFFER_SIZE {
+        return false;
+    }
+    buffer.push_str(&String::from_utf8_lossy(bytes));
+    true
+}
+
+/// 缓冲区溢出时的错误输出。
+fn buffer_overflow() -> String {
+    let mut out = error_event("SSE 缓冲区溢出，已丢弃当前数据");
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
+/// 从缓冲区中逐行提取完整行（以 \n 分隔），残留部分保留在缓冲区。
+fn take_lines(buffer: &mut String) -> Vec<String> {
+    let mut lines = Vec::new();
+    while let Some(pos) = buffer.find('\n') {
+        let line: String = buffer.drain(..pos + 1).collect();
+        lines.push(line);
+    }
+    lines
 }
 
 // =============================================================================
@@ -76,6 +117,10 @@ trait SseParser: Send + 'static {
     fn feed(&mut self, bytes: &[u8]) -> String;
     /// 上游流正常结束时的收尾输出
     fn finish(&mut self) -> String;
+    /// 捕获到的 token 用量（流结束后读取）
+    fn usage(&self) -> StreamUsage {
+        StreamUsage::default()
+    }
     /// 上游网络错误时的输出
     fn upstream_error(&mut self, msg: &str) -> String {
         let mut out = error_event(&format!("上游流读取错误: {}", msg));
@@ -93,6 +138,10 @@ trait SseParser: Send + 'static {
     }
 }
 
+// =============================================================================
+// 通用流构建：行缓冲解析器 + 逐块读取超时
+// =============================================================================
+
 /// 流处理状态
 ///
 /// 持有上游字节流、解析器和完成标志。
@@ -109,13 +158,18 @@ struct StreamState<P> {
 ///
 /// 使用 `futures::stream::unfold` 创建异步流，循环读取上游数据块，
 /// 通过解析器转换后输出。每次读取应用逐块超时保护。
-fn build_stream<P: SseParser>(upstream: Response, parser: P) -> SseStream {
+/// 流终止（正常结束/网络错误/超时）时回调捕获到的 token 用量。
+fn build_stream<P: SseParser>(
+    upstream: Response,
+    parser: P,
+    usage_cb: Option<UsageCallback>,
+) -> SseStream {
     let state = StreamState {
         inner: Box::pin(upstream.bytes_stream()),
         parser,
         done: false,
     };
-    let s = futures::stream::unfold(state, |mut st| async move {
+    let s = futures::stream::unfold((state, usage_cb), |(mut st, cb)| async move {
         loop {
             // 流已结束，不再产出
             if st.done {
@@ -127,63 +181,42 @@ fn build_stream<P: SseParser>(upstream: Response, parser: P) -> SseStream {
                     // 喂入解析器，获取转换后的输出
                     let out = st.parser.feed(&bytes);
                     if !out.is_empty() {
-                        return Some((Ok(Bytes::from(out)), st));
+                        return Some((Ok(Bytes::from(out)), (st, cb)));
                     }
                     // 无完整事件的残块，继续等下一个数据块
                 }
                 Ok(Some(Err(e))) => {
-                    // 上游网络错误
+                    // 上游网络错误：回调已捕获的部分用量后终止
                     st.done = true;
                     let out = st.parser.upstream_error(&e.to_string());
-                    return Some((Ok(Bytes::from(out)), st));
+                    if let Some(cb) = cb.as_ref() {
+                        cb(st.parser.usage());
+                    }
+                    return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
                 Ok(None) => {
-                    // 上游流正常结束
+                    // 上游流正常结束：收尾并回调用量
                     st.done = true;
                     let out = st.parser.finish();
-                    return Some((Ok(Bytes::from(out)), st));
+                    if let Some(cb) = cb.as_ref() {
+                        cb(st.parser.usage());
+                    }
+                    return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
                 Err(_) => {
-                    // 逐块读取超时
+                    // 逐块读取超时：回调已捕获的部分用量后终止
                     st.done = true;
                     let out = st.parser.read_timeout();
-                    return Some((Ok(Bytes::from(out)), st));
+                    if let Some(cb) = cb.as_ref() {
+                        cb(st.parser.usage());
+                    }
+                    return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
             }
         }
     });
     Box::pin(s)
 }
-
-/// 从缓冲区中按行取出所有完整行（保留残行）
-fn take_lines(buffer: &mut String) -> Vec<String> {
-    let mut lines = Vec::new();
-    while let Some(pos) = buffer.find('\n') {
-        let line: String = buffer.drain(..=pos).collect();
-        lines.push(line.trim_end_matches(['\n', '\r']).to_string());
-    }
-    lines
-}
-
-/// 缓冲区超限保护：清空缓冲区并返回错误事件
-fn buffer_overflow() -> String {
-    let mut out = error_event(&format!(
-        "SSE 单行数据超过 {} MB 上限，已终止",
-        MAX_BUFFER_SIZE / 1024 / 1024
-    ));
-    out.push_str("data: [DONE]\n\n");
-    out
-}
-
-/// 将字节以 lossy 方式追加到缓冲区，返回是否未超限
-fn push_lossy(buffer: &mut String, bytes: &[u8]) -> bool {
-    buffer.push_str(&String::from_utf8_lossy(bytes));
-    buffer.len() <= MAX_BUFFER_SIZE
-}
-
-// =============================================================================
-// OpenAI 直通解析器：原样转发 + 监测
-// =============================================================================
 
 /// OpenAI 直通解析器
 ///
@@ -198,6 +231,10 @@ struct OpenAiPassthrough {
     saw_finish: bool,
     /// 是否已收到 [DONE] 标记
     saw_done: bool,
+    /// 输入 token 数（来自 usage 收尾块）
+    input_tokens: i64,
+    /// 输出 token 数（来自 usage 收尾块）
+    output_tokens: i64,
 }
 
 impl OpenAiPassthrough {
@@ -208,6 +245,8 @@ impl OpenAiPassthrough {
             saw_content: false,
             saw_finish: false,
             saw_done: false,
+            input_tokens: 0,
+            output_tokens: 0,
         }
     }
 }
@@ -257,6 +296,15 @@ impl SseParser for OpenAiPassthrough {
                     self.saw_content = true;
                 }
             }
+            // 捕获收尾 usage 块（需上游开启 stream_options.include_usage）
+            if let Some(usage) = v.get("usage").and_then(|u| u.as_object()) {
+                if let Some(t) = usage.get("prompt_tokens").and_then(|t| t.as_i64()) {
+                    self.input_tokens = t;
+                }
+                if let Some(t) = usage.get("completion_tokens").and_then(|t| t.as_i64()) {
+                    self.output_tokens = t;
+                }
+            }
         }
         out
     }
@@ -289,6 +337,13 @@ impl SseParser for OpenAiPassthrough {
         }
         out
     }
+
+    fn usage(&self) -> StreamUsage {
+        StreamUsage {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
 }
 
 // =============================================================================
@@ -312,6 +367,8 @@ struct AnthropicToOpenai {
     saw_content: bool,
     /// finish_reason（已映射为 OpenAI 格式）
     finish_reason: Option<String>,
+    /// 输入 token 计数（来自 message_start）
+    input_tokens: i64,
     /// 输出 token 计数
     output_tokens: i64,
     /// 内容块索引 → 是否为 tool_use 块
@@ -330,6 +387,7 @@ impl AnthropicToOpenai {
             started: false,
             saw_content: false,
             finish_reason: None,
+            input_tokens: 0,
             output_tokens: 0,
             block_is_tool: Vec::new(),
             tool_index: Vec::new(),
@@ -367,7 +425,7 @@ impl AnthropicToOpenai {
             let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
             match event_type {
                 "message_start" => {
-                    // 提取响应 ID 和模型名
+                    // 提取响应 ID、模型名与输入 token 数
                     if let Some(msg) = v.get("message") {
                         self.id = msg
                             .get("id")
@@ -379,6 +437,9 @@ impl AnthropicToOpenai {
                             .and_then(|m| m.as_str())
                             .unwrap_or("anthropic")
                             .to_string();
+                        if let Some(u) = msg.get("usage").and_then(|u| u.get("input_tokens")).and_then(|t| t.as_i64()) {
+                            self.input_tokens = u;
+                        }
                     }
                     // 发送首个 assistant 角色 chunk
                     if !self.started {
@@ -536,6 +597,13 @@ impl SseParser for AnthropicToOpenai {
         out.push_str("data: [DONE]\n\n");
         out
     }
+
+    fn usage(&self) -> StreamUsage {
+        StreamUsage {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
 }
 
 // =============================================================================
@@ -558,6 +626,10 @@ struct GeminiToOpenai {
     saw_content: bool,
     /// 是否已收到 finishReason
     saw_finish: bool,
+    /// 输入 token 数（来自 usageMetadata.promptTokenCount）
+    input_tokens: i64,
+    /// 输出 token 数（来自 usageMetadata.candidatesTokenCount）
+    output_tokens: i64,
 }
 
 impl GeminiToOpenai {
@@ -573,6 +645,8 @@ impl GeminiToOpenai {
             started: false,
             saw_content: false,
             saw_finish: false,
+            input_tokens: 0,
+            output_tokens: 0,
         }
     }
 
@@ -634,6 +708,16 @@ impl SseParser for GeminiToOpenai {
                     self.model = m.to_string();
                 }
                 out.push_str(&self.chunk(json!({"role": "assistant", "content": ""}), None));
+            }
+
+            // 捕获 usageMetadata（promptTokenCount / candidatesTokenCount）
+            if let Some(meta) = event.get("usageMetadata") {
+                if let Some(t) = meta.get("promptTokenCount").and_then(|t| t.as_i64()) {
+                    self.input_tokens = t;
+                }
+                if let Some(t) = meta.get("candidatesTokenCount").and_then(|t| t.as_i64()) {
+                    self.output_tokens = t;
+                }
             }
 
             // 处理 candidates

@@ -173,7 +173,7 @@ html.dark .toggle.on { background: var(--accent); }
   background: var(--bg);
 }
 .app:has(.sidebar.collapsed) {
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 72px 1fr;
 }
 
 .sidebar {
@@ -251,7 +251,7 @@ html.dark .toggle.on { background: var(--accent); }
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 9px;
+  padding: 10px 9px;
   border-radius: var(--r-sm);
   color: var(--ink-2);
   font-weight: 500;
@@ -346,10 +346,10 @@ html.dark .nav-item.active .badge { background: var(--accent-line); color: var(-
 .page-col { max-width: 880px; margin: 0 auto; }
 
 .page-bar {
-  height: 52px;
+  height: 38px;
   padding: 0 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  /* background: var(--surface); */
+  /* border-bottom: 1px solid var(--line); */
   display: flex;
   align-items: center;
   gap: 12px;

@@ -1,14 +1,14 @@
 <template>
-  <div class="app" :class="{ 'sidebar-collapsed': collapsed }">
+  <div class="app" :class="{ 'sidebar-collapsed': collapsed }" data-tauri-drag-region>
     <Sidebar
       :collapsed="collapsed"
       :collapsible="true"
       :active="route.path"
       @toggle="collapsed = !collapsed"
     />
-    <main class="main" :class="{ flush }">
+    <main class="main" :class="{ flush }" data-tauri-drag-region>
       <!-- 拖拽区：作为布局流中的实际头部元素，参照 dsa 项目实现 -->
-      <WindowChrome />
+      <WindowChrome data-tauri-drag-region />
       <router-view v-if="flush" />
       <el-scrollbar v-else>
         <div class="main-inner">

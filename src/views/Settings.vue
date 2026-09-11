@@ -40,6 +40,14 @@
             </div>
             <el-input-number v-model="form.proxy_port" :min="1024" :max="65535" :step="1" controls-position="right" style="width: 140px" @change="saveField('proxy_port', form.proxy_port)" />
           </div>
+          <!-- 开机自启 -->
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">开机自启</div>
+              <div class="setting-desc">系统启动时自动运行 Vortex</div>
+            </div>
+            <el-switch v-model="autoStart.enabled.value" @change="onAutoStartChange" />
+          </div>
           <!-- 界面语言（当前仅中文） -->
           <div class="setting-row">
             <div>
@@ -173,10 +181,18 @@ import { CopyDocument, Loading, Lock, Refresh, Setting, Tools, WarningFilled } f
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useTheme } from '@/composables/useTheme'
+import { useAutoStart } from '@/composables/useAutoStart'
 import { getSettings, updateSettings } from '@/api/settings'
 
 // 主题组合式函数
 const theme = useTheme()
+// 开机自启
+const autoStart = useAutoStart()
+
+/** 开机自启开关变化回调。 */
+async function onAutoStartChange() {
+  await autoStart.toggle()
+}
 // 可选主题列表
 const themes = [
   { id: 'system' as const, label: '跟随系统' },
@@ -323,7 +339,10 @@ async function doReset() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  autoStart.init()
+})
 </script>
 
 <style scoped>

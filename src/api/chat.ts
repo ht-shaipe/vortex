@@ -309,16 +309,14 @@ function feedSseText(buf: string, text: string, onDelta: (delta: string) => void
  */
 async function streamCompletionViaIpc(
   requestId: string,
-  topicId: string,
-  assistantId: string,
   model: string,
   messages: { role: string; content: string }[],
   isCancelled: () => boolean,
+  onDelta: (delta: string) => void,
 ): Promise<void> {
   const { Channel, invoke } = await import('@tauri-apps/api/core')
 
   let buf = ''
-  let sawComplete = false
   let upstreamError = ''
 
   const onEvent = new Channel<{
@@ -327,14 +325,11 @@ async function streamCompletionViaIpc(
   }>()
   onEvent.onmessage = (ev) => {
     if (ev.type === 'delta' && ev.data?.text) {
-      buf = feedSseText(buf, ev.data.text, (delta) => {
-        chunkBus.emit({ topicId, messageId: assistantId, delta })
-      })
+      buf = feedSseText(buf, ev.data.text, onDelta)
     } else if (ev.type === 'complete' && ev.data?.body) {
       // 上游忽略 stream 参数时的完整 JSON 响应
-      sawComplete = true
       const delta = extractDelta(ev.data.body)
-      if (delta) chunkBus.emit({ topicId, messageId: assistantId, delta })
+      if (delta) onDelta(delta)
     } else if (ev.type === 'error') {
       upstreamError = ev.data?.message || '上游请求失败'
     }
@@ -350,10 +345,6 @@ async function streamCompletionViaIpc(
 
   if (isCancelled()) throw new CancelledError()
   if (upstreamError) throw new Error(upstreamError)
-  if (sawComplete) return
-
-  // 流结束但一个增量都没有：与 HTTP 路径同样的空响应语义
-  throw new Error('网关返回了空响应（无内容），可能未配置上游提供商或模型不可用')
 }
 
 /** 用户主动取消的标记错误（区别于超时/上游错误）。 */
@@ -413,7 +404,7 @@ async function streamCompletion(topicId: string, assistantId: string): Promise<v
           .then(({ invoke }) => invoke('cancel_chat_stream', { requestId }))
           .catch(() => {})
       }
-      await streamCompletionViaIpc(requestId, topicId, assistantId, topic.model, payloadMessages, isCancelled)
+      await streamCompletionViaIpc(requestId, topic.model, payloadMessages, isCancelled, onDelta)
     } else {
       const controller = new AbortController()
       cancelFn = () => controller.abort()

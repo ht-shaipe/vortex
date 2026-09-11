@@ -1,9 +1,9 @@
 <template>
   <div class="edit-root flex-1 min-h-0 flex flex-col">
     <!-- 顶部标题栏：返回按钮、连接名、状态徽标、ID 与测试结果 -->
-    <div class="page-bar shrink-0 flex items-center gap-10px px-24px bg-surface border-b border-line">
+    <div class="page-bar shrink-0 flex items-center gap-10px px-28px bg-surface border-b border-line border-solid border-0">
       <button type="button" class="btn bare" @click="$router.push('/subscriptions')">
-        <el-icon :size="15"><ArrowLeft /></el-icon>
+        <el-icon :size="18"><ArrowLeft /></el-icon>
       </button>
       <span class="page-head text-15px font-semibold text-ink min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ conn?.name ?? '订阅详情' }}</span>
       <StatusBadge v-if="conn" :tone="statusTone(conn)" :label="statusLabel(conn)" />
@@ -678,7 +678,9 @@ async function save() {
  * 测试当前连接是否可用。
  */
 async function test() {
+  if (!conn.value) return
   testing.value = true
+  testResult.value = null
   try {
     const result = await testProvider(route.params.id as string)
     testResult.value = {
@@ -687,8 +689,14 @@ async function test() {
       error: result.error,
     }
     await load()
-  } catch {
-    testResult.value = { status: 'error', error: '网络异常：请求未到达网关' }
+  } catch (e: any) {
+    // 优先显示后端返回的错误信息，兜底显示网络错误
+    const backendError = e?.response?.data?.error
+    const detail = backendError || e?.message || '未知错误'
+    testResult.value = {
+      status: 'error',
+      error: `请求失败：${detail}`,
+    }
   } finally {
     testing.value = false
   }

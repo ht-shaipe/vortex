@@ -20,3 +20,6 @@ pub mod status_cmds;
 
 /// 聊天流式对话相关 Tauri 命令模块。
 pub mod chat_cmds;
+
+/// TEMP DEBUG：前端调试日志透传命令（排查 drag-region 用，之后移除）。
+pub mod debug_cmds;

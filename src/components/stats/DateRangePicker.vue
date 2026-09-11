@@ -41,17 +41,22 @@
           <span class="field-label">{{ f.label }}</span>
           <div class="field-inputs flex gap-6px">
             <input
-              type="date"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
               class="ipt flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
               :value="ymd(f.ms)"
+              placeholder="YYYY-MM-DD"
               @focus="activeField = f.field"
               @input="onDateInput(f.field, $event)"
             />
             <input
-              type="time"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
               class="ipt time flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
-              step="60"
               :value="fmtTimeInput(f.ms)"
+              placeholder="HH:MM"
               @focus="activeField = f.field"
               @input="onTimeInput(f.field, $event)"
             />
