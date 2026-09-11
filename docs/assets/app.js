@@ -112,7 +112,9 @@
     'live-routing': 'vortex — 实时路由',
     'free-tokens':  'vortex — 免费 Token',
     'statistics':   'vortex — 统计',
-    'guide':        'vortex — 接入指南'
+    'guide':        'vortex — 接入指南',
+    'subscriptions': 'vortex — 订阅管理',
+    'chat':          'vortex — 对话'
   };
   var shotTabs = Array.prototype.slice.call(document.querySelectorAll('.shot-tab'));
   var shotImgs = Array.prototype.slice.call(document.querySelectorAll('.shot-img'));

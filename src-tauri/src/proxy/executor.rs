@@ -13,7 +13,7 @@ use crate::db::models::{ProxyRequest, ProviderConnection};
 use crate::providers::types::ProviderDef;
 use crate::AppState;
 use crate::error::{AppError, Result};
-use crate::proxy::sse::{self, SseStream};
+use crate::proxy::sse::{self, SseStream, UsageCallback};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -86,6 +86,7 @@ pub trait ProviderExecutor: Send + Sync {
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
+        usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput>;
 }
 
@@ -145,6 +146,7 @@ impl ProviderExecutor for OpenAIExecutor {
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
+        usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
         let client = &state.http_client;
         // 优先使用连接级 baseUrl，回退到提供商定义的默认值
@@ -172,6 +174,10 @@ impl ProviderExecutor for OpenAIExecutor {
                 obj.insert("top_p".to_string(), json!(top_p));
             }
             obj.insert("stream".to_string(), json!(request.stream));
+            // 流式请求：要求上游在流末尾返回 usage 收尾块
+            if request.stream {
+                obj.insert("stream_options".to_string(), json!({"include_usage": true}));
+            }
         }
 
         let mut req_builder = client.post(&url);
@@ -193,7 +199,7 @@ impl ProviderExecutor for OpenAIExecutor {
         if request.stream {
             // 流式：返回归一化 SSE 流
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "openai", None).await,
+                sse::stream_sse_response(response, "openai", usage_cb).await,
             ))
         } else {
             // 非流式：解析 JSON 响应
@@ -225,6 +231,7 @@ impl ProviderExecutor for AnthropicExecutor {
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
+        usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
         let client = &state.http_client;
         let base_url = connection
@@ -298,7 +305,7 @@ impl ProviderExecutor for AnthropicExecutor {
         if request.stream {
             // 流式：Anthropic SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "anthropic", None).await,
+                sse::stream_sse_response(response, "anthropic", usage_cb).await,
             ))
         } else {
             // 非流式：解析 Anthropic 响应并转回 OpenAI 格式
@@ -331,6 +338,7 @@ impl ProviderExecutor for GeminiExecutor {
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
+        usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
         let client = &state.http_client;
         let api_key = connection
@@ -406,7 +414,7 @@ impl ProviderExecutor for GeminiExecutor {
         if request.stream {
             // 流式：Gemini SSE → OpenAI chunk 格式
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "gemini", None).await,
+                sse::stream_sse_response(response, "gemini", usage_cb).await,
             ))
         } else {
             // 非流式：解析 Gemini 响应并转回 OpenAI 格式

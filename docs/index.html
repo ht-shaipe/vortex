@@ -3,11 +3,11 @@
 <head data-page-node-id="ugCLnISTx5jHZCvJ97ryel">
 <meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
 <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
-<title>Vortex — 本地 AI 网关，把 21+ 家模型聚合成一个 OpenAI 兼容接口</title>
+<title>Vortex — 本地 AI 网关，把多家模型聚合成一个 OpenAI 兼容接口</title>
 <meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入 21+ 家云端与本地模型服务，支持协议转换、熔断重试、密钥加密、用量统计、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
 <meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
 <meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
-<meta property="og:description" content="把 21+ 家 AI 提供商聚合成一个 OpenAI 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
+<meta property="og:description" content="把多家 AI 提供商聚合成一个 OpenAI 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
 <meta property="og:type" content="website" data-page-node-id="HnKa5HRuAW4mZpIhDJgQlM">
 <meta property="og:image" content="assets/logo.svg" data-page-node-id="ogImgMeta">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg" data-page-node-id="WifbOoNY32Xup5fuGCaREA">
@@ -238,6 +238,12 @@
         <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">数据全在自己机器上</h3>
         <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">请求日志、密钥、配置都存本地 SQLite。这是一个跑在你本机的进程，不是托管服务 —— 没有中间人。</p>
       </div>
+
+      <div class="card feat reveal" data-page-node-id="featSubCard">
+        <span class="feat-ico" data-page-node-id="featSubIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featSubSvg"><path d="M4 7h16M4 12h16M4 17h16" data-page-node-id="featSubPath1"/></svg></span>
+        <h3 data-page-node-id="featSubTitle">订阅管理</h3>
+        <p data-page-node-id="featSubDesc">每个提供商可绑定多模型并自定义别名，列表行内健康测试、延迟毫秒与最近通过时间一目了然。</p>
+      </div>
     </div>
   </div>
 </section>
@@ -269,6 +275,14 @@
           <span class="shot-tab-name" data-page-node-id="DJWw75mJqCy6AFwMmB3aUH"><i data-page-node-id="CZ6ZbHNzUO3MiIPIuY6dJx"></i>接入指南</span>
           <span class="shot-tab-desc" data-page-node-id="jsM8DAGeWjYGKQMiPgKkFh">各客户端接入示例</span>
         </button>
+        <button class="shot-tab" data-shot="subscriptions" type="button" data-page-node-id="shotTabSub">
+          <span class="shot-tab-name" data-page-node-id="shotTabSubName"><i data-page-node-id="shotTabSubIcon"></i>订阅管理</span>
+          <span class="shot-tab-desc" data-page-node-id="shotTabSubDesc">多上游连接与健康测试</span>
+        </button>
+        <button class="shot-tab" data-shot="chat" type="button" data-page-node-id="shotTabChat">
+          <span class="shot-tab-name" data-page-node-id="shotTabChatName"><i data-page-node-id="shotTabChatIcon"></i>对话</span>
+          <span class="shot-tab-desc" data-page-node-id="shotTabChatDesc">内置会话与流式输出</span>
+        </button>
       </div>
 
       <div data-page-node-id="ZH5Mjd45AeomSih37HsLhE">
@@ -281,6 +295,8 @@
           <img class="shot-img" data-shot="live-routing" src="assets/screens/live-routing.png" alt="实时路由页面：客户端经 Vortex 网关连接多个上游提供商" loading="lazy" hidden data-page-node-id="2KZdHzEJxrQK1ddC3dhuLv">
           <img class="shot-img" data-shot="statistics" src="assets/screens/statistics.png" alt="统计页面：调用热力图与 Token 用量趋势" loading="lazy" hidden data-page-node-id="8CFpH8SgLRxoFL7s7GmRpx">
           <img class="shot-img" data-shot="guide" src="assets/screens/guide.png" alt="接入指南页面：OpenAI SDK 与 cURL 接入示例" loading="lazy" hidden data-page-node-id="diyHNLbqMvxAPv4RaFqrVX">
+          <img class="shot-img" data-shot="subscriptions" src="assets/screens/subscriptions.png" alt="订阅管理页面：多上游连接、健康测试与延迟展示" loading="lazy" hidden data-page-node-id="shotImgSub">
+          <img class="shot-img" data-shot="chat" src="assets/screens/chat.png" alt="对话页面：内置会话、模型选择与流式输出" loading="lazy" hidden data-page-node-id="shotImgChat">
         </div>
         <p class="shot-hint" data-page-node-id="HcXdJdKmyYqTRMuCQ6NxaF">截图来自本机开发实例（<code data-page-node-id="I9dQMpxd2ySKoYo2aZM9jB">localhost:1420</code>），数据为真实运行状态。</p>
       </div>

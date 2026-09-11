@@ -124,10 +124,12 @@ async function load() {
   loading.value = true
   try {
     const data: unknown = await getRecentUsage(100)
-    // 兼容数组或 { records: [] } 两种返回结构
+    // 兼容数组、{ usage: [] } 或 { records: [] } 三种返回结构
     const list: unknown[] = Array.isArray(data)
       ? (data as unknown[])
-      : ((data as { records?: unknown[] }).records ?? [])
+      : ((data as { usage?: unknown[]; records?: unknown[] }).usage
+          ?? (data as { records?: unknown[] }).records
+          ?? [])
     // 字段名映射：将 snake_case 与 camel_case 统一为 Row 结构
     records.value = list.map((item: Record<string, unknown>) => ({
       time: (item.created_at ?? item.timestamp ?? item.time) as string | undefined,

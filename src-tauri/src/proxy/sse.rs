@@ -773,4 +773,11 @@ impl SseParser for GeminiToOpenai {
         out.push_str("data: [DONE]\n\n");
         out
     }
+
+    fn usage(&self) -> StreamUsage {
+        StreamUsage {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
 }

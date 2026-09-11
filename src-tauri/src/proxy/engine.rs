@@ -9,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
 use crate::proxy::retry::RetryPolicy;
-use crate::proxy::sse::SseStream;
+use crate::proxy::sse::{SseStream, StreamUsage, UsageCallback};
 use crate::AppState;
 use std::sync::Arc;
 use std::time::Instant;
@@ -225,7 +225,41 @@ impl ProxyEngine {
                 break;
             }
 
-            match executor.execute(state, request, def, connection, model).await {
+            // 构造流式用量落库回调（流结束时由 sse.rs 调用）
+            let cb_pool = state.db_pool.clone();
+            let cb_provider = def.id.clone();
+            let cb_model = model.to_string();
+            let cb_conn = connection.id.clone();
+            let cb_api_key = request.api_key.clone();
+            let cb_start = start;
+            let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage| {
+                let Ok(c) = db_core::get_conn(&cb_pool) else { return };
+                let latency = cb_start.elapsed().as_millis() as i64;
+                let entry = UsageEntry {
+                    id: 0,
+                    provider: Some(cb_provider.clone()),
+                    model: Some(cb_model.clone()),
+                    connection_id: Some(cb_conn.clone()),
+                    api_key_id: cb_api_key.clone(),
+                    api_key_name: None,
+                    tokens_input: usage.input_tokens,
+                    tokens_output: usage.output_tokens,
+                    tokens_cache_read: 0,
+                    tokens_cache_creation: 0,
+                    tokens_reasoning: 0,
+                    service_tier: "standard".to_string(),
+                    status: "success".to_string(),
+                    success: true,
+                    error_code: None,
+                    latency_ms: Some(latency),
+                    ttft_ms: None,
+                    cost: 0.0,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                };
+                let _ = db_usage::record(&c, &entry);
+            });
+
+            match executor.execute(state, request, def, connection, model, Some(usage_cb)).await {
                 Ok(ExecutorOutput::Json(body)) => {
                     // 非流式成功：提取用量、记录成功、写入用量条目
                     let (tokens_in, tokens_out, cost) =
@@ -260,33 +294,10 @@ impl ProxyEngine {
                     return Ok(ProxyOutput::Response(body));
                 }
                 Ok(ExecutorOutput::Stream(stream)) => {
-                    // 流式响应直接透传，不缓冲（缓冲会破坏 SSE 实时性）
-                    let latency = start.elapsed().as_millis() as i64;
+                    // 流式响应直接透传，token 用量由回调在流结束时写库
                     let _ = db_providers::reset_backoff(conn, &connection.id);
                     let _ = db_providers::increment_usage(conn, &connection.id);
                     state.resilience_manager.record_success(&breaker_name);
-                    let entry = UsageEntry {
-                        id: 0,
-                        provider: Some(def.id.clone()),
-                        model: Some(model.to_string()),
-                        connection_id: Some(connection.id.clone()),
-                        api_key_id: request.api_key.clone(),
-                        api_key_name: None,
-                        tokens_input: 0,
-                        tokens_output: 0,
-                        tokens_cache_read: 0,
-                        tokens_cache_creation: 0,
-                        tokens_reasoning: 0,
-                        service_tier: "standard".to_string(),
-                        status: "success".to_string(),
-                        success: true,
-                        error_code: None,
-                        latency_ms: Some(latency),
-                        ttft_ms: None,
-                        cost: 0.0,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                    };
-                    let _ = db_usage::record(conn, &entry);
 
                     return Ok(ProxyOutput::Stream(stream));
                 }
@@ -340,39 +351,42 @@ impl ProxyEngine {
 /// # 返回
 /// `(输入 token 数, 输出 token 数, 费用)`，费用目前固定返回 0.0
 fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i64, i64, f64) {
+    let usage = body.get("usage");
+    // 优先按原始格式提取，回退到 OpenAI 格式（translator 可能已转换）
     let (tokens_in, tokens_out) = match api_format {
         "anthropic" => {
-            // Anthropic 格式：usage.input_tokens / usage.output_tokens
-            let input = body.get("usage")
+            let input = usage
                 .and_then(|u| u.get("input_tokens"))
+                .or_else(|| usage.and_then(|u| u.get("prompt_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let output = body.get("usage")
+            let output = usage
                 .and_then(|u| u.get("output_tokens"))
+                .or_else(|| usage.and_then(|u| u.get("completion_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             (input, output)
         }
         "gemini" => {
-            // Gemini 格式：usageMetadata.promptTokenCount / candidatesTokenCount
             let meta = body.get("usageMetadata");
             let input = meta
                 .and_then(|u| u.get("promptTokenCount"))
+                .or_else(|| usage.and_then(|u| u.get("prompt_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             let output = meta
                 .and_then(|u| u.get("candidatesTokenCount"))
+                .or_else(|| usage.and_then(|u| u.get("completion_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
             (input, output)
         }
         _ => {
-            // OpenAI 格式：usage.prompt_tokens / completion_tokens
-            let input = body.get("usage")
+            let input = usage
                 .and_then(|u| u.get("prompt_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            let output = body.get("usage")
+            let output = usage
                 .and_then(|u| u.get("completion_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
