@@ -374,6 +374,17 @@ pub fn update(conn: &rusqlite::Connection, id: &str, updates: &serde_json::Value
             conn.execute("UPDATE provider_connections SET provider_specific_data = ?1, updated_at = ?2 WHERE id = ?3", params![data_str, now, id])?;
         }
     }
+    // 更新 chatPath（写入 provider_specific_data JSON）：自定义提供方可用它覆盖默认
+    // /v1/chat/completions 路径（如 z.ai Coding Plan 实际路径为 /chat/completions，无 /v1 前缀）。
+    if let Some(chat_path) = updates.get("chatPath").and_then(|v| v.as_str()) {
+        let existing = get_by_id(conn, id, enc_key)?;
+        if let Some(mut p) = existing {
+            let mut data = p.provider_specific_data.as_object_mut().cloned().unwrap_or_default();
+            data.insert("chatPath".to_string(), serde_json::Value::String(chat_path.to_string()));
+            let data_str = serde_json::to_string(&data)?;
+            conn.execute("UPDATE provider_connections SET provider_specific_data = ?1, updated_at = ?2 WHERE id = ?3", params![data_str, now, id])?;
+        }
+    }
     // displayName / apiProtocol：列与 JSON 双写。列给列表展示，JSON 给代理层读取。
     if let Some(dn) = updates.get("displayName").and_then(|v| v.as_str()) {
         conn.execute("UPDATE provider_connections SET display_name = ?1, updated_at = ?2 WHERE id = ?3", params![dn, now, id])?;

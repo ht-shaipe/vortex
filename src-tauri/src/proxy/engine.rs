@@ -158,8 +158,16 @@ impl ProxyEngine {
         // 优先通过注册表精确匹配
         if let Some((provider_id, def, model)) = registry.resolve_model_provider(&request.model) {
             let connections = db_providers::list_by_provider(conn, &provider_id, enc_key)?;
-            // 取第一个活跃连接
-            let connection = connections.into_iter().next();
+            // 优先选择 models 列表包含该模型的连接，回退到第一个活跃连接
+            let connection = connections
+                .iter()
+                .find(|c| {
+                    c.models
+                        .as_ref()
+                        .is_some_and(|models| models.iter().any(|m| m.id == model))
+                })
+                .or_else(|| connections.first())
+                .cloned();
             return Ok((def.clone(), connection, model));
         }
 

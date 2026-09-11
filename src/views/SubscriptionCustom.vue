@@ -43,6 +43,13 @@
           <el-input v-model="form.apiKey" type="password" show-password placeholder="输入 API 密钥" />
         </div>
 
+        <!-- 接口路径：覆盖默认 /v1/chat/completions，如 z.ai Coding Plan 需填 /chat/completions -->
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">接口路径</label>
+          <el-input v-model="form.chatPath" placeholder="/v1/chat/completions" />
+          <div class="field-hint text-11.5px text-ink-4">补全接口路径后缀，默认 <span class="mono">/v1/chat/completions</span>。若上游无 <span class="mono">/v1</span> 前缀（如 Z.AI Coding Plan 为 <span class="mono">/chat/completions</span>），请改填对应路径。</div>
+        </div>
+
         <!-- 模型目录：可拉取可用模型并多选 -->
         <div class="field flex flex-col gap-6px">
           <div class="row-between flex items-center justify-between">
@@ -141,6 +148,7 @@ const form = reactive({
   baseUrl: '',
   apiProtocol: 'openai-completions',
   apiKey: '',
+  chatPath: '/v1/chat/completions',
 })
 
 // Provider ID 校验：小写字母开头，仅含小写字母、数字、短横线，长度 3-30。
@@ -225,6 +233,7 @@ async function submit() {
       models,
       displayName: form.displayName || undefined,
       apiProtocol: form.apiProtocol,
+      chatPath: form.chatPath || undefined,
       customProviderId: form.customProviderId,
     })
     router.push('/subscriptions')

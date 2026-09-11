@@ -159,6 +159,14 @@
               </div>
               <el-input v-model="form.baseUrl" placeholder="https://api.example.com/v1" />
             </div>
+            <!-- 接口路径 -->
+            <div class="setting-row col">
+              <div>
+                <div class="setting-label">接口路径</div>
+                <div class="setting-desc">补全接口路径后缀，默认 <span class="mono">/v1/chat/completions</span>。若上游无 <span class="mono">/v1</span> 前缀（如 Z.AI Coding Plan 为 <span class="mono">/chat/completions</span>），请改填对应路径</div>
+              </div>
+              <el-input v-model="form.chatPath" placeholder="/v1/chat/completions" />
+            </div>
           </div>
         </div>
 
@@ -436,6 +444,7 @@ const form = reactive({
   apiKey: '',
   apiProtocol: 'openai-completions',
   baseUrl: '',
+  chatPath: '/v1/chat/completions',
   email: '',
   projectId: '',
   groupName: '',
@@ -541,6 +550,7 @@ async function load() {
     apiKey: '',
     apiProtocol: data.apiProtocol ?? 'openai-completions',
     baseUrl: data.baseUrl ?? '',
+    chatPath: data.chatPath ?? '/v1/chat/completions',
     email: data.email ?? '',
     projectId: data.projectId ?? '',
     groupName: data.groupName ?? '',
@@ -663,6 +673,7 @@ async function save() {
     if (isCustom.value) {
       updates.apiProtocol = form.apiProtocol
       updates.baseUrl = form.baseUrl.trim() || null
+      updates.chatPath = form.chatPath.trim() || null
     }
     // 仅当填写了新密钥时才更新
     if (form.apiKey) updates.apiKey = form.apiKey

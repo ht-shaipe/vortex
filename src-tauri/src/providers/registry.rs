@@ -196,6 +196,16 @@ impl ProviderRegistry {
                 models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
             ProviderDef {
+                id: "zai".into(), alias: "zi".into(), name: "Z.AI (GLM)".into(),
+                icon: "zai".into(), color: "#5B8FF9".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: false, free_note: None,
+                auth_hint: Some("API key from z.ai (Coding Plan · API Keys page)".into()),
+                base_url: "https://api.z.ai/api/coding/paas/v4".into(),
+                chat_path: "/chat/completions".into(),
+                models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            },
+            ProviderDef {
                 id: "custom-openai".into(), alias: "cx".into(), name: "Custom OpenAI-Compatible".into(),
                 icon: "api".into(), color: "#607D8B".into(),
                 service_kinds: vec!["llm".into(), "embedding".into()],

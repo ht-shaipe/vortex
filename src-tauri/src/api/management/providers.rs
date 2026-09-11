@@ -44,6 +44,7 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
     let obj = c.provider_specific_data.as_object().unwrap_or(empty_obj.as_object().unwrap());
     let base_url = obj.get("baseUrl").and_then(|v| v.as_str()).map(|s| s.to_string());
     let api_protocol = obj.get("apiProtocol").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let chat_path = obj.get("chatPath").and_then(|v| v.as_str()).map(|s| s.to_string());
     let custom_id = obj.get("customId").and_then(|v| v.as_str()).map(|s| s.to_string());
     let models_val = obj.get("models").cloned().unwrap_or(serde_json::Value::Null);
 
@@ -78,6 +79,7 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
         "models": models_val,
         "baseUrl": base_url,
         "apiProtocol": api_protocol,
+        "chatPath": chat_path,
         "customProviderId": custom_id,
         "providerSpecificData": c.provider_specific_data,
         "createdAt": c.created_at,

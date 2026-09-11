@@ -56,6 +56,8 @@ export interface ProviderConnection {
   displayName?: string // 展示名称
   baseUrl?: string // 自定义基础地址
   apiProtocol?: string // API 协议
+  /** 接口路径后缀覆盖（自定义提供方）。覆盖默认 /v1/chat/completions，如 z.ai 用 /chat/completions */
+  chatPath?: string
   customProviderId?: string // 自定义提供商 ID
   providerSpecificData?: Record<string, unknown> // 提供商专属扩展数据
   createdAt: string // 创建时间
@@ -103,6 +105,8 @@ export async function createProvider(params: {
   healthCheckInterval?: number
   displayName?: string
   apiProtocol?: string
+  /** 接口路径后缀覆盖（自定义提供方），如 /chat/completions */
+  chatPath?: string
   customProviderId?: string
 }) {
   const { data } = await api.post('/providers', params)

@@ -156,7 +156,16 @@ impl ProviderExecutor for OpenAIExecutor {
             .and_then(|v| v.as_str())
             .unwrap_or(&def.base_url);
 
-        let url = build_upstream_url(base_url, &def.chat_path);
+        // 连接级接口路径覆盖：允许自定义提供方（如 z.ai Coding Plan）使用非 /v1 路径。
+        // 未设置时回退到提供商定义里的默认 chat_path。
+        let chat_path = connection
+            .provider_specific_data
+            .get("chatPath")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&def.chat_path);
+
+        let url = build_upstream_url(base_url, chat_path);
 
         log::info!("上游请求: POST {} (model: {}, stream: {})", url, model, request.stream);
 

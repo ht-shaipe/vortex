@@ -33,6 +33,7 @@ const EXACT_ID: Record<string, string> = {
   qwen: 'qwen',
   minimax: 'minimax',
   nvidia: 'nvidia',
+  zai: 'zp',
 }
 
 /**
