@@ -178,6 +178,10 @@ pub fn start_api_server(
                             .route("/free-tokens", web::get().to(api::management::free_tokens::list_sites))
                             .route("/free-tokens", web::post().to(api::management::free_tokens::create_site))
                             .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
+                            .route("/model-aliases", web::get().to(api::management::model_aliases::list_aliases))
+                            .route("/model-aliases", web::post().to(api::management::model_aliases::create_alias))
+                            .route("/model-aliases/{id}", web::patch().to(api::management::model_aliases::update_alias))
+                            .route("/model-aliases/{id}", web::delete().to(api::management::model_aliases::delete_alias))
                             .route("/health", web::get().to(api::management::health::health_check))
                     )
             })
@@ -248,7 +252,6 @@ pub fn run() {
             tauri_cmds::status_cmds::get_system_status,
             tauri_cmds::chat_cmds::chat_completions_stream,
             tauri_cmds::chat_cmds::cancel_chat_stream,
-            tauri_cmds::debug_cmds::debug_log,
         ])
         // 应用初始化回调：创建系统托盘
         .setup(|app| {

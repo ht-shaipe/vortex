@@ -11,7 +11,7 @@
 //! - 响应恒为瞬时返回，前端模型选择框不再出现长时间空白/不可用。
 
 use actix_web::{web, HttpResponse};
-use crate::db::{core as db_core, providers as db_providers};
+use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers};
 use crate::AppState;
 use serde_json::json;
 use std::collections::HashSet;
@@ -67,6 +67,19 @@ pub async fn list_models(
                     "permission": [],
                 }));
             }
+        }
+    }
+
+    // 追加虚拟模型别名（对外输出的虚拟模型名）
+    if let Ok(aliases) = db_aliases::list(&conn) {
+        for alias in aliases.iter().filter(|a| a.is_active) {
+            models.push(json!({
+                "id": alias.alias,
+                "object": "model",
+                "created": created,
+                "owned_by": "vortex-alias",
+                "permission": [],
+            }));
         }
     }
 

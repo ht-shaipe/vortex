@@ -58,6 +58,7 @@ import {
   ChatDotRound,
   Histogram,
   Connection,
+  CopyDocument,
 
   Setting,
   InfoFilled,
@@ -87,6 +88,7 @@ const mainItems = computed<NavItem[]>(() => [
   { to: '/guide', label: '接入指南', icon: Reading },
   { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: 'ok' },
   { to: '/subscriptions', label: '订阅管理', icon: Key, badge: providerCount.value > 0 ? String(providerCount.value) : null },
+  { to: '/model-aliases', label: '模型映射', icon: CopyDocument },
   { to: '/statistics', label: '数据统计', icon: Histogram },
   { to: '/sync', label: '配置同步', icon: Connection },
   { to: '/request-logs', label: '请求日志', icon: Document },

@@ -378,3 +378,50 @@ pub struct CreateFreeTokenSiteRequest {
     #[serde(default)]
     pub submitter: Option<String>,
 }
+
+/// 虚拟模型映射目标：指向一个已接入的真实模型。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelAliasTarget {
+    /// 提供商标识（如 `openai`、`custom-openai`）
+    pub provider: String,
+    /// 实际模型名（发送给上游的模型标识）
+    pub model: String,
+    /// 连接 ID（可选；指定具体连接，不填则自动选择）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
+}
+
+/// 模型别名（虚拟模型映射）实体，对应 `model_aliases` 表。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelAlias {
+    /// 唯一标识（UUID）
+    pub id: String,
+    /// 虚拟模型名（对外输出的名称）
+    pub alias: String,
+    /// 映射目标列表（按数组顺序做故障转移）
+    pub targets: Vec<ModelAliasTarget>,
+    /// 是否启用
+    #[serde(default)]
+    pub is_active: bool,
+    /// 创建时间（RFC3339）
+    pub created_at: String,
+    /// 更新时间（RFC3339）
+    pub updated_at: String,
+}
+
+/// 创建模型别名的请求体。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateModelAlias {
+    pub alias: String,
+    pub targets: Vec<ModelAliasTarget>,
+    #[serde(default)]
+    pub is_active: bool,
+}
+
+/// 更新模型别名的请求体。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateModelAlias {
+    pub alias: Option<String>,
+    pub targets: Option<Vec<ModelAliasTarget>>,
+    pub is_active: Option<bool>,
+}

@@ -29,6 +29,8 @@ const router = createRouter({
         { path: 'live-routing', name: 'live-routing', component: () => import('@/views/LiveRouting.vue') },
         // 订阅管理列表页
         { path: 'subscriptions', name: 'subscriptions', component: () => import('@/views/Subscriptions.vue') },
+        // 模型映射页
+        { path: 'model-aliases', name: 'model-aliases', component: () => import('@/views/ModelAliases.vue') },
         // 新建订阅页
         { path: 'subscriptions/new', name: 'subscriptions-new', component: () => import('@/views/SubscriptionNew.vue') },
         // 自定义订阅页

@@ -14,6 +14,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("003", include_str!("migrations/003_free_token_web_only.sql")),
     ("004", include_str!("migrations/004_provider_latency.sql")),
     ("005", include_str!("migrations/005_usage_index.sql")),
+    ("006", include_str!("migrations/006_model_aliases.sql")),
 ];
 
 /// 执行数据库迁移。

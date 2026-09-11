@@ -20,3 +20,5 @@ pub mod settings;
 pub mod health;
 /// 免费 Token 站点管理端点
 pub mod free_tokens;
+/// 模型别名（虚拟模型映射）管理端点
+pub mod model_aliases;

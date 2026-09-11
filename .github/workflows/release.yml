@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (如 0.2.0)'
+        description: '版本号，纯 semver，不要加 v 前缀（如 0.2.0；填 v0.2.0 也会自动清洗）'
         required: true
 
 jobs:
@@ -66,13 +66,21 @@ jobs:
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
+          # 规范化：去掉可能的 v 前缀与首尾空白，保证是合法 semver
+          VERSION=$(printf '%s' "$VERSION" | sed 's/^v//' | tr -d '[:space:]')
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::Determined version '$VERSION' is not a valid semver (expect e.g. 0.1.1, do NOT include a leading v)"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Sync tauri version
         shell: bash
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p));j.version='${{ steps.ver.outputs.version }}';fs.writeFileSync(p,JSON.stringify(j,null,2));"
-          echo "tauri.conf.json version synced to ${{ steps.ver.outputs.version }}"
+          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+          echo "tauri.conf.json version synced to $APP_VERSION"
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v0

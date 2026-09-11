@@ -19,5 +19,7 @@ pub mod usage;
 pub mod settings;
 /// 免费 Token 站点管理
 pub mod free_tokens;
+/// 模型别名（虚拟模型映射）CRUD
+pub mod model_aliases;
 /// AES-256-GCM 加密/解密、密钥派生与密钥生成
 pub mod encryption;

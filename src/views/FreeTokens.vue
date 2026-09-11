@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- 页面头部：标题、视图切换与提交推荐按钮 -->
-    <PageHeader title="免费 Token" sub="收录可申请免费额度的 AI 平台，标注是否提供 API 与申请门槛">
+    <PageHeader title="薅Token" sub="收录可申请免费额度的 AI 平台，标注是否提供 API 与申请门槛">
       <template #actions>
         <div class="radio-group">
           <button class="radio-option" :class="{ active: view === 'card' }" @click="view = 'card'">卡片</button>
@@ -187,8 +187,8 @@
     <el-dialog
       v-model="dialogVisible"
       title="提交免费 Token 站点推荐"
-      width="600px"
-      top="6vh"
+      width="680px"
+      top="8vh"
       append-to-body
       class="ft-dialog"
     >
@@ -223,7 +223,6 @@
               <el-select v-model="form.region" style="width: 100%">
                 <el-option label="国内平台" value="cn" />
                 <el-option label="海外平台" value="global" />
-                <el-option label="本地部署" value="local" />
               </el-select>
             </div>
             <div class="form-row flex flex-col gap-6px">
@@ -581,6 +580,11 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 </script>
 
 <style scoped>
+/* ---------- 页面提示 ---------- */
+.notice {
+  line-height: 1.65;
+}
+
 /* ---------- 工具条 ---------- */
 .tb-count b { color: var(--ink); font-family: var(--font-mono); }
 
@@ -592,15 +596,19 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 .sc-quota {
   word-break: break-word;
   overflow-wrap: break-word;
+  line-height: 1.65;
+  min-height: 1.65em;
 }
 .sc-note {
   display: -webkit-box;
   -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  -webkit-box-orient: vertical !important;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: break-word;
   overflow-wrap: break-word;
+  line-height: 1.65;
+  max-height: calc(1.65em * 3);
   padding-top: 1px;
 }
 

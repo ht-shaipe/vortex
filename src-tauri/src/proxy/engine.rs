@@ -4,7 +4,7 @@
 //! → 用量记录。流式响应以归一化 SSE 流返回，由入站协议层决定包装方式。
 
 use crate::db::models::{ProxyRequest, UsageEntry};
-use crate::db::{core as db_core, providers as db_providers, usage as db_usage};
+use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, usage as db_usage};
 use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
@@ -89,6 +89,114 @@ impl ProxyEngine {
             } else {
                 return Err(AppError::Unauthorized("API key required".into()));
             }
+        }
+
+        // 虚拟模型别名：检查请求模型是否匹配某个别名，若匹配则按 targets 顺序故障转移
+        if let Some(alias) = db_aliases::get_by_alias(&conn, &request.model)? {
+            log::info!("模型别名 '{}' 命中，共 {} 个目标", alias.alias, alias.targets.len());
+            let mut last_err: Option<AppError> = None;
+            for target in &alias.targets {
+                let Some(def) = state.provider_registry.get(&target.provider) else {
+                    log::warn!("别名 '{}' 目标 provider '{}' 未注册，跳过", alias.alias, target.provider);
+                    continue;
+                };
+                // 查找连接：优先用 connection_id，否则取该 provider 的第一个活跃连接
+                let connection = if let Some(ref cid) = target.connection_id {
+                    db_providers::list_by_provider(&conn, &target.provider, &state.encryption_key)?
+                        .into_iter()
+                        .find(|c| c.id == *cid)
+                } else {
+                    db_providers::list_by_provider(&conn, &target.provider, &state.encryption_key)?
+                        .into_iter()
+                        .next()
+                };
+                let Some(conn_obj) = connection else {
+                    log::warn!("别名 '{}' 目标 provider '{}' 无活跃连接，跳过", alias.alias, target.provider);
+                    continue;
+                };
+                log::info!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
+                let result = self
+                    .handle_single_with_retry(state, &conn, &request, def, &conn_obj, &target.model, start)
+                    .await;
+                match result {
+                    Ok(output) => {
+                        log::info!("别名 '{}' 目标 {}/{} 成功", alias.alias, target.provider, target.model);
+                        return Ok(output);
+                    }
+                    Err(e) => {
+                        let err_str = format!("{}", e);
+                        // 熔断器打开时：重置熔断器并重试一次（用户主动请求说明希望尝试该连接）
+                        if err_str.contains("Circuit breaker open") {
+                            let breaker_name = format!("{}:{}", def.id, conn_obj.id);
+                            log::info!("别名 '{}' 目标 {}/{} 熔断器打开，重置后重试", alias.alias, target.provider, target.model);
+                            state.resilience_manager.reset(&breaker_name);
+                            let retry_result = self
+                                .handle_single_with_retry(state, &conn, &request, def, &conn_obj, &target.model, start)
+                                .await;
+                            match retry_result {
+                                Ok(output) => {
+                                    log::info!("别名 '{}' 目标 {}/{} 重置后成功", alias.alias, target.provider, target.model);
+                                    return Ok(output);
+                                }
+                                Err(e2) => {
+                                    log::warn!("别名 '{}' 目标 {}/{} 重置后仍失败: {}，尝试下一个", alias.alias, target.provider, target.model, e2);
+                                    let latency = start.elapsed().as_millis() as i64;
+                                    let entry = UsageEntry {
+                                        id: 0,
+                                        provider: Some(def.id.clone()),
+                                        model: Some(target.model.clone()),
+                                        connection_id: Some(conn_obj.id.clone()),
+                                        api_key_id: request.api_key.clone(),
+                                        api_key_name: None,
+                                        tokens_input: 0,
+                                        tokens_output: 0,
+                                        tokens_cache_read: 0,
+                                        tokens_cache_creation: 0,
+                                        tokens_reasoning: 0,
+                                        service_tier: "standard".to_string(),
+                                        status: "error".to_string(),
+                                        success: false,
+                                        error_code: Some(format!("{}", e2)),
+                                        latency_ms: Some(latency),
+                                        ttft_ms: None,
+                                        cost: 0.0,
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                    };
+                                    let _ = db_usage::record(&conn, &entry);
+                                    last_err = Some(e2);
+                                    continue;
+                                }
+                            }
+                        }
+                        log::warn!("别名 '{}' 目标 {}/{} 失败: {}，尝试下一个", alias.alias, target.provider, target.model, e);
+                        let latency = start.elapsed().as_millis() as i64;
+                        let entry = UsageEntry {
+                            id: 0,
+                            provider: Some(def.id.clone()),
+                            model: Some(target.model.clone()),
+                            connection_id: Some(conn_obj.id.clone()),
+                            api_key_id: request.api_key.clone(),
+                            api_key_name: None,
+                            tokens_input: 0,
+                            tokens_output: 0,
+                            tokens_cache_read: 0,
+                            tokens_cache_creation: 0,
+                            tokens_reasoning: 0,
+                            service_tier: "standard".to_string(),
+                            status: "error".to_string(),
+                            success: false,
+                            error_code: Some(err_str),
+                            latency_ms: Some(latency),
+                            ttft_ms: None,
+                            cost: 0.0,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        };
+                        let _ = db_usage::record(&conn, &entry);
+                        last_err = Some(e);
+                    }
+                }
+            }
+            return Err(last_err.unwrap_or_else(|| AppError::Routing(format!("All targets failed for alias '{}'", alias.alias))));
         }
 
         // 路由解析：找到提供商定义、活跃连接与实际模型名

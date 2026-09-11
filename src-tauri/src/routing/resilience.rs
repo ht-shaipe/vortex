@@ -184,4 +184,17 @@ impl ResilienceManager {
         new_breaker.record_failure();
         self.breakers.lock().push(new_breaker);
     }
+
+    /// 重置指定名称连接的熔断器为关闭态。
+    ///
+    /// 用于虚拟模型映射故障转移：当目标连接的熔断器处于打开态时，
+    /// 用户主动发起请求说明希望尝试该连接，重置后给予一次机会。
+    pub fn reset(&self, name: &str) {
+        let breakers = self.breakers.lock();
+        if let Some(b) = breakers.iter().find(|b| b.name == name) {
+            *b.state.lock() = BreakerState::Closed;
+            *b.failure_count.lock() = 0;
+            *b.last_failure.lock() = None;
+        }
+    }
 }
