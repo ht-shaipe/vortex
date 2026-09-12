@@ -147,8 +147,8 @@ export interface RequestLogQuery {
 
 /* ============ 明细拉取与缓存 ============ */
 
-/** 一次拉取上限：明细量级为千，足够覆盖近一年统计。 */
-const FETCH_LIMIT = 20000
+/** 一次拉取上限：明细量级为千，足够覆盖近期统计。 */
+const FETCH_LIMIT = 5000
 /** 缓存 TTL，避免同一屏多个面板重复请求。 */
 const CACHE_TTL_MS = 3000
 
@@ -160,6 +160,7 @@ export function invalidateStatsCache(): void {
   entriesCache = null
   inflight = null
   connCache = null
+  normCache = null
 }
 
 /**
@@ -173,13 +174,13 @@ async function fetchEntries(): Promise<RawUsageEntry[]> {
   if (inflight) return inflight
   inflight = (async () => {
     try {
-      const { data } = await api.get('/usage', { params: { limit: FETCH_LIMIT } })
+      const { data } = await api.get('/usage', { params: { limit: FETCH_LIMIT }, timeout: 15000 })
       const list: unknown = Array.isArray(data) ? data : (data?.usage ?? data?.records ?? [])
       const entries = Array.isArray(list) ? (list as RawUsageEntry[]) : []
       entriesCache = { at: Date.now(), data: entries }
       return entries
     } catch {
-      // 后端未启动时静默降级为空集，页面走空态而不是崩溃
+      // 后端未启动或超时时静默降级为空集，页面走空态而不是崩溃
       entriesCache = { at: Date.now(), data: [] }
       return []
     } finally {
@@ -231,11 +232,15 @@ interface NormEntry {
 
 /**
  * 把原始明细行归一化为带毫秒时间与端点名的中间结构。
+ * 结果按 entries 引做缓存，避免多个聚合函数重复 map 同一批数据。
  * @returns 归一化后的明细数组
  */
+let normCache: { ref: RawUsageEntry[]; data: NormEntry[] } | null = null
+
 async function normalized(): Promise<NormEntry[]> {
   const [entries, names] = await Promise.all([fetchEntries(), connNames()])
-  return entries.map((raw) => {
+  if (normCache && normCache.ref === entries) return normCache.data
+  const data = entries.map((raw) => {
     const ts = parseTs(raw.timestamp)
     const endpointName =
       (raw.connection_id ? names.get(raw.connection_id) : undefined) ??
@@ -244,6 +249,8 @@ async function normalized(): Promise<NormEntry[]> {
       '未知端点'
     return { raw, ts, date: ymd(ts), endpointName, isError: !raw.success }
   })
+  normCache = { ref: entries, data }
+  return data
 }
 
 /* ============ 聚合工具 ============ */

@@ -183,6 +183,7 @@ curl http://localhost:10168/v1/chat/completions \
 | GET/POST | `/api/providers` | 提供商连接列表/创建 |
 | GET/PATCH/DELETE | `/api/providers/{id}` | 单个提供商连接操作 |
 | POST | `/api/providers/{id}/test` | 测试提供商连接 |
+| GET | `/api/providers/{id}/apikey` | 获取解密后的真实 API 密钥（用于前端复制） |
 | POST | `/api/providers/preview-models` | 预览远程可用模型列表（无需先保存连接） |
 | GET/POST | `/api/keys` | API 密钥列表/创建 |
 | GET/DELETE | `/api/keys/{id}` | 单个 API 密钥操作 |

@@ -3,8 +3,8 @@
     <!-- 页面头部：标题与刷新按钮 -->
     <PageHeader title="请求日志" sub="网关代理的最近请求记录">
       <template #actions>
-        <button type="button" class="btn" @click="load">
-          <el-icon :size="14"><Refresh /></el-icon>刷新
+        <button type="button" class="btn" :disabled="loading" @click="load">
+          <el-icon :size="14" :class="{ spin: loading }"><Refresh /></el-icon>刷新
         </button>
       </template>
     </PageHeader>
@@ -31,7 +31,6 @@
             <th class="num" style="width: 90px">Tokens 输入</th>
             <th class="num" style="width: 90px">Tokens 输出</th>
             <th class="num" style="width: 80px">耗时</th>
-            <th class="num" style="width: 90px">成本</th>
           </tr>
         </thead>
         <tbody>
@@ -42,12 +41,18 @@
             <td class="mono">{{ r.model || '—' }}</td>
             <td class="num">{{ fmtNum(r.tokensInput) }}</td>
             <td class="num">{{ fmtNum(r.tokensOutput) }}</td>
-            <td class="num">{{ r.latencyMs != null ? `${r.latencyMs}ms` : '—' }}</td>
-            <td class="num">{{ r.cost != null ? `$${Number(r.cost).toFixed(4)}` : '—' }}</td>
+            <td class="num">{{ r.latencyMs != null ? fmtLatency(r.latencyMs) : '—' }}</td>
           </tr>
         </tbody>
       </table>
     </div>
+    <Pagination
+      v-if="!loading && records.length > 0 && total > pageSize"
+      v-model:page="page"
+      :page-size="pageSize"
+      :total="total"
+      class="mt-16px"
+    />
   </div>
 </template>
 
@@ -55,14 +60,16 @@
 /**
  * 请求日志页面。
  * 职责：展示网关代理的最近请求记录，包括时间、状态、提供商、模型、
- * Token 用量、耗时与成本，支持手动刷新。
+ * Token 用量与耗时，支持分页与手动刷新。
  */
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Loading, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { getRecentUsage } from '@/api/usage'
+import Pagination from '@/components/stats/Pagination.vue'
+import { getUsagePaged } from '@/api/usage'
 
 /** 单条日志记录的结构 */
 interface Row {
@@ -73,13 +80,13 @@ interface Row {
   tokensInput?: number
   tokensOutput?: number
   latencyMs?: number
-  cost?: number
 }
 
-// 日志记录列表
 const records = ref<Row[]>([])
-// 是否正在加载
 const loading = ref(true)
+const page = ref(1)
+const pageSize = 20
+const total = ref(0)
 
 /**
  * 将状态字段映射为中文标签。
@@ -114,23 +121,27 @@ function fmtTime(iso?: string): string {
  * @param n 待格式化的数值
  */
 function fmtNum(n?: number): string {
-  return n == null ? '—' : String(n)
+  return n == null ? '—' : n.toLocaleString()
 }
 
 /**
- * 加载最近 100 条请求日志，并将后端字段映射为表格行结构。
+ * 格式化耗时：小于 1000ms 用毫秒，否则折算为秒并保留一位小数。
+ * @param ms 毫秒
+ */
+function fmtLatency(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+/**
+ * 加载指定页的请求日志。
  */
 async function load() {
   loading.value = true
   try {
-    const data: unknown = await getRecentUsage(100)
-    // 兼容数组、{ usage: [] } 或 { records: [] } 三种返回结构
-    const list: unknown[] = Array.isArray(data)
-      ? (data as unknown[])
-      : ((data as { usage?: unknown[]; records?: unknown[] }).usage
-          ?? (data as { records?: unknown[] }).records
-          ?? [])
-    // 字段名映射：将 snake_case 与 camel_case 统一为 Row 结构
+    const data = await getUsagePaged(page.value, pageSize)
+    const list: unknown[] = data.usage ?? []
+    total.value = data.total ?? 0
     records.value = list.map((item: Record<string, unknown>) => ({
       time: (item.created_at ?? item.timestamp ?? item.time) as string | undefined,
       status: item.status as string | undefined,
@@ -139,12 +150,14 @@ async function load() {
       tokensInput: (item.tokens_input ?? item.input_tokens) as number | undefined,
       tokensOutput: (item.tokens_output ?? item.output_tokens) as number | undefined,
       latencyMs: item.latency_ms as number | undefined,
-      cost: item.cost as number | undefined,
     }))
+  } catch (e) {
+    ElMessage.error(`加载失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     loading.value = false
   }
 }
 
+watch(page, () => void load())
 onMounted(load)
 </script>

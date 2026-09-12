@@ -318,7 +318,7 @@ async function testOne(conn: ProviderConnection) {
     const r = await testProvider(conn.id)
     applyResult(conn, r)
     if (r.status === 'ok') {
-      ElMessage.success(`${conn.name}：可用${r.latencyMs ? ` · ${r.latencyMs}ms` : ''}`)
+      ElMessage.success(`${conn.name}：可用${r.latencyMs ? ` · ${fmtLatency(r.latencyMs)}` : ''}`)
     } else {
       ElMessage.error(`${conn.name}：${r.error || '连接失败'}`)
     }

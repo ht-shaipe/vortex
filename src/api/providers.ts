@@ -155,6 +155,16 @@ export async function testProvider(id: string) {
 }
 
 /**
+ * 获取指定连接的解密后真实 API 密钥（用于复制到剪贴板）。
+ * @param id - 连接唯一标识
+ * @returns 包含真实密钥的对象
+ */
+export async function getApiKey(id: string) {
+  const { data } = await api.get(`/providers/${id}/apikey`)
+  return data as { apiKey: string }
+}
+
+/**
  * 预览指定提供商在给定密钥下可用的模型列表。
  * @param params - 预览参数，包含提供商类型、密钥、基础地址等
  * @returns 包含模型列表与可选警告信息的对象

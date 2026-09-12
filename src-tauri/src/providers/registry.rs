@@ -210,8 +210,8 @@ impl ProviderRegistry {
                 icon: "api".into(), color: "#607D8B".into(),
                 service_kinds: vec!["llm".into(), "embedding".into()],
                 no_auth: false, has_free: false, free_note: None, auth_hint: Some("Set base URL and API key".into()),
-                base_url: "https://your-api-endpoint.com".into(), chat_path: "/v1/chat/completions".into(),
-                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+                base_url: "https://your-api-endpoint.com".into(), chat_path: "/chat/completions".into(),
+                models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
         ];
 

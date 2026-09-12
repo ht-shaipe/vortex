@@ -231,6 +231,7 @@ pub struct ProviderDef {
 | `GET/POST /api/providers` | 提供商连接列表/创建 |
 | `GET/PATCH/DELETE /api/providers/{id}` | 单个连接 CRUD |
 | `POST /api/providers/{id}/test` | 测试连接可用性 |
+| `GET /api/providers/{id}/apikey` | 获取解密后的真实 API 密钥（前端复制用，绕过脱敏） |
 | `POST /api/providers/preview-models` | 预览远程可用模型列表（无需先保存连接） |
 | `GET/POST /api/keys` | API 密钥列表/创建 |
 | `GET/DELETE /api/keys/{id}` | 单个密钥操作 |

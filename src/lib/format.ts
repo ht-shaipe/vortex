@@ -46,8 +46,8 @@ export function formatTokenK(n: number): string {
  * @returns 秒级展示文案
  */
 export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms)) return '0.00s'
-  return `${(ms / 1000).toFixed(2)}s`
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
 /**

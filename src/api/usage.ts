@@ -37,3 +37,14 @@ export async function getRecentUsage(limit = 100) {
   const { data } = await api.get('/usage', { params: { limit } })
   return data
 }
+
+/**
+ * 分页获取用量明细记录。
+ * @param page - 页码（从 1 开始）
+ * @param pageSize - 每页条数
+ * @returns 包含 usage 列表和 total 总数的对象
+ */
+export async function getUsagePaged(page: number, pageSize: number) {
+  const { data } = await api.get('/usage', { params: { page, pageSize } })
+  return data as { usage: unknown[]; total: number }
+}

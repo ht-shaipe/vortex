@@ -55,6 +55,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import DateRangePicker from './DateRangePicker.vue'
 import HistoryDialog from './HistoryDialog.vue'
 import StatCard from './StatCard.vue'
@@ -189,6 +190,8 @@ async function loadBase(): Promise<void> {
     ])
     overview.value = ov
     historyRows.value = hist.items
+  } catch (e) {
+    ElMessage.error(`加载失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     loading.value = false
   }

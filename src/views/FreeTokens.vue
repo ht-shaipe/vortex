@@ -192,7 +192,7 @@
       append-to-body
       class="ft-dialog"
     >
-      <el-scrollbar class="ft-scroll" wrap-class="ft-scroll-wrap">
+      <div class="ft-body">
         <div class="form flex flex-col gap-11px">
           <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">站点信息</div>
 
@@ -294,7 +294,7 @@
             />
           </div>
         </div>
-      </el-scrollbar>
+      </div>
 
       <!-- 弹窗底部操作 -->
       <template #footer>
@@ -657,15 +657,13 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
   margin-top: 2px;
 }
 
-/* 弹窗内容使用 Element Plus 滚动条替代原生滚动条 */
+/* 弹窗内容由 body 原生滚动，滚动条用 webkit 伪元素做细 */
 .ft-dialog .el-dialog__body {
   padding: 0;
-  overflow: hidden;
-}
-.ft-scroll {
+  overflow-y: auto;
   max-height: 62vh;
 }
-.ft-scroll .form {
+.ft-body .form {
   padding: 14px 20px 16px;
 }
 </style>
@@ -686,10 +684,18 @@ watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 .ft-dialog .el-dialog__headerbtn { top: 13px; right: 12px; }
 /* 内容超长时在弹窗内部滚动，保证底部按钮始终可见 */
 .ft-dialog .el-dialog__body {
-  padding: 14px 20px 16px;
-  max-height: 62vh;
+  padding: 0;
   overflow-y: auto;
+  max-height: 62vh;
 }
+/* 细滚动条：适配暗色主题 */
+.ft-dialog .el-dialog__body::-webkit-scrollbar { width: 6px; }
+.ft-dialog .el-dialog__body::-webkit-scrollbar-thumb {
+  background: var(--ink-4);
+  border-radius: 3px;
+}
+.ft-dialog .el-dialog__body::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+.ft-dialog .el-dialog__body::-webkit-scrollbar-track { background: transparent; }
 .ft-dialog .el-dialog__footer {
   padding: 11px 20px;
   border-top: 1px solid var(--line);

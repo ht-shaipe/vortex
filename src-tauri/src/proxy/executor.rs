@@ -114,18 +114,36 @@ async fn upstream_error(response: reqwest::Response) -> ExecutorOutput {
 
 /// 拼接上游 URL 并做版本段归一化。
 ///
-/// 连接级 baseUrl 通常已含版本前缀（如 `https://host/v1`），而提供商定义的
-/// `chat_path` 也以 `/v1` 开头，直接相加会得到 `/v1/v1/chat/completions`（上游 404）。
-/// 此处：当 baseUrl 以 `/v1` 结尾且 path 以 `v1/` 开头时去掉重复段，其余情况原样拼接。
+/// 连接级 baseUrl 通常已含版本前缀（如 `https://host/v1`、`https://host/v4`），
+/// 而提供商定义的 `chat_path` 也以 `/v1` 开头，直接相加会得到 `/v4/v1/chat/completions`（上游 404）。
+/// 此处：当 baseUrl 以 `/vN` 结尾且 path 以 `vM/` 开头时去掉 path 中的版本段，其余情况原样拼接。
 fn build_upstream_url(base_url: &str, chat_path: &str) -> String {
     let base = base_url.trim_end_matches('/');
     let path = chat_path.strip_prefix('/').unwrap_or(chat_path);
-    let path = if base.ends_with("/v1") && path.starts_with("v1/") {
-        &path["v1/".len()..]
-    } else {
-        path
+    let path = {
+        let base_ver = base.rsplit_once('/').map(|(_, v)| v).unwrap_or("");
+        let is_base_ver = is_version_segment(base_ver);
+        if is_base_ver {
+            if let Some(slash) = path.find('/') {
+                let path_ver = &path[..slash];
+                if is_version_segment(path_ver) {
+                    &path[slash + 1..]
+                } else {
+                    path
+                }
+            } else {
+                path
+            }
+        } else {
+            path
+        }
     };
     format!("{}/{}", base, path)
+}
+
+/// 判断字符串是否为版本段（`v1`、`v2`、`v4` 等）
+fn is_version_segment(s: &str) -> bool {
+    s.starts_with('v') && s.len() > 1 && s[1..].chars().all(|c| c.is_ascii_digit())
 }
 
 /// OpenAI 格式执行器

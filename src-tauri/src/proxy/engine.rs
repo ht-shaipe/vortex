@@ -143,7 +143,7 @@ impl ProxyEngine {
                                     let latency = start.elapsed().as_millis() as i64;
                                     let entry = UsageEntry {
                                         id: 0,
-                                        provider: Some(def.id.clone()),
+                    provider: Some(conn_obj.name.clone()),
                                         model: Some(target.model.clone()),
                                         connection_id: Some(conn_obj.id.clone()),
                                         api_key_id: request.api_key.clone(),
@@ -172,7 +172,7 @@ impl ProxyEngine {
                         let latency = start.elapsed().as_millis() as i64;
                         let entry = UsageEntry {
                             id: 0,
-                            provider: Some(def.id.clone()),
+                            provider: Some(conn_obj.name.clone()),
                             model: Some(target.model.clone()),
                             connection_id: Some(conn_obj.id.clone()),
                             api_key_id: request.api_key.clone(),
@@ -216,7 +216,7 @@ impl ProxyEngine {
                 let latency = start.elapsed().as_millis() as i64;
                 let entry = UsageEntry {
                     id: 0,
-                    provider: Some(provider_def.id.clone()),
+                    provider: Some(conn_obj.name.clone()),
                     model: Some(model.clone()),
                     connection_id: Some(conn_obj.id.clone()),
                     api_key_id: request.api_key.clone(),
@@ -343,7 +343,7 @@ impl ProxyEngine {
 
             // 构造流式用量落库回调（流结束时由 sse.rs 调用）
             let cb_pool = state.db_pool.clone();
-            let cb_provider = def.id.clone();
+            let cb_provider = connection.name.clone();
             let cb_model = model.to_string();
             let cb_conn = connection.id.clone();
             let cb_api_key = request.api_key.clone();

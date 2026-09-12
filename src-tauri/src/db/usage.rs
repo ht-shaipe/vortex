@@ -196,3 +196,56 @@ pub fn list_recent(conn: &rusqlite::Connection, limit: i64) -> Result<Vec<UsageE
     }
     Ok(result)
 }
+
+/// 分页查询用量记录。
+///
+/// # 参数
+/// - `conn`：数据库连接
+/// - `page`：页码（从 1 开始）
+/// - `page_size`：每页条数
+///
+/// # 返回
+/// 指定页的用量记录列表
+pub fn list_paginated(conn: &rusqlite::Connection, page: i64, page_size: i64) -> Result<Vec<UsageEntry>> {
+    let offset = (page - 1).max(0) * page_size;
+    let mut stmt = conn.prepare(
+        "SELECT id, provider, model, connection_id, api_key_id, api_key_name, \
+         tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
+         tokens_reasoning, service_tier, status, success, error_code, \
+         latency_ms, ttft_ms, cost, timestamp \
+         FROM usage_history ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2"
+    )?;
+    let rows = stmt.query_map(params![page_size, offset], |row| {
+        Ok(UsageEntry {
+            id: row.get(0)?,
+            provider: row.get(1)?,
+            model: row.get(2)?,
+            connection_id: row.get(3)?,
+            api_key_id: row.get(4)?,
+            api_key_name: row.get(5)?,
+            tokens_input: row.get(6)?,
+            tokens_output: row.get(7)?,
+            tokens_cache_read: row.get(8)?,
+            tokens_cache_creation: row.get(9)?,
+            tokens_reasoning: row.get(10)?,
+            service_tier: row.get(11)?,
+            status: row.get(12)?,
+            success: row.get::<_, i32>(13)? != 0,
+            error_code: row.get(14)?,
+            latency_ms: row.get(15)?,
+            ttft_ms: row.get(16)?,
+            cost: row.get(17)?,
+            timestamp: row.get(18)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+/// 统计用量记录总数。
+pub fn count(conn: &rusqlite::Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM usage_history", [], |row| row.get(0))?)
+}

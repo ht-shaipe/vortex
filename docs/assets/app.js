@@ -114,7 +114,9 @@
     'statistics':   'vortex — 统计',
     'guide':        'vortex — 接入指南',
     'subscriptions': 'vortex — 订阅管理',
-    'chat':          'vortex — 对话'
+    'chat':          'vortex — 对话',
+    'request-logs':  'vortex — 请求日志',
+    'model-aliases': 'vortex — 模型映射'
   };
   var shotTabs = Array.prototype.slice.call(document.querySelectorAll('.shot-tab'));
   var shotImgs = Array.prototype.slice.call(document.querySelectorAll('.shot-img'));

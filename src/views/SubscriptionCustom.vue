@@ -24,10 +24,16 @@
           <el-input v-model="form.baseUrl" placeholder="https://api.your-gateway.com/v1" />
         </div>
 
+        <!-- API 密钥 -->
+        <div class="field flex flex-col gap-6px">
+          <label class="field-label text-12px font-medium text-ink-2">API 密钥</label>
+          <el-input v-model="form.apiKey" type="password" show-password placeholder="输入 API 密钥" />
+        </div>
+
         <!-- API 协议选择 -->
         <div class="field flex flex-col gap-6px">
           <label class="field-label text-12px font-medium text-ink-2">API 协议 <span class="req text-err ml-2px">*</span></label>
-          <el-select v-model="form.apiProtocol" placeholder="选择协议" style="width: 100%">
+          <el-select v-model="form.apiProtocol" placeholder="选择协议" style="width: 100%" @change="onProtocolChange">
             <el-option
               v-for="p in protocols"
               :key="p.value"
@@ -37,20 +43,8 @@
           </el-select>
         </div>
 
-        <!-- API 密钥 -->
-        <div class="field flex flex-col gap-6px">
-          <label class="field-label text-12px font-medium text-ink-2">API 密钥</label>
-          <el-input v-model="form.apiKey" type="password" show-password placeholder="输入 API 密钥" />
-        </div>
 
-        <!-- 接口路径：覆盖默认 /v1/chat/completions，如 z.ai Coding Plan 需填 /chat/completions -->
-        <div class="field flex flex-col gap-6px">
-          <label class="field-label text-12px font-medium text-ink-2">接口路径</label>
-          <el-input v-model="form.chatPath" placeholder="/v1/chat/completions" />
-          <div class="field-hint text-11.5px text-ink-4">补全接口路径后缀，默认 <span class="mono">/v1/chat/completions</span>。若上游无 <span class="mono">/v1</span> 前缀（如 Z.AI Coding Plan 为 <span class="mono">/chat/completions</span>），请改填对应路径。</div>
-        </div>
-
-        <!-- 模型目录：可拉取可用模型并多选 -->
+        <!-- 模型目录：获取远程模型后弹窗多选，或手动添加 -->
         <div class="field flex flex-col gap-6px">
           <div class="row-between flex items-center justify-between">
             <span class="field-label static text-12px font-medium text-ink-2">模型目录</span>
@@ -58,24 +52,7 @@
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
           </div>
-          <el-select
-            v-model="selIds"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            :reserve-contaminant="true"
-            placeholder="选择或输入模型（可多选）"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="m in availableModels"
-              :key="m"
-              :label="m"
-              :value="m"
-            />
-          </el-select>
-          <!-- 已选模型列表：第一个为默认模型 -->
+          <!-- 已选模型列表：首位为默认模型 -->
           <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
             <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
               <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
@@ -84,7 +61,15 @@
               <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
             </div>
           </div>
-          <div v-else class="model-hint text-11.5px text-ink-4 py-10px px-12px bg-surface-2 border border-dashed border-line rounded-sm text-center">点击「获取可用模型」将基于上方地址与密钥直接拉取，<b>无需先保存连接</b>；可多选并为每个模型设置自定义名称。</div>
+          <div v-else class="model-hint text-11.5px text-ink-4 py-10px px-12px bg-surface-2 border border-dashed border-line rounded-sm text-center">点击「获取可用模型」从远程拉取并在弹窗中勾选；或手动添加模型 ID。</div>
+          <div class="model-actions flex items-center gap-12px mt-4px">
+            <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
+              选择模型
+            </button>
+            <button type="button" class="btn sm" @click="manualModelDialogVisible = true">
+              手动添加
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -96,6 +81,27 @@
         {{ saving ? '保存中…' : '添加模型' }}
       </button>
     </div>
+
+    <!-- 模型选择对话框 -->
+    <ModelSelectDialog
+      v-model:visible="modelDialogVisible"
+      :models="availableModels"
+      :selected="selIds"
+      :loading="fetchingModels"
+      @confirm="onModelConfirm"
+    />
+
+    <!-- 手动添加模型对话框 -->
+    <el-dialog v-model="manualModelDialogVisible" title="手动添加模型" width="420">
+      <div class="flex flex-col gap-12px">
+        <el-input v-model="manualModelId" placeholder="模型 ID（如 gpt-4o）" class="font-mono" />
+        <el-input v-model="manualModelName" placeholder="展示名称（可选）" />
+      </div>
+      <template #footer>
+        <button class="btn" @click="manualModelDialogVisible = false">取消</button>
+        <button class="btn accent" @click="addManualModel">添加</button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -109,6 +115,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { createProvider, previewModels } from '@/api/providers'
 
 const router = useRouter()
@@ -118,27 +125,23 @@ const saving = ref(false)
 const fetchingModels = ref(false)
 // 拉取到的可用模型列表
 const availableModels = ref<string[]>([])
+// 模型选择对话框可见性
+const modelDialogVisible = ref(false)
+// 手动添加模型对话框
+const manualModelDialogVisible = ref(false)
+const manualModelId = ref('')
+const manualModelName = ref('')
 
 /** 已选模型（含自定义名称），为提交与展示的真相来源 */
 const selectedModels = ref<{ id: string; name: string }[]>([])
-/** 多选框绑定值：与 selectedModels 同步 */
-const selIds = computed<string[]>({
-  get: () => selectedModels.value.map((m) => m.id),
-  set: (ids) => {
-    const next: { id: string; name: string }[] = []
-    for (const id of ids) {
-      const existing = selectedModels.value.find((m) => m.id === id)
-      next.push(existing ? { ...existing } : { id, name: '' })
-    }
-    selectedModels.value = next
-  },
-})
+/** 已选模型 ID 列表（传给 ModelSelectDialog） */
+const selIds = computed<string[]>(() => selectedModels.value.map((m) => m.id))
 
 // 可选的 API 协议
 const protocols = [
   { value: 'openai-completions', label: 'openai-completions' },
   { value: 'openai-responses', label: 'openai-responses' },
-  { value: 'anthropic', label: 'anthropic-messages' }
+  { value: 'anthropic-messages', label: 'anthropic-messages' }
 ]
 
 // 表单状态
@@ -148,15 +151,22 @@ const form = reactive({
   baseUrl: '',
   apiProtocol: 'openai-completions',
   apiKey: '',
-  chatPath: '/v1/chat/completions',
+  chatPath: '/chat/completions',
 })
+
+/** 协议变更时自动设置接口路径。 */
+function onProtocolChange(protocol: string) {
+  if (protocol === 'openai-completions') form.chatPath = '/chat/completions'
+  else if (protocol === 'openai-responses') form.chatPath = '/responses'
+  else if (protocol === 'anthropic-messages') form.chatPath = '/messages'
+}
 
 // Provider ID 校验：小写字母开头，仅含小写字母、数字、短横线，长度 3-30。
 const customIdPattern = /^[a-z][a-z0-9-]{2,29}$/
 
-// 是否可提交：Provider ID 合法、API 地址与协议已填
+// 是否可提交：Provider ID、API 地址与协议已填（格式校验在 submit 中给出具体提示）
 const canSubmit = computed(() => {
-  return customIdPattern.test(form.customProviderId)
+  return !!form.customProviderId.trim()
     && !!form.baseUrl.trim()
     && !!form.apiProtocol
 })
@@ -184,7 +194,8 @@ async function fetchModels() {
     })
     if (res.models && res.models.length) {
       availableModels.value = res.models
-      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请勾选需要的模型`)
+      modelDialogVisible.value = true
+      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请在弹窗中勾选`)
     } else {
       availableModels.value = []
       ElMessage.warning(res.warning || '未返回模型列表，可手动输入模型 ID')
@@ -203,6 +214,38 @@ async function fetchModels() {
  */
 function removeModel(id: string) {
   selectedModels.value = selectedModels.value.filter((m) => m.id !== id)
+}
+
+/**
+ * 模型选择对话框确认回调：更新已选模型列表，保留已有自定义名称。
+ */
+function onModelConfirm(ids: string[]) {
+  const next: { id: string; name: string }[] = []
+  for (const id of ids) {
+    const existing = selectedModels.value.find((m) => m.id === id)
+    next.push(existing ? { ...existing } : { id, name: '' })
+  }
+  selectedModels.value = next
+}
+
+/**
+ * 手动添加模型到已选列表。
+ */
+function addManualModel() {
+  const id = manualModelId.value.trim()
+  if (!id) {
+    ElMessage.warning('请输入模型 ID')
+    return
+  }
+  if (selectedModels.value.some((m) => m.id === id)) {
+    ElMessage.warning('该模型已存在')
+    return
+  }
+  selectedModels.value.push({ id, name: manualModelName.value.trim() })
+  manualModelId.value = ''
+  manualModelName.value = ''
+  manualModelDialogVisible.value = false
+  ElMessage.success('已添加')
 }
 
 /**

@@ -229,6 +229,38 @@ pub async fn delete_provider(
     }
 }
 
+/// 处理 GET 请求，按 ID 获取提供商连接的解密后真实 API 密钥。
+///
+/// 与 [`get_provider`] 不同，本端点返回未脱敏的密钥明文，供前端复制到剪贴板使用。
+/// 仅在连接存在且配置了 api_key 时返回密钥；否则返回 404 或空值。
+///
+/// - `state`：应用全局状态
+/// - `path`：URL 路径中的连接 ID
+/// - 返回值：`{ "apiKey": "..." }`、404 未找到或 500 错误
+pub async fn get_api_key(
+    state: web::Data<Arc<AppState>>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let conn = match db_core::get_conn(&state.db_pool) {
+        Ok(c) => c,
+        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    };
+
+    let id = path.into_inner();
+    match db_providers::get_by_id(&conn, &id, &state.encryption_key) {
+        Ok(Some(provider)) => {
+            let api_key = provider.api_key.unwrap_or_default();
+            if api_key.is_empty() {
+                HttpResponse::NotFound().json(json!({"error": "该连接未配置 API 密钥"}))
+            } else {
+                HttpResponse::Ok().json(json!({ "apiKey": api_key }))
+            }
+        }
+        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
+        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    }
+}
+
 /// 处理 POST 请求，测试指定提供商连接的可达性。
 ///
 /// 向提供商的模型列表端点发起 GET 请求，根据响应状态判断连接是否正常，

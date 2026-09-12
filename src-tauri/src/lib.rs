@@ -166,6 +166,7 @@ pub fn start_api_server(
                             .route("/providers/{id}", web::patch().to(api::management::providers::update_provider))
                             .route("/providers/{id}", web::delete().to(api::management::providers::delete_provider))
                             .route("/providers/{id}/test", web::post().to(api::management::providers::test_provider))
+                            .route("/providers/{id}/apikey", web::get().to(api::management::providers::get_api_key))
                             .route("/providers/preview-models", web::post().to(api::management::providers::preview_models))
                             .route("/keys", web::get().to(api::management::keys::list_keys))
                             .route("/keys", web::post().to(api::management::keys::create_key))

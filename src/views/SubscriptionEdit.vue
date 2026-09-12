@@ -9,7 +9,7 @@
       <StatusBadge v-if="conn" :tone="statusTone(conn)" :label="statusLabel(conn)" />
       <span class="spacer flex-1" />
       <span v-if="conn" class="mono conn-id text-11px text-ink-4 py-2px px-6px bg-surface-2 rounded-4px shrink-0">{{ conn.id }}</span>
-      <StatusBadge v-if="testResult" :tone="testResult.status === 'ok' ? 'ok' : 'err'" :label="testResult.status === 'ok' ? `可用 · ${testResult.latencyMs}ms` : '不可用'" />
+      <StatusBadge v-if="testResult" :tone="testResult.status === 'ok' ? 'ok' : 'err'" :label="testResult.status === 'ok' ? `可用 · ${fmtLatency(testResult.latencyMs!)}` : '不可用'" />
     </div>
 
     <el-scrollbar class="edit-scroll flex-1">
@@ -99,9 +99,9 @@
                   :placeholder="hasApiKey ? '已设置（已掩码）— 留空保持不变' : '尚未配置密钥，填写后保存'"
                   style="max-width: 360px"
                 />
-                <!-- 已配置：展示掩码，hover 可看完整掩码串 -->
-                <el-tooltip v-if="hasApiKey" :content="`当前：${conn.apiKey}`" placement="top">
-                  <span class="mono masked text-12px text-ink-3 bg-surface-2 py-4px px-10px rounded-sm font-mono max-w-260px overflow-hidden text-ellipsis whitespace-nowrap">{{ conn.apiKey }}</span>
+                <!-- 已配置：展示掩码，hover 可看完整掩码串，点击复制 -->
+                <el-tooltip v-if="hasApiKey" :content="`当前：${conn.apiKey}（点击复制）`" placement="top">
+                  <span class="mono masked cursor-pointer text-12px text-ink-3 bg-surface-2 py-4px px-10px rounded-sm font-mono max-w-260px overflow-hidden text-ellipsis whitespace-nowrap" @click="copyApiKey">{{ conn.apiKey }}</span>
                 </el-tooltip>
                 <!-- 未配置：明确告知，不再用「请填写」暗示为空 -->
                 <span v-else class="key-missing text-11.5px text-warn py-3px px-8px rounded-full border border-line bg-warn-bg shrink-0">
@@ -139,13 +139,13 @@
             </div>
           </div>
           <div class="card-body">
-            <!-- API 协议选择 -->
+            <!-- API 协议选择（决定接口路径） -->
             <div class="setting-row">
               <div>
                 <div class="setting-label">API 协议</div>
-                <div class="setting-desc">决定鉴权方式（Bearer / x-api-key / query）与请求格式</div>
+                <div class="setting-desc">决定鉴权方式与请求格式，接口路径自动匹配</div>
               </div>
-              <el-select v-model="form.apiProtocol" style="width: 240px">
+              <el-select v-model="form.apiProtocol" style="width: 240px" @change="onProtocolChange">
                 <el-option label="openai-completions" value="openai-completions" />
                 <el-option label="openai-responses" value="openai-responses" />
                 <el-option label="anthropic-messages" value="anthropic-messages" />
@@ -158,14 +158,6 @@
                 <div class="setting-desc">上游网关根地址，需以 <span class="mono">http://</span> 或 <span class="mono">https://</span> 开头</div>
               </div>
               <el-input v-model="form.baseUrl" placeholder="https://api.example.com/v1" />
-            </div>
-            <!-- 接口路径 -->
-            <div class="setting-row col">
-              <div>
-                <div class="setting-label">接口路径</div>
-                <div class="setting-desc">补全接口路径后缀，默认 <span class="mono">/v1/chat/completions</span>。若上游无 <span class="mono">/v1</span> 前缀（如 Z.AI Coding Plan 为 <span class="mono">/chat/completions</span>），请改填对应路径</div>
-              </div>
-              <el-input v-model="form.chatPath" placeholder="/v1/chat/completions" />
             </div>
           </div>
         </div>
@@ -196,8 +188,11 @@
               <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
                 选择模型
               </button>
+              <button type="button" class="btn sm" @click="manualModelDialogVisible = true">
+                手动添加
+              </button>
               <span class="setting-desc">
-                点击「获取可用模型」从远程加载列表，再通过弹窗勾选；首位即默认模型。
+                点击「获取可用模型」从远程加载列表，再通过弹窗勾选；或手动输入模型 ID。
               </span>
             </div>
           </div>
@@ -211,6 +206,18 @@
           :loading="fetchingModels"
           @confirm="onModelConfirm"
         />
+
+        <!-- 手动添加模型对话框 -->
+        <el-dialog v-model="manualModelDialogVisible" title="手动添加模型" width="420">
+          <div class="flex flex-col gap-12px">
+            <el-input v-model="manualModelId" placeholder="模型 ID（如 gpt-4o）" class="font-mono" />
+            <el-input v-model="manualModelName" placeholder="展示名称（可选）" />
+          </div>
+          <template #footer>
+            <button class="btn" @click="manualModelDialogVisible = false">取消</button>
+            <button class="btn accent" @click="addManualModel">添加</button>
+          </template>
+        </el-dialog>
 
         <!-- 路由与限制 -->
         <div class="card section">
@@ -403,7 +410,7 @@ import { ElMessage } from 'element-plus'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
-import { getProvider, updateProvider, deleteProvider, testProvider, previewModels, type ProviderConnection } from '@/api/providers'
+import { getProvider, updateProvider, deleteProvider, testProvider, previewModels, getApiKey, type ProviderConnection } from '@/api/providers'
 
 const route = useRoute()
 const router = useRouter()
@@ -419,6 +426,10 @@ const fetchingModels = ref(false)
 const availableModels = ref<string[]>([])
 // 模型选择对话框可见性
 const modelDialogVisible = ref(false)
+// 手动添加模型对话框
+const manualModelDialogVisible = ref(false)
+const manualModelId = ref('')
+const manualModelName = ref('')
 // 最近一次测试结果
 const testResult = ref<{ status: string; latencyMs?: number; error?: string } | null>(null)
 
@@ -444,7 +455,7 @@ const form = reactive({
   apiKey: '',
   apiProtocol: 'openai-completions',
   baseUrl: '',
-  chatPath: '/v1/chat/completions',
+  chatPath: '/chat/completions',
   email: '',
   projectId: '',
   groupName: '',
@@ -491,6 +502,15 @@ function statusLabel(c: ProviderConnection): string {
   }
   if (['failed', 'error'].includes(s)) return '失败'
   return '未测试'
+}
+
+/**
+ * 协议变更时自动设置接口路径。
+ */
+function onProtocolChange(protocol: string) {
+  if (protocol === 'openai-completions') form.chatPath = '/chat/completions'
+  else if (protocol === 'openai-responses') form.chatPath = '/responses'
+  else if (protocol === 'anthropic-messages') form.chatPath = '/messages'
 }
 
 /**
@@ -550,7 +570,12 @@ async function load() {
     apiKey: '',
     apiProtocol: data.apiProtocol ?? 'openai-completions',
     baseUrl: data.baseUrl ?? '',
-    chatPath: data.chatPath ?? '/v1/chat/completions',
+    chatPath: data.chatPath || (() => {
+      const p = data.apiProtocol ?? 'openai-completions'
+      if (p === 'openai-responses') return '/responses'
+      if (p === 'anthropic-messages') return '/messages'
+      return '/chat/completions'
+    })(),
     email: data.email ?? '',
     projectId: data.projectId ?? '',
     groupName: data.groupName ?? '',
@@ -613,6 +638,26 @@ function removeModel(id: string) {
 }
 
 /**
+ * 手动添加模型到已选列表。
+ */
+function addManualModel() {
+  const id = manualModelId.value.trim()
+  if (!id) {
+    ElMessage.warning('请输入模型 ID')
+    return
+  }
+  if (selectedModels.value.some((m) => m.id === id)) {
+    ElMessage.warning('该模型已存在')
+    return
+  }
+  selectedModels.value.push({ id, name: manualModelName.value.trim() })
+  manualModelId.value = ''
+  manualModelName.value = ''
+  manualModelDialogVisible.value = false
+  ElMessage.success('已添加')
+}
+
+/**
  * 模型选择对话框确认回调：更新已选模型列表，保留已有自定义名称。
  * @param ids 选中的模型 ID 列表（有序）
  */
@@ -623,6 +668,20 @@ function onModelConfirm(ids: string[]) {
     next.push(existing ? { ...existing } : { id, name: '' })
   }
   selectedModels.value = next
+}
+
+/**
+ * 从后端获取真实 API 密钥并复制到剪贴板。
+ */
+async function copyApiKey() {
+  if (!conn.value?.id) return
+  try {
+    const { apiKey } = await getApiKey(conn.value.id)
+    await navigator.clipboard.writeText(apiKey)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
 }
 
 /**
