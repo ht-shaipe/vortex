@@ -1,6 +1,6 @@
 //! 提供商注册表
 //!
-//! 内置 21 个 AI 提供商的定义，并提供按 ID 查询、列表、
+//! 内置多家 AI 提供商的定义，并提供按 ID 查询、列表、
 //! 以及根据模型字符串解析所属提供商的能力。
 
 use crate::providers::types::ProviderDef;
@@ -21,7 +21,7 @@ impl ProviderRegistry {
     /// 内置提供商包括：OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、
     /// Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、
     /// Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、
-    /// Qwen、MiniMax 以及自定义 OpenAI 兼容端点。
+    /// Qwen、MiniMax、Z.AI 以及自定义 OpenAI 兼容端点。
     pub fn new() -> Self {
         let mut providers = HashMap::new();
 

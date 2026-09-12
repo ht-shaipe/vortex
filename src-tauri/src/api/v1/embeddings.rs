@@ -78,7 +78,7 @@ pub async fn create_embeddings(
         }
     };
 
-    let client = &state.http_client;
+    let client = crate::create_upstream_client(&state.upstream_ssl_connector);
     // 确定基础 URL：优先使用连接中的自定义 baseUrl
     let base_url = connection.provider_specific_data.get("baseUrl")
         .and_then(|v| v.as_str())
@@ -94,16 +94,16 @@ pub async fn create_embeddings(
     }
 
     // 构造 POST 请求并添加鉴权
-    let mut req_builder = client.post(&url);
+    let mut req = client.post(&url);
     if let Some(ref api_key) = connection.api_key {
-        req_builder = req_builder.bearer_auth(api_key);
+        req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
     }
 
     // 发送请求并处理响应
-    match req_builder.json(&req_body).send().await {
-        Ok(response) => {
+    match req.send_json(&req_body).await {
+        Ok(mut response) => {
             let status = response.status();
-            let body_bytes = response.bytes().await.unwrap_or_default();
+            let body_bytes = response.body().await.unwrap_or_default();
 
             // 非 2xx：原样返回错误响应
             if !status.is_success() {
@@ -114,7 +114,7 @@ pub async fn create_embeddings(
             // 计算延迟并记录用量
             let latency = start.elapsed().as_millis() as i64;
             let entry = UsageEntry {
-                id: 0, provider: Some(provider_id), model: Some(resolved_model),
+                id: 0, provider: Some(connection.name.clone()), model: Some(resolved_model),
                 connection_id: Some(connection.id.clone()), api_key_id: None, api_key_name: None,
                 tokens_input: 0, tokens_output: 0, tokens_cache_read: 0, // 嵌入不统计 token
                 tokens_cache_creation: 0, tokens_reasoning: 0,

@@ -25,8 +25,8 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │  │    API Key 验证   Route Resolver 用量记录 │  │
                           │  │          │               │               ││  │
                           │  │                          ▼                │  │
-                          │  │                  ProviderRegistry         │  │
-                          │  │                    (21 个提供商)          │  │
+                           │  │                  ProviderRegistry         │  │
+                           │  │                    (多家提供商)           │  │
                           │  │                          │                │  │
                           │  │                      Executor             │  │
                           │  │            (OpenAI / Anthropic / Gemini)  │  │
@@ -44,10 +44,10 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │  └───────────────────────────────────────────┘  │
                           │                                                 │
                           │  ┌───────────────────────────────────────────┐  │
-                          │  │        Vue 3 管理界面 (10 个页面)         │  │
-                          │  │接入指南 | 实时路由 | 订阅 | 免费 Token    │  │
-                          │  │请求日志 | 统计 | 同步 | 对话              │  │
-                          │  │设置 | 关于                                │  │
+                           │  │        Vue 3 管理界面 (11 个页面)         │  │
+                           │  │接入指南 | 实时路由 | 订阅 | 模型映射       │  │
+                           │  │免费 Token | 请求日志 | 统计 | 同步        │  │
+                           │  │对话 | 设置 | 关于                        │  │
                           │  └───────────────────────────────────────────┘  │
                           └─────────────────────────────────────────────────┘
                                           │
@@ -67,10 +67,10 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
 pub struct AppState {
     pub db_pool: db::core::DbPool,              // SQLite 连接池 (r2d2, 最大8连接)
     pub config: config::AppConfig,              // 配置 (端口、数据目录、加密密钥等)
-    pub provider_registry: ProviderRegistry,     // 21个内置提供商定义
+    pub provider_registry: ProviderRegistry,     // 多家内置提供商定义
     pub proxy_engine: RwLock<ProxyEngine>,       // 代理引擎
     pub resilience_manager: ResilienceManager,   // 熔断器管理
-    pub http_client: reqwest::Client,            // HTTP 客户端 (120s超时)
+    pub http_client: reqwest::Client,            // HTTP 客户端 (native-tls + HTTP/2, 连接超时10s)
     pub encryption_key: Vec<u8>,                 // AES-256-GCM 密钥
     pub proxy_handle: Mutex<Option<ServerHandle>>, // 网关服务器句柄，支持运行时启停
     pub proxy_port: u16,                         // 网关监听端口
@@ -108,7 +108,7 @@ pub struct AppState {
 | `AnthropicExecutor` | `x-api-key: {key}` + `anthropic-version` | Anthropic Messages 格式 | 转换为 OpenAI 格式 |
 | `GeminiExecutor` | `?key={key}` query 参数 | Gemini generateContent 格式 | 转换为 OpenAI 格式 |
 
-`ExecutorFactory` 根据 `ProviderDef.api_format` 字段选择对应的执行器。
+`ExecutorFactory` 根据 `ProviderDef.api_format` 字段选择对应的执行器。Cohere（`cohere`）和 Cloudflare（`cloudflare`）格式当前回退到 `OpenAIExecutor`。
 
 ### 4. SSE 流式处理 (`proxy/sse.rs`)
 
@@ -145,7 +145,7 @@ pub struct AppState {
 
 ### 6. 提供商注册表 (`providers/registry.rs`)
 
-`ProviderRegistry` 内置 21 个提供商定义，每个定义包含：
+`ProviderRegistry` 内置多家提供商定义，每个定义包含：
 
 ```rust
 pub struct ProviderDef {
@@ -195,6 +195,7 @@ pub struct ProviderDef {
 | `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost |
 | `key_value` | 键值存储(设置) | namespace, key, value(JSON) — 目前仅 `settings/general` |
 | `free_token_sites` | 免费额度站点目录 | id, name, home_url, apply_url, api_supported, api_base, api_format, free_quota, region(`cn`/`global`/`local`), requires_card, requires_verify, tags(JSON), note, provider_id, source(`builtin`/`user`), submitter, sort_order |
+| `model_aliases` | 模型别名（虚拟模型名映射） | id, alias, targets(JSON数组: provider, model, connection_id), created_at |
 
 #### 迁移 (`db/migrations/`)
 
@@ -203,6 +204,9 @@ pub struct ProviderDef {
 | 001 | `001_initial.sql` | provider_connections / api_keys / usage_history / key_value + 初始设置 |
 | 002 | `002_free_token_sites.sql` | free_token_sites 建表 + 30 条内置站点种子（均提供 API） |
 | 003 | `003_free_token_web_only.sql` | 补充 13 条「仅网页版、无 API」站点，使 `api_supported` 具备区分度 |
+| 004 | `004_provider_latency.sql` | provider_connections 添加 last_latency_ms 列 |
+| 005 | `005_usage_index.sql` | usage_history 添加 timestamp 降序索引 |
+| 006 | `006_model_aliases.sql` | model_aliases 建表（虚拟模型名 + 多目标故障转移） |
 
 > 迁移按版本号一次性应用并记录在 `_vortex_migrations` 中；已应用的版本不会重跑，新增内容一律追加新版本文件。
 
@@ -220,6 +224,7 @@ pub struct ProviderDef {
 | 端点 | 处理函数 | 说明 |
 |------|----------|------|
 | `POST /v1/chat/completions` | `chat::chat_completions` | 聊天补全，支持流式和非流式 |
+| `POST /v1/messages` | `messages::anthropic_messages` | Anthropic Messages 兼容（协议转换，支持流式） |
 | `GET /v1/models` | `models::list_models` | 聚合所有提供商的模型列表 |
 | `POST /v1/embeddings` | `embeddings::create_embeddings` | 文本嵌入 |
 | `POST /v1/images/generations` | `images::create_images` | 图像生成 |
@@ -240,6 +245,8 @@ pub struct ProviderDef {
 | `GET/PATCH /api/settings` | 设置读写 |
 | `GET/POST /api/free-tokens` | 免费 Token 站点列表 / 提交推荐（`name` 必填，其余字段可留空） |
 | `DELETE /api/free-tokens/{id}` | 删除用户提交的推荐；内置条目返回 400「内置站点不可删除」 |
+| `GET/POST /api/model-aliases` | 模型别名列表/创建（虚拟模型名 + 多目标故障转移） |
+| `GET/PATCH/DELETE /api/model-aliases/{id}` | 单个模型别名操作 |
 | `GET /api/health` | 健康检查 (DB 连通性 + 版本) |
 
 ### 10. Tauri 命令 (`tauri_cmds/`)
@@ -258,6 +265,7 @@ pub struct ProviderDef {
 | `tauri-plugin-updater` | 自动更新：检查 GitHub Releases 新版本、下载并安装 |
 | `tauri-plugin-process` | 进程管理：更新安装后重启应用 |
 | `tauri-plugin-shell` | Shell 命令执行 |
+| `tauri-plugin-autostart` | 开机自启 |
 
 前端通过 `composables/useUpdater.ts` 封装更新逻辑：启动时静默检查 → 发现新版本弹出通知 → 用户确认后下载 → 下载完成提示重启。
 
@@ -293,6 +301,7 @@ AppLayout
         ├── Guide        — 接入指南
         ├── LiveRouting  — 实时路由 + 网关状态（默认首页）
         ├── Subscriptions — 提供商连接管理（含新建 / 自定义 / 编辑子路由）
+        ├── ModelAliases  — 模型映射（虚拟模型名 + 多目标故障转移）
         ├── FreeTokens   — 免费 Token 站点目录（卡片 / 表格双视图）
         ├── RequestLogs  — 请求日志
         ├── Statistics   — 端点统计 / 用量统计
@@ -391,6 +400,7 @@ AppLayout
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成并持久化 | 加密密钥 (32字节十六进制) |
 | `VORTEX_REQUIRE_API_KEY` | false | 是否要求客户端 API Key |
+| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/edge/free_tokens` | 免费 Token 远程服务地址 |
 | `VORTEX_LOG_LEVEL` | info | 日志级别 |
 
 ### 设置存储

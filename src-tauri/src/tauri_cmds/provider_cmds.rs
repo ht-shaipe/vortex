@@ -143,79 +143,88 @@ pub async fn test_provider(
     state: tauri::State<'_, Arc<AppState>>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    // 获取数据库连接
-    let conn = db_core::get_conn(&state.db_pool).map_err(|e| e.to_string())?;
-    // 根据 ID 查询连接记录（API Key 已解密）
-    let provider = db_providers::get_by_id(&conn, &id, &state.encryption_key).map_err(|e| e.to_string())?;
-    match provider {
-        Some(p) => {
-            // 从注册表中获取对应的提供商定义
-            let def = state.provider_registry.get(&p.provider);
-            match def {
-                Some(d) => {
-                    // 优先使用连接中自定义的 baseUrl，否则回退到提供商定义中的默认值
-                    let base_url = p.provider_specific_data.get("baseUrl")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&d.base_url);
-                    // 拼接模型列表端点完整 URL
-                    let url = format!("{}{}", base_url, d.models_path);
+    let app_state = state.inner().clone();
+    // awc::Client 不是 Send，需要在 spawn_blocking + actix_rt 中执行
+    tauri::async_runtime::spawn_blocking(move || {
+        let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
+        rt.block_on(async {
+            // 获取数据库连接
+            let conn = db_core::get_conn(&app_state.db_pool).map_err(|e| e.to_string())?;
+            // 根据 ID 查询连接记录（API Key 已解密）
+            let provider = db_providers::get_by_id(&conn, &id, &app_state.encryption_key).map_err(|e| e.to_string())?;
+            match provider {
+                Some(p) => {
+                    // 从注册表中获取对应的提供商定义
+                    let def = app_state.provider_registry.get(&p.provider);
+                    match def {
+                        Some(d) => {
+                            // 优先使用连接中自定义的 baseUrl，否则回退到提供商定义中的默认值
+                            let base_url = p.provider_specific_data.get("baseUrl")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&d.base_url);
+                            // 拼接模型列表端点完整 URL
+                            let url = format!("{}{}", base_url, d.models_path);
 
-                    let client = &state.http_client;
-                    // 构造 GET 请求，设置 10 秒超时
-                    let mut req = client.get(&url).timeout(std::time::Duration::from_secs(10));
+                            let client = crate::create_upstream_client(&app_state.upstream_ssl_connector);
+                            // 构造 GET 请求
+                            let mut req = client.get(&url);
 
-                    // 根据不同的 API 格式设置不同的认证方式
-                    if d.api_format == "anthropic" {
-                        // Anthropic 格式：使用 x-api-key 头并附带版本号
-                        if let Some(ref api_key) = p.api_key {
-                            req = req.header("x-api-key", api_key.as_str());
-                        }
-                        req = req.header("anthropic-version", "2023-06-01");
-                    } else if d.api_format == "gemini" {
-                        // Gemini 格式：通过 query 参数传递 API Key
-                        if let Some(ref api_key) = p.api_key {
-                            req = req.query(&[("key", api_key.as_str())]);
-                        }
-                    } else if let Some(ref api_key) = p.api_key {
-                        // 默认格式：使用 Bearer Token 认证
-                        req = req.bearer_auth(api_key.as_str());
-                    }
+                            // 根据不同的 API 格式设置不同的认证方式
+                            if d.api_format == "anthropic" {
+                                if let Some(ref api_key) = p.api_key {
+                                    req = req.insert_header(("x-api-key", api_key.as_str()));
+                                }
+                                req = req.insert_header(("anthropic-version", "2023-06-01"));
+                            } else if d.api_format == "gemini" {
+                                if let Some(ref api_key) = p.api_key {
+                                    req = client.get(&format!("{}&key={}", url, api_key));
+                                }
+                            } else if let Some(ref api_key) = p.api_key {
+                                req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
+                            }
 
-                    // 发送请求并处理响应
-                    match req.send().await {
-                        Ok(response) => {
-                            // 提取 HTTP 状态码，小于 400 视为成功
-                            let status = response.status().as_u16();
-                            let ok = status < 400;
-                            let status_msg = if ok { None } else { Some(format!("HTTP {}", status)) };
-                            // 将测试结果回写到数据库
-                            let _ = db_providers::update_test_status(&conn, &id,
-                                if ok { "ok" } else { "error" },
-                                status_msg.as_deref(),
-                                None
-                            );
-                            Ok(json!({
-                                "status": if ok { "ok" } else { "error" },
-                                "statusCode": status,
-                                "provider": p.name,
-                            }))
+                            // 发送请求并处理响应（10 秒超时）
+                            match tokio::time::timeout(std::time::Duration::from_secs(10), req.send()).await {
+                                Ok(Ok(response)) => {
+                                    let status = response.status().as_u16();
+                                    let ok = status < 400;
+                                    let status_msg = if ok { None } else { Some(format!("HTTP {}", status)) };
+                                    let _ = db_providers::update_test_status(&conn, &id,
+                                        if ok { "ok" } else { "error" },
+                                        status_msg.as_deref(),
+                                        None
+                                    );
+                                    Ok(json!({
+                                        "status": if ok { "ok" } else { "error" },
+                                        "statusCode": status,
+                                        "provider": p.name,
+                                    }))
+                                }
+                                Ok(Err(e)) => {
+                                    let _ = db_providers::update_test_status(&conn, &id, "error", Some(&e.to_string()), None);
+                                    Ok(json!({
+                                        "status": "error",
+                                        "error": e.to_string(),
+                                        "provider": p.name,
+                                    }))
+                                }
+                                Err(_) => {
+                                    let _ = db_providers::update_test_status(&conn, &id, "error", Some("请求超时（10 秒）"), None);
+                                    Ok(json!({
+                                        "status": "error",
+                                        "error": "请求超时（10 秒）",
+                                        "provider": p.name,
+                                    }))
+                                }
+                            }
                         }
-                        Err(e) => {
-                            // 请求发送失败，记录错误状态到数据库
-                            let _ = db_providers::update_test_status(&conn, &id, "error", Some(&e.to_string()), None);
-                            Ok(json!({
-                                "status": "error",
-                                "error": e.to_string(),
-                                "provider": p.name,
-                            }))
-                        }
+                        None => Ok(json!({"status": "error", "error": "Provider definition not found"})),
                     }
                 }
-                // 提供商定义不存在于注册表中
-                None => Ok(json!({"status": "error", "error": "Provider definition not found"})),
+                None => Err("Provider not found".into()),
             }
-        }
-        // 连接 ID 对应的记录不存在
-        None => Err("Provider not found".into()),
-    }
+        })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

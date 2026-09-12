@@ -11,12 +11,28 @@
 
 use crate::db::models::{ProxyRequest, ProviderConnection};
 use crate::providers::types::ProviderDef;
-use crate::AppState;
 use crate::error::{AppError, Result};
-use crate::proxy::sse::{self, SseStream, UsageCallback};
+use crate::proxy::sse::{self, SseStream, UpstreamStream, UsageCallback};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::time::Duration;
+
+/// 格式化完整错误链（遍历 `std::error::Error::source()`）。
+///
+/// reqwest/hyper 的顶层错误（如 "error sending request for url"）往往不包含
+/// 根因（DNS 解析失败、TLS 握手失败、连接拒绝等），需要沿 source 链逐层展开。
+fn format_error_chain(e: &dyn std::error::Error) -> String {
+    let mut parts = vec![e.to_string()];
+    let mut current = e.source();
+    while let Some(source) = current {
+        let msg = source.to_string();
+        // 避免重复消息（有些层级的 to_string 会包含下一层的信息）
+        if !parts.iter().any(|p| p == &msg) {
+            parts.push(msg);
+        }
+        current = source.source();
+    }
+    parts.join(" → ")
+}
 
 /// 非流式请求整体超时（含等待响应与读取 body）
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -66,7 +82,7 @@ impl ExecutorFactory {
 ///
 /// 定义向上游 AI 提供商发送请求的统一接口，
 /// 不同 API 格式的执行器各自实现此 trait。
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 pub trait ProviderExecutor: Send + Sync {
     /// 执行上游请求
     ///
@@ -81,7 +97,7 @@ pub trait ProviderExecutor: Send + Sync {
     /// 执行器输出（JSON / 流 / 上游错误）
     async fn execute(
         &self,
-        state: &Arc<AppState>,
+        client: &awc::Client,
         request: &ProxyRequest,
         def: &ProviderDef,
         connection: &ProviderConnection,
@@ -91,10 +107,12 @@ pub trait ProviderExecutor: Send + Sync {
 }
 
 /// 发送请求并应用首字节超时（防止上游迟迟不返回响应头）
-async fn send_with_first_byte_timeout(
-    builder: reqwest::RequestBuilder,
-) -> std::result::Result<reqwest::Response, AppError> {
-    tokio::time::timeout(FIRST_BYTE_TIMEOUT, builder.send())
+///
+/// 泛型 R 由调用点自动推导，避免显式命名 awc::ClientResponse 的 body 类型参数。
+async fn send_with_first_byte_timeout<R>(
+    fut: impl std::future::Future<Output = std::result::Result<R, awc::error::SendRequestError>>,
+) -> std::result::Result<R, AppError> {
+    tokio::time::timeout(FIRST_BYTE_TIMEOUT, fut)
         .await
         .map_err(|_| {
             AppError::Provider(format!(
@@ -102,14 +120,40 @@ async fn send_with_first_byte_timeout(
                 FIRST_BYTE_TIMEOUT.as_secs()
             ))
         })?
-        .map_err(|e| AppError::Provider(format!("Request failed: {}", e)))
+        .map_err(|e| {
+            let chain = format_error_chain(&e);
+            log::error!("上游请求失败: {}", chain);
+            AppError::Provider(format!("Request failed: {}", chain))
+        })
 }
 
 /// 读取上游错误响应体，构造 UpstreamError
-async fn upstream_error(response: reqwest::Response) -> ExecutorOutput {
+async fn upstream_error<S>(mut response: awc::ClientResponse<S>) -> ExecutorOutput
+where
+    S: futures::Stream<Item = std::result::Result<actix_web::web::Bytes, awc::error::PayloadError>> + Unpin + 'static,
+{
     let status = response.status().as_u16();
-    let body = response.text().await.unwrap_or_default();
+    let bytes = response.body().await.unwrap_or_default();
+    let body = String::from_utf8_lossy(&bytes).into_owned();
     ExecutorOutput::UpstreamError { status, body }
+}
+
+/// 读取非流式 JSON 响应体，应用整体超时
+async fn read_json_response<S>(mut response: awc::ClientResponse<S>) -> Result<Value>
+where
+    S: futures::Stream<Item = std::result::Result<actix_web::web::Bytes, awc::error::PayloadError>> + Unpin + 'static,
+{
+    let bytes = tokio::time::timeout(REQUEST_TIMEOUT, response.body())
+        .await
+        .map_err(|_| {
+            AppError::Provider(format!(
+                "上游响应体读取超时（{} 秒）",
+                REQUEST_TIMEOUT.as_secs()
+            ))
+        })?
+        .map_err(|e| AppError::Provider(format!("Failed to read response body: {}", format_error_chain(&e))))?;
+    serde_json::from_slice::<Value>(&bytes)
+        .map_err(|e| AppError::Provider(format!("Failed to parse response JSON: {}", e)))
 }
 
 /// 拼接上游 URL 并做版本段归一化。
@@ -151,7 +195,7 @@ fn is_version_segment(s: &str) -> bool {
 /// 直接使用 OpenAI chat/completions 接口格式，请求与响应无需转换。
 pub struct OpenAIExecutor;
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl ProviderExecutor for OpenAIExecutor {
     /// 执行 OpenAI 格式请求
     ///
@@ -159,14 +203,13 @@ impl ProviderExecutor for OpenAIExecutor {
     /// 设置 Bearer 认证，发送请求并处理流式/非流式响应。
     async fn execute(
         &self,
-        state: &Arc<AppState>,
+        client: &awc::Client,
         request: &ProxyRequest,
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
         usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
-        let client = &state.http_client;
         // 优先使用连接级 baseUrl，回退到提供商定义的默认值
         let base_url = connection
             .provider_specific_data
@@ -207,16 +250,12 @@ impl ProviderExecutor for OpenAIExecutor {
             }
         }
 
-        let mut req_builder = client.post(&url);
-        // 非流式请求应用整体超时；流式只管首字节，逐块超时由 sse.rs 处理
-        if !request.stream {
-            req_builder = req_builder.timeout(REQUEST_TIMEOUT);
-        }
+        let mut req = client.post(&url);
         if let Some(ref api_key) = connection.api_key {
-            req_builder = req_builder.bearer_auth(api_key);
+            req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
         }
 
-        let response = send_with_first_byte_timeout(req_builder.json(&body)).await?;
+        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
 
         // 上游返回错误
         if response.status().as_u16() >= 400 {
@@ -225,15 +264,13 @@ impl ProviderExecutor for OpenAIExecutor {
 
         if request.stream {
             // 流式：返回归一化 SSE 流
+            let stream: UpstreamStream = Box::pin(response);
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "openai", usage_cb).await,
+                sse::stream_sse_response(stream, "openai", usage_cb).await,
             ))
         } else {
             // 非流式：解析 JSON 响应
-            let json_body = response
-                .json::<Value>()
-                .await
-                .map_err(|e| AppError::Provider(format!("Failed to parse response: {}", e)))?;
+            let json_body = read_json_response(response).await?;
             Ok(ExecutorOutput::Json(json_body))
         }
     }
@@ -245,7 +282,7 @@ impl ProviderExecutor for OpenAIExecutor {
 /// 并将非流式响应转回 OpenAI 格式。
 pub struct AnthropicExecutor;
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl ProviderExecutor for AnthropicExecutor {
     /// 执行 Anthropic 格式请求
     ///
@@ -253,14 +290,13 @@ impl ProviderExecutor for AnthropicExecutor {
     /// 发送请求。非流式响应通过转换器转回 OpenAI 格式。
     async fn execute(
         &self,
-        state: &Arc<AppState>,
+        client: &awc::Client,
         request: &ProxyRequest,
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
         usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
-        let client = &state.http_client;
         let base_url = connection
             .provider_specific_data
             .get("baseUrl")
@@ -314,16 +350,13 @@ impl ProviderExecutor for AnthropicExecutor {
             .ok_or_else(|| AppError::Unauthorized("API key required".into()))?;
 
         // Anthropic 认证：x-api-key 头 + 版本头
-        let mut req_builder = client
+        let req = client
             .post(&url)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json");
-        if !request.stream {
-            req_builder = req_builder.timeout(REQUEST_TIMEOUT);
-        }
+            .insert_header(("x-api-key", api_key))
+            .insert_header(("anthropic-version", "2023-06-01"))
+            .insert_header(("content-type", "application/json"));
 
-        let response = send_with_first_byte_timeout(req_builder.json(&body)).await?;
+        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
 
         if response.status().as_u16() >= 400 {
             return Ok(upstream_error(response).await);
@@ -331,15 +364,13 @@ impl ProviderExecutor for AnthropicExecutor {
 
         if request.stream {
             // 流式：Anthropic SSE → OpenAI chunk 格式
+            let stream: UpstreamStream = Box::pin(response);
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "anthropic", usage_cb).await,
+                sse::stream_sse_response(stream, "anthropic", usage_cb).await,
             ))
         } else {
             // 非流式：解析 Anthropic 响应并转回 OpenAI 格式
-            let json_body = response
-                .json::<Value>()
-                .await
-                .map_err(|e| AppError::Provider(format!("Failed to parse Anthropic response: {}", e)))?;
+            let json_body = read_json_response(response).await?;
             let openai_response = crate::translator::anthropic_to_openai_response(&json_body, model);
             Ok(ExecutorOutput::Json(openai_response))
         }
@@ -352,7 +383,7 @@ impl ProviderExecutor for AnthropicExecutor {
 /// 并将非流式响应转回 OpenAI 格式。API key 通过 URL 查询参数传递。
 pub struct GeminiExecutor;
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl ProviderExecutor for GeminiExecutor {
     /// 执行 Gemini 格式请求
     ///
@@ -360,14 +391,13 @@ impl ProviderExecutor for GeminiExecutor {
     /// assistant → model 角色），设置 generationConfig，通过 URL 参数传递 API key。
     async fn execute(
         &self,
-        state: &Arc<AppState>,
+        client: &awc::Client,
         request: &ProxyRequest,
         def: &ProviderDef,
         connection: &ProviderConnection,
         model: &str,
         usage_cb: Option<UsageCallback>,
     ) -> Result<ExecutorOutput> {
-        let client = &state.http_client;
         let api_key = connection
             .api_key
             .as_deref()
@@ -427,12 +457,9 @@ impl ProviderExecutor for GeminiExecutor {
             body["systemInstruction"] = sys;
         }
 
-        let mut req_builder = client.post(&url).header("content-type", "application/json");
-        if !request.stream {
-            req_builder = req_builder.timeout(REQUEST_TIMEOUT);
-        }
+        let req = client.post(&url).insert_header(("content-type", "application/json"));
 
-        let response = send_with_first_byte_timeout(req_builder.json(&body)).await?;
+        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
 
         if response.status().as_u16() >= 400 {
             return Ok(upstream_error(response).await);
@@ -440,15 +467,13 @@ impl ProviderExecutor for GeminiExecutor {
 
         if request.stream {
             // 流式：Gemini SSE → OpenAI chunk 格式
+            let stream: UpstreamStream = Box::pin(response);
             Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(response, "gemini", usage_cb).await,
+                sse::stream_sse_response(stream, "gemini", usage_cb).await,
             ))
         } else {
             // 非流式：解析 Gemini 响应并转回 OpenAI 格式
-            let json_body = response
-                .json::<Value>()
-                .await
-                .map_err(|e| AppError::Provider(format!("Failed to parse Gemini response: {}", e)))?;
+            let json_body = read_json_response(response).await?;
             let openai_response = crate::translator::gemini_to_openai_response(&json_body, model);
             Ok(ExecutorOutput::Json(openai_response))
         }

@@ -34,7 +34,7 @@ pub enum ChatStreamEvent {
         body: String,
     },
     /// 流正常结束
-    Done,
+    Done { ok: bool },
     /// 处理失败（路由失败、上游错误、流中断等）
     Error {
         /// 可读错误信息
@@ -119,55 +119,53 @@ pub async fn chat_completions_stream(
     };
 
     // 引擎内部把 rusqlite Connection 跨 await 持有（非 Send），
-    // 与 actix 单线程运行时同语义：放到阻塞线程的临时单线程 runtime 里执行。
-    // ProxyOutput 本身是 Send 的，流消费回到外层异步上下文进行。
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("failed to build IPC chat runtime")
-            .block_on(engine.handle_request(&app_state, request))
-    })
-    .await
-    .map_err(|e| format!("IPC chat task failed: {}", e))?
-    .map_err(|e| e.to_string());
-
-    match output {
-        Ok(ProxyOutput::Stream(sse)) => {
-            let mut sse = sse;
-            while let Some(chunk) = sse.next().await {
-                // 每个增量前检查取消标记
-                if take_cancelled(&request_id) {
-                    let _ = on_event.send(ChatStreamEvent::Done);
-                    return Ok(());
-                }
-                match chunk {
-                    Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes).into_owned();
-                        let _ = on_event.send(ChatStreamEvent::Delta { text });
+    // 必须在阻塞线程中执行。awc::Client 需要 actix runtime 驱动，
+    // 因此在 spawn_blocking 线程中创建 actix_rt::Runtime 并 block_on。
+    tauri::async_runtime::spawn_blocking(move || {
+        let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
+        rt.block_on(async {
+                let upstream_client = crate::create_upstream_client(&app_state.upstream_ssl_connector);
+                let output = engine.handle_request(&app_state, &upstream_client, request).await;
+                match output {
+                    Ok(ProxyOutput::Stream(mut sse)) => {
+                        while let Some(chunk) = sse.next().await {
+                            if take_cancelled(&request_id) {
+                                let _ = on_event.send(ChatStreamEvent::Done { ok: true });
+                                return;
+                            }
+                            match chunk {
+                                Ok(bytes) => {
+                                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                                    let _ = on_event.send(ChatStreamEvent::Delta { text });
+                                }
+                                Err(e) => {
+                                    let _ = on_event.send(ChatStreamEvent::Error {
+                                        message: e.to_string(),
+                                    });
+                                    return;
+                                }
+                            }
+                        }
+                        let _ = on_event.send(ChatStreamEvent::Done { ok: true });
+                    }
+                    Ok(ProxyOutput::Response(body)) => {
+                        let _ = on_event.send(ChatStreamEvent::Complete {
+                            body: body.to_string(),
+                        });
+                        let _ = on_event.send(ChatStreamEvent::Done { ok: true });
                     }
                     Err(e) => {
-                        let _ = on_event.send(ChatStreamEvent::Error { message: e.to_string() });
-                        return Ok(());
+                        let _ = on_event.send(ChatStreamEvent::Error {
+                            message: e.to_string(),
+                        });
                     }
                 }
-            }
-            let _ = on_event.send(ChatStreamEvent::Done);
-            Ok(())
-        }
-        Ok(ProxyOutput::Response(body)) => {
-            // 上游忽略 stream 参数：完整 JSON 体一次性下发
-            let _ = on_event.send(ChatStreamEvent::Complete {
-                body: body.to_string(),
-            });
-            let _ = on_event.send(ChatStreamEvent::Done);
-            Ok(())
-        }
-        Err(e) => {
-            let _ = on_event.send(ChatStreamEvent::Error { message: e.to_string() });
-            Ok(())
-        }
-    }
+            })
+    })
+    .await
+    .map_err(|e| format!("IPC chat task failed: {}", e))?;
+
+    Ok(())
 }
 
 /// 取消一次进行中的 IPC 流式对话。

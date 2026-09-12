@@ -31,6 +31,9 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
+// 全局禁用鼠标右键菜单（桌面应用无需 webview 默认右键菜单）
+document.addEventListener('contextmenu', (e) => e.preventDefault())
+
 // 将应用挂载到 #app 节点
 app.mount('#app')
 

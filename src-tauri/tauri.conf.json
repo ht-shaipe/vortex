@@ -49,6 +49,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
@@ -64,7 +65,7 @@
       "endpoints": [
         "https://github.com/ht-shaipe/vortex/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_UPDATER_PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwOTQ2NDVBMTYxRURFOEIKUldTTDNoNFdXbVNVb00rNjZyVnQxRmtUVmhLZlZzU1hCTHlISmlac1UyZnozSlo3cm5VdjFJZUwK",
       "windows": {
         "installMode": "passive"
       }

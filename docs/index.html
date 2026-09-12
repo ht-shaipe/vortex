@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
 <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
 <title>Vortex — 本地 AI 网关，把多家模型聚合成一个 OpenAI / Anthropic 兼容接口</title>
-<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入 22 家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、熔断重试、密钥加密、用量统计、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
+<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、熔断重试、密钥加密、用量统计、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
 <meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
 <meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
 <meta property="og:description" content="把多家 AI 提供商聚合成 OpenAI / Anthropic 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
@@ -59,7 +59,7 @@
       <div data-page-node-id="fJsyBwF43CFEUrg4luBf4F">
         <span class="eyebrow" data-page-node-id="F2zBYdMGI4qWyAMIxbyckg"><span class="dot" data-page-node-id="iKq4laAYUOQqDczAUrgw8Y"></span>v0.1.0 · MIT 开源 · 桌面应用</span>
 
-        <h1 data-page-node-id="R6RYyo02B0BBG3M42KywPg">一个本地网关<br data-page-node-id="EzFXecoU279R7Y1IsW77Wy">接通 <span class="grad" data-page-node-id="8nKWpDH0fmDFCXHNKOKOae">22 家</span> AI 提供商</h1>
+        <h1 data-page-node-id="R6RYyo02B0BBG3M42KywPg">一个本地网关<br data-page-node-id="EzFXecoU279R7Y1IsW77Wy">接通 <span class="grad" data-page-node-id="8nKWpDH0fmDFCXHNKOKOae">多家</span> AI 提供商</h1>
 
         <p class="hero-lead" data-page-node-id="X8jTFCxDku85Ae5QxdIDax">
           Vortex 在你自己的机器上启动一个 <strong data-page-node-id="5qg2XVuNYTM9AwbW2XLetW">OpenAI 兼容的 API 服务器</strong>，
@@ -95,12 +95,12 @@
         </div>
         <div class="term-body" data-page-node-id="3jDkAdQ30nSDHu8hBceI0F">
           <div class="ln" data-page-node-id="yvFyJp3ZzYBwPn1GSKCBUj"><span class="pr" data-page-node-id="4FrSA8tWRqB5t24813aLuD">$</span><span class="tk-cmd" data-page-node-id="HebAXvLhxoytRLG8grTS75">curl http://localhost:10168/v1/chat/completions \</span></div>
-          <div class="ln" data-page-node-id="PlNG4lL2WO3Dy4wNTexR3d"><span class="pr" data-page-node-id="6ykIeAEkDBDQmGuNkpNrsA"></span><span class="tk-dim" data-page-node-id="IkZZgxjAEDWX2Rhwxz8KiI">  -H </span><span class="tk-str" data-page-node-id="quYqEZc6MoDpwU0CXtDhWR">"Authorization: Bearer zp-3q…"</span><span class="tk-dim" data-page-node-id="6nxB3nz8wmVK4KGnc386QS"> \</span></div>
-          <div class="ln" data-page-node-id="ZbbQwMxvAz8AWNpn33mz1Z"><span class="pr" data-page-node-id="hm0tBdNZ03vzrHjev30i8B"></span><span class="tk-dim" data-page-node-id="6bqgyvhAC6YvmtX5cR1Bg1">  -d </span><span class="tk-str" data-page-node-id="j7zL8bdHBGR5BCqKfLEAQB">'{"model":"your-provider/your-model",…}'</span></div>
+          <div class="ln" data-page-node-id="PlNG4lL2WO3Dy4wNTexR3d"><span class="pr" data-page-node-id="6ykIeAEkDBDQmGuNkpNrsA"></span><span class="tk-dim" data-page-node-id="IkZZgxjAEDWX2Rhwxz8KiI">  -H </span><span class="tk-str" data-page-node-id="quYqEZc6MoDpwU0CXtDhWR">"Authorization: Bearer vx-4f2a…"</span><span class="tk-dim" data-page-node-id="6nxB3nz8wmVK4KGnc386QS"> \</span></div>
+          <div class="ln" data-page-node-id="ZbbQwMxvAz8AWNpn33mz1Z"><span class="pr" data-page-node-id="hm0tBdNZ03vzrHjev30i8B"></span><span class="tk-dim" data-page-node-id="6bqgyvhAC6YvmtX5cR1Bg1">  -d </span><span class="tk-str" data-page-node-id="j7zL8bdHBGR5BCqKfLEAQB">'{"model":"deepseek/deepseek-chat",…}'</span></div>
           <div class="ln" data-page-node-id="4FHCCuEjL5IFv1I8gEubT6"><span class="pr" data-page-node-id="UnQujNj4yeqHI2jrJjtKDY"></span><span class="tk-dim" data-page-node-id="BRyz3WKoWGzDjukDTRCn0G">&nbsp;</span></div>
           <div class="ln" data-page-node-id="oiH07R8w93uXQruwW4aSf4"><span class="pr" data-page-node-id="hVU8s6IxHd5MOvuKZa7MR0"></span><span class="tk-pun" data-page-node-id="GPcVY7arboVK9DgNWRVj58">{</span></div>
           <div class="ln" data-page-node-id="dhtPzJ9bx4ndXRtpG0WVB8"><span class="pr" data-page-node-id="aAat9IxKFSEpsENjKO4zhA"></span><span class="tk-key" data-page-node-id="GEEmjyBWFhOCuEyIS9w1Qf">&nbsp;&nbsp;"id"</span><span class="tk-pun" data-page-node-id="oTejxQIBJHOC4Ld5ArkKLH">:</span><span class="tk-str" data-page-node-id="aLGGSb1VkbtvTBj3bq8V5W">"chatcmpl-9x2f…"</span><span class="tk-pun" data-page-node-id="LVpwnDCcbeRAevsrVoK6ma">,</span></div>
-          <div class="ln" data-page-node-id="SwXGmVC3wbsNm8Fg4STgN5"><span class="pr" data-page-node-id="m2x2FVF1brIXRCxWtM66Kf"></span><span class="tk-key" data-page-node-id="0PYN0d2gtDRsYzIAPvCO8z">&nbsp;&nbsp;"model"</span><span class="tk-pun" data-page-node-id="J7CIGPbCdi0HNJ3mRYdffR">:</span><span class="tk-str" data-page-node-id="ipeEvImISpH4uCrO2YBZnx">"your-provider/your-model"</span><span class="tk-pun" data-page-node-id="5f31j1kE0AHMofnN4LV1Rh">,</span></div>
+          <div class="ln" data-page-node-id="SwXGmVC3wbsNm8Fg4STgN5"><span class="pr" data-page-node-id="m2x2FVF1brIXRCxWtM66Kf"></span><span class="tk-key" data-page-node-id="0PYN0d2gtDRsYzIAPvCO8z">&nbsp;&nbsp;"model"</span><span class="tk-pun" data-page-node-id="J7CIGPbCdi0HNJ3mRYdffR">:</span><span class="tk-str" data-page-node-id="ipeEvImISpH4uCrO2YBZnx">"deepseek/deepseek-chat"</span><span class="tk-pun" data-page-node-id="5f31j1kE0AHMofnN4LV1Rh">,</span></div>
           <div class="ln" data-page-node-id="4joF2vnUilLyvfXnt82bsR"><span class="pr" data-page-node-id="ANA0qCoDrLWk1l3AoX1xBf"></span><span class="tk-key" data-page-node-id="vx5kQG1QED8jvyhcNDcZNJ">&nbsp;&nbsp;"usage"</span><span class="tk-pun" data-page-node-id="olfUOyQNoRIBojEHEhNsmM">: { </span><span class="tk-key" data-page-node-id="QI4ZHaP0i8RguKPL8YHTtl">"total_tokens"</span><span class="tk-pun" data-page-node-id="yZWWSGMAUZwWojfuDGQ9Cb">: </span><span class="tk-num" data-page-node-id="E2XPjRTYwQljEgKm3zEXcM">39</span><span class="tk-pun" data-page-node-id="0EDGcoJWijvXJP0tgtjSwW"> }</span></div>
           <div class="ln" data-page-node-id="HGzdx2E2tFV82UGA4vF4vG"><span class="pr" data-page-node-id="JNmTA6enorDgEup6ArhKty"></span><span class="tk-pun" data-page-node-id="0ZzjArJUMiGYMVSMnHWQFf">}</span></div>
         </div>
@@ -132,7 +132,7 @@
     <div class="sec-head reveal" data-page-node-id="ZnI0JVBgO69tPVKD9aggdU">
       <span class="eyebrow" data-page-node-id="GGgU4Q8ZGnhtk379NGbgBk"><span class="dot" data-page-node-id="A05dlxF1N5F2mWd9fdAxya"></span>Compatibility</span>
       <h2 class="sec-title" data-page-node-id="rhS1BDmeHCAP4kcDJ8B2GV">不挑上游，<span class="grad" data-page-node-id="T3ZCY3dVQaA78doYTinbmG">谁来都能接</span></h2>
-      <p class="sec-sub" data-page-node-id="9gXbDwqF9CLJVSgJXYFlPQ">内置 22 家平台的预置连接模板，同时兼容任意 OpenAI 协议端点。接哪一家由你决定 —— 完整清单见应用内「订阅」页，随版本更新。</p>
+      <p class="sec-sub" data-page-node-id="9gXbDwqF9CLJVSgJXYFlPQ">内置多家平台的预置连接模板，同时兼容任意 OpenAI 协议端点。接哪一家由你决定 —— 完整清单见应用内「订阅」页，随版本更新。</p>
     </div>
 
     <div class="scope-grid reveal">
@@ -175,7 +175,7 @@
     <div class="feat-grid" data-page-node-id="DfLg3pAYUYNm2YisyXchO6">
       <div class="card feat reveal" data-page-node-id="SpH8g3ssYTdBLkBzAay9YA">
         <span class="feat-ico" data-page-node-id="PAI85SYMGWWd7AvMa3SPPN"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="HGAKwF0ZPzBFG3H9DADfIO"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" data-page-node-id="I5HurvaQ3inwMK405nW9jS"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" data-page-node-id="umwj0wNGzQbMOOxVjNJ8Sj"/></svg></span>
-        <h3 data-page-node-id="SoBwr01ZO1vXcbI12h5dNX">22 家上游开箱即用</h3>
+        <h3 data-page-node-id="SoBwr01ZO1vXcbI12h5dNX">多家上游开箱即用</h3>
         <p data-page-node-id="OY7GEYsbArQiLZtCfWFpEN">内置预置注册表：云端官方接口、聚合中转平台、本机推理服务都在列，填个 Key 就能用，不必手写 base_url。</p>
       </div>
 
@@ -637,6 +637,13 @@ for await (const chunk of stream) {
         </div>
       </details>
 
+      <details class="qa">
+        <summary>macOS 提示「"Vortex"已损坏，无法打开」怎么办？</summary>
+        <div class="qa-body">
+          这不是真的损坏，而是 macOS Gatekeeper 给下载的应用打了隔离属性。打开终端执行 <code>xattr -cr /Applications/Vortex.app</code> 清除隔离属性后即可正常打开。如果仍不行，前往「系统设置 → 隐私与安全性」，在底部找到 Vortex 的提示点「仍要打开」。
+        </div>
+      </details>
+
       <details class="qa" data-page-node-id="sOHECh9Zaj5hNalyQsHH0t">
         <summary data-page-node-id="FlEECGuMCWLAODOE6KzD4g">网关端口可以改吗？</summary>
         <div class="qa-body" data-page-node-id="pBVqNSTBnAt6C5EsFFO4kr">
@@ -704,7 +711,7 @@ for await (const chunk of stream) {
             <span class="brand-tag" data-page-node-id="k0ADHfrep7puwJkt7nmsuG">AI GATEWAY</span>
           </span>
         </div>
-        <p data-page-node-id="7b0e2C2GVAFUy41G8AmRGL">基于 Tauri 2 构建的本地 AI 网关桌面应用：把 22 家提供商聚合成一个 OpenAI / Anthropic 兼容接口。</p>
+        <p data-page-node-id="7b0e2C2GVAFUy41G8AmRGL">基于 Tauri 2 构建的本地 AI 网关桌面应用：把多家提供商聚合成一个 OpenAI / Anthropic 兼容接口。</p>
       </div>
 
       <div data-page-node-id="vdu8oR5CgSjmXv1z93B9xM">

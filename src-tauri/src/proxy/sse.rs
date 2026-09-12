@@ -18,14 +18,15 @@
 
 use actix_web::web::Bytes;
 use futures::{Stream, StreamExt};
-use reqwest::Response;
 use serde_json::json;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 /// 归一化后的 OpenAI 格式 SSE 流（错误以事件形式内嵌，不会以 Err 终止）
-pub type SseStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
+pub type SseStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + 'static>>;
+/// 上游响应字节流（awc PayloadError）
+pub type UpstreamStream = Pin<Box<dyn Stream<Item = Result<Bytes, awc::error::PayloadError>> + 'static>>;
 /// 流式逐块读取超时
 const READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// 行缓冲上限，防止异常上游导致内存无限增长
@@ -59,7 +60,7 @@ pub fn sse_http_response(stream: SseStream) -> actix_web::HttpResponse {
 /// # 返回
 /// 归一化为 OpenAI chunk 格式的 SSE 流
 pub async fn stream_sse_response(
-    upstream: Response,
+    upstream: UpstreamStream,
     source_format: &str,
     usage_cb: Option<UsageCallback>,
 ) -> SseStream {
@@ -147,7 +148,7 @@ trait SseParser: Send + 'static {
 /// 持有上游字节流、解析器和完成标志。
 struct StreamState<P> {
     /// 上游响应字节流
-    inner: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    inner: UpstreamStream,
     /// SSE 解析器
     parser: P,
     /// 流是否已结束
@@ -160,12 +161,12 @@ struct StreamState<P> {
 /// 通过解析器转换后输出。每次读取应用逐块超时保护。
 /// 流终止（正常结束/网络错误/超时）时回调捕获到的 token 用量。
 fn build_stream<P: SseParser>(
-    upstream: Response,
+    upstream: UpstreamStream,
     parser: P,
     usage_cb: Option<UsageCallback>,
 ) -> SseStream {
     let state = StreamState {
-        inner: Box::pin(upstream.bytes_stream()),
+        inner: upstream,
         parser,
         done: false,
     };

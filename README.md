@@ -4,16 +4,17 @@
 
 # Vortex AI Gateway
 
-> 统一的 AI 网关桌面应用 — 将 21+ 个 AI 提供商聚合为 OpenAI 兼容 API
+> 统一的 AI 网关桌面应用 — 将多家 AI 提供商聚合为 OpenAI / Anthropic 兼容 API
 
 Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持弹性重试、API 密钥管理和用量统计。
 
 ## 特性
 
-- **21 个内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、Qwen、MiniMax，以及自定义 OpenAI 兼容端点
-- **OpenAI 兼容 API** — 无需修改客户端代码，直接替换 `base_url` 即可
+- **多家内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、Qwen、MiniMax、Z.AI (GLM)，以及自定义 OpenAI 兼容端点
+- **OpenAI / Anthropic 双协议入口** — `/v1/chat/completions` 与 `/v1/messages` 两套端点，无需修改客户端代码，直接替换 `base_url` 即可
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 熔断器 + 指数退避重试，保障上游故障时的可用性
+- **模型映射 + 故障转移** — 自定义虚拟模型名映射到多个真实模型目标，按优先级自动故障转移，免费额度组成"永动机"
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本
 - **免费 Token 目录** — 内置 43 个可申请免费额度的 AI 平台（国内 / 海外 / 本地部署），标注是否支持 API、是否需绑卡与实名，支持自行提交推荐并保存到本地
@@ -40,6 +41,16 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 官网的下载区会在运行时拉取最新 Release，把按钮直接指向上述文件，因此**文件名带版本号不需要手工维护**。
 
 > macOS 产物未做 Apple 公证，首次打开需右键 → 打开；Windows 若弹 SmartScreen 提示，选「更多信息 → 仍要运行」。
+
+#### macOS 提示「已损坏，无法打开」
+
+从浏览器下载的 `.dmg` 安装后，macOS Gatekeeper 会给应用打上隔离属性（`com.apple.quarantine`），导致打开时提示 **「"Vortex"已损坏，无法打开。你应该将它移到废纸篓。」**。应用本身没有损坏，清除隔离属性即可：
+
+```bash
+xattr -cr /Applications/Vortex.app
+```
+
+在终端中执行上述命令后，再双击打开 Vortex 即可正常运行。如果仍无法打开，前往 **系统设置 → 隐私与安全性**，在底部找到关于 Vortex 的提示，点击「仍要打开」。
 
 ### 环境要求
 
@@ -132,6 +143,7 @@ curl http://localhost:10168/v1/chat/completions \
 | Perplexity | `pp` | openai | llm, webSearch | - |
 | Qwen (通义千问) | `qw` | openai | llm, embedding | ✓ |
 | MiniMax | `mm` | openai | llm | - |
+| Z.AI (GLM) | `zi` | openai | llm | ✓ |
 | Custom | `cx` | openai | llm, embedding | - |
 
 ## 配置
@@ -144,6 +156,7 @@ curl http://localhost:10168/v1/chat/completions \
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成 | API 密钥加密密钥（32 字节十六进制） |
 | `VORTEX_REQUIRE_API_KEY` | `false` | 是否要求客户端提供 API Key |
+| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/edge/free_tokens` | 免费 Token 远程服务地址 |
 | `VORTEX_LOG_LEVEL` | `info` | 日志级别 |
 
 ### 管理界面
@@ -155,6 +168,7 @@ curl http://localhost:10168/v1/chat/completions \
 | 接入指南 | `/guide` | 客户端接入示例与模型指定方式 |
 | 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
 | 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 自定义 / 编辑子页 |
+| 模型映射 | `/model-aliases` | 虚拟模型名与多目标故障转移配置 |
 | 免费 Token | `/free-tokens` | 免费额度站点目录 —— 卡片 / 表格双视图、按区域与「是否支持 API」筛选、提交与删除本地推荐 |
 | 请求日志 | `/request-log` | 请求流水与用量明细 |
 | 统计 | `/statistics` | 端点统计（KPI / 热力图 / 趋势 / 端点表）、用量统计（应用来源 / 日模型明细） |
@@ -172,6 +186,7 @@ curl http://localhost:10168/v1/chat/completions \
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/v1/chat/completions` | 聊天补全（支持流式） |
+| POST | `/v1/messages` | Anthropic Messages 兼容（协议转换，支持流式） |
 | GET | `/v1/models` | 模型列表 |
 | POST | `/v1/embeddings` | 文本嵌入 |
 | POST | `/v1/images/generations` | 图像生成 |
@@ -192,6 +207,8 @@ curl http://localhost:10168/v1/chat/completions \
 | GET/PATCH | `/api/settings` | 设置 |
 | GET/POST | `/api/free-tokens` | 免费 Token 站点列表 / 提交推荐 |
 | DELETE | `/api/free-tokens/{id}` | 删除用户提交的推荐（内置条目不可删） |
+| GET/POST | `/api/model-aliases` | 模型别名列表/创建 |
+| GET/PATCH/DELETE | `/api/model-aliases/{id}` | 单个模型别名操作 |
 | GET | `/api/health` | 健康检查 |
 
 详细架构与内部实现参见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
@@ -202,11 +219,12 @@ curl http://localhost:10168/v1/chat/completions \
 - Tauri 2 — 桌面应用框架
 - Actix-Web 4 — HTTP 服务器
 - rusqlite + r2d2 — SQLite 数据库（WAL 模式，连接池）
-- reqwest — HTTP 客户端（rustls-tls）
+- reqwest — HTTP 客户端（native-tls + HTTP/2）
 - aes-gcm — API 密钥加密
 - tokio — 异步运行时
 - tauri-plugin-updater — 自动更新
 - tauri-plugin-process — 进程管理（重启应用）
+- tauri-plugin-autostart — 开机自启
 
 ### 前端 (Vue 3)
 - Vue 3.5 + TypeScript (strict) — UI 框架
@@ -232,7 +250,7 @@ vortex/
 │   ├── stores/             # Pinia 状态管理
 │   ├── styles/             # 设计系统 (cc-theme.css / cc-components.css)
 │   ├── types/              # 类型定义
-│   └── views/              # 页面视图 (15 个 .vue 文件)
+│   └── views/              # 页面视图 (16 个 .vue 文件)
 ├── src-tauri/              # 后端源代码 (Rust + Tauri)
 │   └── src/
 │       ├── api/            # HTTP API 端点 (v1 OpenAI 兼容 + management 管理接口)
@@ -242,7 +260,10 @@ vortex/
 │       ├── routing/        # 熔断器等弹性组件
 │       ├── tauri_cmds/     # Tauri IPC 命令
 │       └── translator/     # 响应格式转换器
-├── docs/website/           # 项目官网（独立静态站点，原生 HTML/CSS/JS 零依赖）
+├── docs/                   # 项目官网与文档
+│   ├── index.html          # 官网落地页（原生 HTML/CSS/JS 零依赖）
+│   ├── wechat/             # 公众号系列文章
+│   └── promo/              # 视频脚本等宣传材料
 ├── package.json            # 前端配置
 └── src-tauri/Cargo.toml    # 后端配置
 ```
@@ -271,20 +292,20 @@ bun run tauri dev
 
 ## 官网
 
-`docs/website/` 是项目的独立静态落地页，原生 HTML/CSS/JS 实现、零构建依赖，配色沿用应用主题（`src/styles/cc-theme.css`）的深紫强调色。
+`docs/index.html` 是项目的独立静态落地页，原生 HTML/CSS/JS 实现、零构建依赖，配色沿用应用主题（`src/styles/cc-theme.css`）的深紫强调色。
 
 ```bash
 # 直接打开
-open docs/website/index.html
+open docs/index.html
 
 # 或起一个本地静态服务
-python3 -m http.server 8080 --directory docs/website
+python3 -m http.server 8080 --directory docs
 ```
 
 页面结构：Hero → 数据概览 → 接入范围 → 特性 → 界面预览 → 快速开始 → 请求流程 → 下载安装 → FAQ。
-截图位于 `docs/website/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
+截图位于 `docs/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
 
-> 下载区的按钮由 `assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
+> 下载区的按钮由 `docs/assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
 > 静态 HTML 里只放「指向 Releases 页面」的兜底链接 —— 因为安装包文件名带版本号，写死必然过期。
 
 > 官网刻意不逐个列出上游平台的厂商名：站点只讲接入能力（云端 API / 聚合中转 / 本地推理 / 自定义端点）与协议兼容性，具体清单以应用内「订阅」页和本 README 的「内置提供商」表为准，避免站点与注册表脱节。

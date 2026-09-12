@@ -62,6 +62,7 @@ impl ProxyEngine {
     pub async fn handle_request(
         &self,
         state: &Arc<AppState>,
+        client: &awc::Client,
         request: ProxyRequest,
     ) -> Result<ProxyOutput> {
         let start = Instant::now();
@@ -116,7 +117,7 @@ impl ProxyEngine {
                 };
                 log::info!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
                 let result = self
-                    .handle_single_with_retry(state, &conn, &request, def, &conn_obj, &target.model, start)
+                    .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
                     .await;
                 match result {
                     Ok(output) => {
@@ -131,7 +132,7 @@ impl ProxyEngine {
                             log::info!("别名 '{}' 目标 {}/{} 熔断器打开，重置后重试", alias.alias, target.provider, target.model);
                             state.resilience_manager.reset(&breaker_name);
                             let retry_result = self
-                                .handle_single_with_retry(state, &conn, &request, def, &conn_obj, &target.model, start)
+                                .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
                                 .await;
                             match retry_result {
                                 Ok(output) => {
@@ -206,7 +207,7 @@ impl ProxyEngine {
         let conn_obj = connection.ok_or_else(|| AppError::Provider("No active connection".into()))?;
         // 带重试与熔断的上游执行
         let result = self
-            .handle_single_with_retry(state, &conn, &request, &provider_def, &conn_obj, &model, start)
+            .handle_single_with_retry(state, client, &conn, &request, &provider_def, &conn_obj, &model, start)
             .await;
 
         // 失败时记录错误用量
@@ -320,6 +321,7 @@ impl ProxyEngine {
     async fn handle_single_with_retry(
         &self,
         state: &Arc<AppState>,
+        client: &awc::Client,
         conn: &rusqlite::Connection,
         request: &ProxyRequest,
         def: &crate::providers::types::ProviderDef,
@@ -375,7 +377,7 @@ impl ProxyEngine {
                 let _ = db_usage::record(&c, &entry);
             });
 
-            match executor.execute(state, request, def, connection, model, Some(usage_cb)).await {
+            match executor.execute(client, request, def, connection, model, Some(usage_cb)).await {
                 Ok(ExecutorOutput::Json(body)) => {
                     // 非流式成功：提取用量、记录成功、写入用量条目
                     let (tokens_in, tokens_out, cost) =
@@ -420,6 +422,13 @@ impl ProxyEngine {
                 Ok(ExecutorOutput::UpstreamError { status, body }) => {
                     // 上游返回非 2xx
                     let status_code = status;
+                    log::warn!(
+                        "上游返回 HTTP {} (attempt {}/{}): {}",
+                        status_code,
+                        attempt + 1,
+                        self.retry_policy.max_retries() + 1,
+                        body.chars().take(500).collect::<String>()
+                    );
                     if !self.retry_policy.should_retry(attempt, Some(status_code)) {
                         // 不可重试：429 时增加退避时间，记录熔断失败
                         if status_code == 429 {
@@ -437,6 +446,16 @@ impl ProxyEngine {
                 }
                 Err(e) => {
                     // 网络错误或其他异常
+                    let err_chain = format!("{}", e);
+                    log::warn!(
+                        "上游请求失败 (attempt {}/{}): {} — provider: {}, connection: {}, model: {}",
+                        attempt + 1,
+                        self.retry_policy.max_retries() + 1,
+                        err_chain,
+                        def.id,
+                        connection.id,
+                        model
+                    );
                     state.resilience_manager.record_failure(&breaker_name);
                     if !self.retry_policy.should_retry(attempt, None) {
                         return Err(e);

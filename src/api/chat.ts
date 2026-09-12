@@ -268,21 +268,24 @@ async function gatewayKey(): Promise<string | null> {
   return cachedKey
 }
 
-/** SSE 增量解析：按空行切分事件，取 `choices[0].delta.content`。 */
-function extractDelta(json: string): string {
+/** SSE 增量解析：按空行切分事件，取 `choices[0].delta.content`；同时检测 error 事件。 */
+function extractDelta(json: string): { delta: string; error: string } {
   try {
     const obj = JSON.parse(json) as {
       choices?: { delta?: { content?: string }; message?: { content?: string } }[]
+      error?: { message?: string } | string
     }
     const c = obj.choices?.[0]
-    return c?.delta?.content ?? c?.message?.content ?? ''
+    const delta = c?.delta?.content ?? c?.message?.content ?? ''
+    const error = typeof obj.error === 'string' ? obj.error : (obj.error?.message ?? '')
+    return { delta, error }
   } catch {
-    return ''
+    return { delta: '', error: '' }
   }
 }
 
 /** 喂入一段 SSE 原始文本，解析出全部 data 行增量并回调；返回未消费完的缓冲尾部。 */
-function feedSseText(buf: string, text: string, onDelta: (delta: string) => void): string {
+function feedSseText(buf: string, text: string, onDelta: (delta: string) => void, onError: (error: string) => void): string {
   buf += text
   // SSE 以空行分隔事件；保留最后一段不完整数据等下一批
   const parts = buf.split(/\r?\n\r?\n/)
@@ -292,9 +295,9 @@ function feedSseText(buf: string, text: string, onDelta: (delta: string) => void
       if (!line.startsWith('data:')) continue
       const payload = line.slice(5).trim()
       if (!payload || payload === '[DONE]') continue
-      const delta = extractDelta(payload)
-      if (!delta) continue
-      onDelta(delta)
+      const { delta, error } = extractDelta(payload)
+      if (error) onError(error)
+      if (delta) onDelta(delta)
     }
   }
   return buf
@@ -321,17 +324,21 @@ async function streamCompletionViaIpc(
 
   const onEvent = new Channel<{
     type: 'delta' | 'complete' | 'done' | 'error'
-    data?: { text?: string; body?: string; message?: string }
+    data?: { text?: string; body?: string; message?: string; ok?: boolean }
   }>()
   onEvent.onmessage = (ev) => {
-    if (ev.type === 'delta' && ev.data?.text) {
-      buf = feedSseText(buf, ev.data.text, onDelta)
-    } else if (ev.type === 'complete' && ev.data?.body) {
-      // 上游忽略 stream 参数时的完整 JSON 响应
-      const delta = extractDelta(ev.data.body)
-      if (delta) onDelta(delta)
-    } else if (ev.type === 'error') {
-      upstreamError = ev.data?.message || '上游请求失败'
+    try {
+      if (ev?.type === 'delta' && ev.data?.text) {
+        buf = feedSseText(buf, ev.data.text, onDelta, (e) => { upstreamError = upstreamError || e })
+      } else if (ev?.type === 'complete' && ev.data?.body) {
+        const { delta, error } = extractDelta(ev.data.body)
+        if (error) upstreamError = upstreamError || error
+        if (delta) onDelta(delta)
+      } else if (ev?.type === 'error') {
+        upstreamError = ev.data?.message || '上游请求失败'
+      }
+    } catch (e) {
+      upstreamError = e instanceof Error ? e.message : String(e)
     }
   }
 
@@ -429,15 +436,17 @@ async function streamCompletion(topicId: string, assistantId: string): Promise<v
       }
       if (!res.body) throw new Error('网关未返回流式响应体')
 
+      let httpError = ''
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buf = ''
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        buf = feedSseText(buf, decoder.decode(value, { stream: true }), onDelta)
+        buf = feedSseText(buf, decoder.decode(value, { stream: true }), onDelta, (e) => { httpError = httpError || e })
       }
 
+      if (httpError) throw new Error(httpError)
       if (!acc) {
         throw new Error('网关返回了空响应（无内容），可能未配置上游提供商或模型不可用')
       }

@@ -288,7 +288,8 @@ pub async fn test_provider(
             // 获取提供商定义
             let def = state.provider_registry.get(&p.provider);
             // 执行连接测试
-            let test_result = test_connection(&p, def).await;
+            let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
+            let test_result = test_connection(&p, def, &upstream_client).await;
             // 持久化测试结果
             let _ = db_providers::update_test_status(
                 &conn,
@@ -329,6 +330,7 @@ struct TestResult {
 async fn test_connection(
     connection: &crate::db::models::ProviderConnection,
     provider_def: Option<&crate::providers::types::ProviderDef>,
+    client: &awc::Client,
 ) -> TestResult {
     // 获取提供商定义，未知则返回错误
     let def = match provider_def {
@@ -388,31 +390,6 @@ async fn test_connection(
         format!("{}{}", base_url, def.models_path)
     };
 
-    // 创建带 15 秒超时的 HTTP 客户端
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    let start = std::time::Instant::now(); // 记录请求开始时间
-    let mut req = client.get(&url);
-
-    // 根据提供商类型设置鉴权
-    if let Some(ref api_key) = connection.api_key {
-        if !api_key.trim().is_empty() {
-            if def.id == "anthropic" {
-                // Anthropic：x-api-key 头 + anthropic-version 头
-                req = req.header("x-api-key", api_key.as_str());
-                req = req.header("anthropic-version", "2023-06-01");
-            } else if def.id == "gemini" {
-                // Gemini：密钥作为 query 参数
-                req = req.query(&[("key", api_key.as_str())]);
-            } else {
-                // OpenAI 兼容：Bearer Token
-                req = req.bearer_auth(api_key.as_str());
-            }
-        }
-    }
-
     // 防御性：地址里仍残留占位/示例域名（仅防御旧数据）时短路。
     if let Ok(parsed) = reqwest::Url::parse(&url) {
         let host = parsed.host_str().unwrap_or("");
@@ -428,9 +405,28 @@ async fn test_connection(
         }
     }
 
-    // 发送请求并处理响应
-    match req.send().await {
-        Ok(response) => {
+    // 构造 GET 请求
+    let mut req = client.get(&url);
+
+    // 根据提供商类型设置鉴权
+    if let Some(ref api_key) = connection.api_key {
+        if !api_key.trim().is_empty() {
+            if def.id == "anthropic" {
+                req = req.insert_header(("x-api-key", api_key.as_str()));
+                req = req.insert_header(("anthropic-version", "2023-06-01"));
+            } else if def.id == "gemini" {
+                req = client.get(&format!("{}?key={}", url, api_key));
+            } else {
+                req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
+            }
+        }
+    }
+
+    let start = std::time::Instant::now();
+
+    // 发送请求并处理响应（15 秒超时）
+    match tokio::time::timeout(std::time::Duration::from_secs(15), req.send()).await {
+        Ok(Ok(mut response)) => {
             let latency = start.elapsed().as_millis() as u64;
             let status_code = response.status();
             if status_code.is_success() {
@@ -438,10 +434,8 @@ async fn test_connection(
                 TestResult { status: "ok".into(), error: None, latency_ms: Some(latency) }
             } else {
                 // HTTP 错误：截取响应体前 280 字符作为线索
-                let body = response
-                    .text()
-                    .await
-                    .unwrap_or_default()
+                let bytes = response.body().await.unwrap_or_default();
+                let body = String::from_utf8_lossy(&bytes)
                     .chars()
                     .take(280)
                     .collect::<String>();
@@ -452,50 +446,22 @@ async fn test_connection(
                 };
                 TestResult {
                     status: "error".into(),
-                    error: Some(format!(
-                        "远程返回 HTTP {}{}",
-                        status_code.as_u16(),
-                        snippet
-                    )),
+                    error: Some(format!("远程返回 HTTP {}{}", status_code.as_u16(), snippet)),
                     latency_ms: Some(latency),
                 }
             }
         }
-        Err(e) => {
-            // 连接级错误（DNS / 超时 / TLS / 拒接）—— 给一线索但不暴露 reqwest 完整栈。
-            let mut msg = format!("无法连接到该地址：{}", friendly_transport_error(&e));
-            if e.is_timeout() {
-                msg.push_str("（请求超过 15 秒未响应，请检查网络与地址可达性）");
-            } else if e.is_connect() {
-                msg.push_str("（连接被拒绝或地址不可达，请确认地址/端口/代理设置）");
-            } else if e.is_request() {
-                msg.push_str("（请求构造异常，请检查地址格式是否合法）");
-            }
+        Ok(Err(e)) => {
+            let msg = format!("无法连接到该地址：{}", e);
             TestResult { status: "error".into(), error: Some(msg), latency_ms: None }
         }
-    }
-}
-
-/// 把 reqwest 内部错误（URL parse / DNS / TLS）翻译为一句话短语，
-/// 避免在前端看到 `error sending request for url (...)` 这种裸字符串。
-///
-/// - `e`：reqwest 错误
-/// - 返回值：简短的中文错误描述
-fn friendly_transport_error(e: &reqwest::Error) -> String {
-    if e.is_timeout() { return "请求超时".into(); }
-    if e.is_connect() { return "连接失败".into(); }
-    if e.is_decode() { return "响应解析失败".into(); }
-    if e.is_redirect() { return "重定向次数过多".into(); }
-    let src = e.to_string();
-    // 根据错误文本关键词进一步分类
-    if src.contains("dns") || src.contains("resolve") {
-        "DNS 解析失败".into()
-    } else if src.contains("invalid url") || src.contains("relative url") {
-        "URL 格式不合法".into()
-    } else if src.len() > 160 {
-        format!("{}…", &src[..160]) // 过长则截断
-    } else {
-        src
+        Err(_) => {
+            TestResult {
+                status: "error".into(),
+                error: Some("请求超过 15 秒未响应，请检查网络与地址可达性".into()),
+                latency_ms: None,
+            }
+        }
     }
 }
 
@@ -544,34 +510,27 @@ pub async fn preview_models(
 
     // 构造 models 接口地址
     let models_url = if body.provider == "custom-openai" && provided_base.is_some() {
-        // 自定义端点的 base 通常已含 /v1，按 OpenAI 约定直接拼 /models
         format!("{}/models", base.trim_end_matches('/'))
     } else if base.contains("{account_id}") {
-        // 占位符未替换
         return HttpResponse::BadRequest().json(json!({
             "error": "该提供方需在「自定义设置」中填写完整 API 地址（替换 {account_id} 占位符）"
         }));
     } else {
-        // 内置提供商：拼接 base + models_path
         format!("{}{}", base, def.models_path)
     };
 
-    // 校验目标地址：必须是合法的 http/https URL，且不能是示例/占位域名。
-    // 这样在用户误填占位符（如 your-api-endpoint.com、example.com）或漏写协议时，
-    // 给出明确提示，而不是把底层 DNS 解析/连接失败错误直接抛给前端。
+    // 校验目标地址
     let parsed = match reqwest::Url::parse(&models_url) {
         Ok(u) => u,
         Err(_) => return HttpResponse::BadRequest().json(json!({
             "error": "API 地址格式不正确，需以 http:// 或 https:// 开头"
         })),
     };
-    // 校验协议
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return HttpResponse::BadRequest().json(json!({
             "error": "仅支持 http/https 协议的 API 地址"
         }));
     }
-    // 校验主机名非占位域名
     match parsed.host_str() {
         Some(host) => {
             let h = host.to_lowercase();
@@ -588,7 +547,7 @@ pub async fn preview_models(
         None => return HttpResponse::BadRequest().json(json!({ "error": "API 地址缺少主机名" })),
     }
 
-    // 鉴权方式：自定义提供方以 api_protocol 为准，内置以 provider id 为准
+    // 鉴权方式
     let auth_kind: &str = match body.api_protocol.as_deref() {
         Some("anthropic") => "x-api-key",
         Some("gemini") => "query",
@@ -600,43 +559,33 @@ pub async fn preview_models(
         },
     };
 
-    // 创建带 15 秒超时的 HTTP 客户端
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({ "error": format!("创建请求客户端失败：{}", e) })),
-    };
+    // 使用上游链路客户端（awc + openssl）
+    let client = crate::create_upstream_client(&state.upstream_ssl_connector);
     let mut req = client.get(&models_url);
-    // 设置鉴权
     if let Some(ref key) = body.api_key {
         if !key.trim().is_empty() {
             match auth_kind {
                 "x-api-key" => {
-                    // Anthropic 鉴权
-                    req = req.header("x-api-key", key.as_str());
-                    req = req.header("anthropic-version", "2023-06-01");
+                    req = req.insert_header(("x-api-key", key.as_str()));
+                    req = req.insert_header(("anthropic-version", "2023-06-01"));
                 }
                 "query" => {
-                    // Gemini 鉴权：密钥作为 query 参数
-                    req = req.query(&[("key", key.as_str())]);
+                    req = client.get(&format!("{}?key={}", models_url, key));
                 }
                 _ => {
-                    // OpenAI 兼容：Bearer Token
-                    req = req.bearer_auth(key.as_str());
+                    req = req.insert_header(("Authorization", format!("Bearer {}", key)));
                 }
             }
         }
     }
 
-    // 发送请求并处理响应
-    match req.send().await {
-        Ok(resp) => {
+    // 发送请求并处理响应（15 秒超时）
+    match tokio::time::timeout(std::time::Duration::from_secs(15), req.send()).await {
+        Ok(Ok(mut resp)) => {
             let status = resp.status();
             if !status.is_success() {
-                // HTTP 错误：根据状态码给出友好提示，并附带上游真实错误信息（如有）
-                let detail = resp.text().await.unwrap_or_default();
+                let bytes = resp.body().await.unwrap_or_default();
+                let detail = String::from_utf8_lossy(&bytes).into_owned();
                 let upstream = extract_upstream_error(&detail);
                 let hint = match status.as_u16() {
                     401 => "API 密钥无效或已过期，请检查密钥是否正确".to_string(),
@@ -653,12 +602,16 @@ pub async fn preview_models(
                     "detail": detail.chars().take(600).collect::<String>(),
                 }));
             }
-            // 解析响应 JSON
-            match resp.json::<serde_json::Value>().await {
+            let bytes = match resp.body().await {
+                Ok(b) => b,
+                Err(e) => return HttpResponse::BadGateway().json(json!({
+                    "error": format!("响应体读取失败：{}", e),
+                })),
+            };
+            match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(v) => {
                     let models = extract_model_ids(&v);
                     if models.is_empty() {
-                        // 连接成功但未解析到模型
                         return HttpResponse::Ok().json(json!({
                             "models": [],
                             "warning": "已成功连接，但未能从响应中解析出模型列表（可手动填写模型 ID）",
@@ -671,8 +624,11 @@ pub async fn preview_models(
                 })),
             }
         }
-        Err(e) => HttpResponse::BadGateway().json(json!({
+        Ok(Err(e)) => HttpResponse::BadGateway().json(json!({
             "error": format!("无法连接到该地址，请检查 API 地址是否正确、网络是否可访问该服务（底层错误：{}）", e)
+        })),
+        Err(_) => HttpResponse::BadGateway().json(json!({
+            "error": "请求超过 15 秒未响应，请检查网络与地址可达性"
         })),
     }
 }
