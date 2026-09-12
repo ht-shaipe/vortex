@@ -342,7 +342,7 @@ pub fn run() {
                 });
             }
 
-            // 构建托盘菜单项
+            // 构建托盘菜单项（含启动和停止两项，按状态动态启用/禁用）
             let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
             let start_item = MenuItemBuilder::with_id("start_proxy", "启动代理").build(app)?;
             let stop_item = MenuItemBuilder::with_id("stop_proxy", "停止代理").build(app)?;
@@ -354,12 +354,15 @@ pub fn run() {
                 .item(&stop_item)
                 .item(&quit)
                 .build()?;
+            // 菜单延迟挂载：构建时不附菜单，右键首次点击时才 set_menu
+            let menu_cell = std::sync::Mutex::new(Some(menu));
+            // 克隆菜单项引用给 on_menu_event 闭包，用于启停后主动更新状态
+            let start_item_for_menu = start_item.clone();
+            let stop_item_for_menu = stop_item.clone();
 
             // 构建系统托盘图标
             let mut builder = TrayIconBuilder::new()
-                .menu(&menu)
                 .tooltip("Vortex AI Gateway")
-                .show_menu_on_left_click(false)
                 // 托盘菜单事件处理
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "quit" => app.exit(0),
@@ -374,33 +377,79 @@ pub fn run() {
                         }
                     }
                     "start_proxy" => {
-                        // 向前端发送启动代理事件
-                        let _ = app.emit("tray-action", "start");
+                        // 直接在后端启动代理
+                        let app_handle = app.clone();
+                        let si = start_item_for_menu.clone();
+                        let spi = stop_item_for_menu.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            let mut guard = state.proxy_handle.lock();
+                            if guard.is_none() {
+                                let handle = crate::start_api_server(state.inner().clone(), state.proxy_port);
+                                *guard = Some(handle);
+                                // 主动更新菜单项状态
+                                let _ = si.set_enabled(false);
+                                let _ = spi.set_enabled(true);
+                                let _ = app_handle.emit("tray-action", "started");
+                            }
+                        });
                     }
                     "stop_proxy" => {
-                        // 向前端发送停止代理事件
-                        let _ = app.emit("tray-action", "stop");
+                        // 直接在后端停止代理
+                        let app_handle = app.clone();
+                        let si = start_item_for_menu.clone();
+                        let spi = stop_item_for_menu.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            let handle = { state.proxy_handle.lock().take() };
+                            if let Some(handle) = handle {
+                                handle.stop(true).await;
+                                // 主动更新菜单项状态
+                                let _ = si.set_enabled(true);
+                                let _ = spi.set_enabled(false);
+                                let _ = app_handle.emit("tray-action", "stopped");
+                            }
+                        });
                     }
                     _ => {}
                 })
                 // 托盘图标点击事件处理
-                .on_tray_icon_event(|tray, event| {
-                    // 左键点击：显示并聚焦主窗口（右键点击由系统自动弹出菜单）
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        // 恢复 Dock 图标
-                        #[cfg(target_os = "macos")]
-                        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.unminimize();
-                            let _ = w.set_focus();
+                .on_tray_icon_event(move |tray, event| {
+                    match event {
+                        // 左键点击：显示并聚焦主窗口
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => {
+                            let app = tray.app_handle();
+                            #[cfg(target_os = "macos")]
+                            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
                         }
+                        // 右键点击：首次挂载菜单，每次按状态切换菜单项启用/禁用
+                        TrayIconEvent::Click {
+                            button: MouseButton::Right,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => {
+                            // 首次右键点击：挂载菜单
+                            if let Some(menu) = menu_cell.lock().unwrap().take() {
+                                let _ = tray.set_menu(Some(menu));
+                                let _ = tray.set_show_menu_on_left_click(false);
+                            }
+                            // 根据网关状态启用/禁用菜单项
+                            let app = tray.app_handle();
+                            let state = app.state::<std::sync::Arc<AppState>>();
+                            let is_running = state.proxy_handle.lock().is_some();
+                            let _ = start_item.set_enabled(!is_running);
+                            let _ = stop_item.set_enabled(is_running);
+                        }
+                        _ => {}
                     }
                 });
 

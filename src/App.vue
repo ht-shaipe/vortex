@@ -22,21 +22,12 @@ onMounted(async () => {
   // 仅在桌面环境（Tauri）下监听托盘事件
   if (runtime.kind !== 'desktop') return
   const { listen } = await import('@tauri-apps/api/event')
-  const { invoke } = await import('@tauri-apps/api/core')
-  // 监听托盘菜单发出的 'tray-action' 事件
+  // 监听托盘菜单发出的 'tray-action' 事件（后端已直接执行启停，前端仅提示）
   unlisten = await listen<string>('tray-action', async (e) => {
-    try {
-      if (e.payload === 'start') {
-        // 启动代理
-        await invoke('start_proxy')
-        ElMessage.success('代理已启动')
-      } else if (e.payload === 'stop') {
-        // 停止代理
-        await invoke('stop_proxy')
-        ElMessage.success('代理已停止')
-      }
-    } catch (err) {
-      ElMessage.error(err instanceof Error ? err.message : String(err))
+    if (e.payload === 'started') {
+      ElMessage.success('代理已启动')
+    } else if (e.payload === 'stopped') {
+      ElMessage.success('代理已停止')
     }
   })
 

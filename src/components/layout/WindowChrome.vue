@@ -52,6 +52,7 @@ import { ElIcon } from 'element-plus'
 import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { useSidebarCollapsed } from '@/composables/useSidebarCollapsed'
 import { useNotifications } from '@/composables/useNotifications'
+import { runtime } from '@/lib/runtime'
 import type { NotificationItem } from '@/api/notifications'
 
 const { collapsed, toggleCollapsed } = useSidebarCollapsed()
@@ -60,6 +61,7 @@ const { unreadCount, latestNotifications, markAllRead, startPolling } = useNotif
 const healthOk = ref(false)
 const showNotifPanel = ref(false)
 let _healthTimer: ReturnType<typeof setInterval> | null = null
+let _unlistenTray: (() => void) | undefined
 
 /** 轮询后端健康检查接口。 */
 async function checkHealth() {
@@ -90,15 +92,24 @@ function onDocClick(e: MouseEvent) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   checkHealth()
-  _healthTimer = setInterval(checkHealth, 30000)
+  _healthTimer = setInterval(checkHealth, 10000)
   startPolling()
   document.addEventListener('click', onDocClick)
+  // 监听托盘代理启停事件，立即更新网关状态指示灯
+  if (runtime.kind === 'desktop') {
+    const { listen } = await import('@tauri-apps/api/event')
+    _unlistenTray = await listen<string>('tray-action', (e) => {
+      if (e.payload === 'started') healthOk.value = true
+      else if (e.payload === 'stopped') healthOk.value = false
+    })
+  }
 })
 
 onUnmounted(() => {
   if (_healthTimer) clearInterval(_healthTimer)
+  _unlistenTray?.()
   document.removeEventListener('click', onDocClick)
 })
 </script>

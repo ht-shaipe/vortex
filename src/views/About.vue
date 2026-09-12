@@ -10,7 +10,7 @@
         <div class="about-info">
           <div class="about-name text-20px font-bold">Vortex</div>
           <div class="about-meta mono text-11.5px text-ink-3 mt-4px">v{{ currentVersion || '0.1.0' }} · MIT License · Tauri 2 + Rust + Vue 3</div>
-          <p class="about-desc text-13px text-ink-2 leading-[1.7] my-12px">统一的 AI 网关桌面应用，将 21+ 个 AI 提供商聚合为 OpenAI 兼容 API。支持 17 种路由策略、组合模型、API 密钥管理与用量统计。</p>
+          <p class="about-desc text-13px text-ink-2 leading-[1.7] my-12px">统一的 AI 网关桌面应用，将多家 AI 提供商聚合为 OpenAI 兼容 API。支持多种路由策略、组合模型、API 密钥管理与用量统计。</p>
           <div class="about-links">
             <a class="btn" href="https://v2.tauri.app" target="_blank" rel="noopener">Tauri 文档</a>
             <a class="btn" href="https://element-plus.org" target="_blank" rel="noopener">Element Plus</a>
