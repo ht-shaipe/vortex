@@ -95,7 +95,7 @@
       width="400"
       :close-on-click-modal="!deleting"
     >
-      <p class="del-text m-0 text-14px text-ink-2 leading-1.6">
+      <p class="del-text m-0 text-14px text-ink-2 leading-[1.6]">
         确定删除「{{ deletingTopic?.title || '新对话' }}」吗？该会话下的消息会一并删除，且无法恢复。
       </p>
       <template #footer>

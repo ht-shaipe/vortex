@@ -102,12 +102,11 @@ fn site_from_remote_or_request(
 
 /// 把提交额外落一份本地副本（best-effort），便于离线回退与本地删除。
 ///
-/// - `state`：应用全局状态
+/// - `pool`：数据库连接池
 /// - `req`：创建站点的请求体
-fn save_local_copy(state: &web::Data<Arc<AppState>>, req: &CreateFreeTokenSiteRequest) {
-    if let Ok(conn) = db_core::get_conn(&state.db_pool) {
+fn save_local_copy(pool: &crate::db::core::DbPool, req: &CreateFreeTokenSiteRequest) {
+    if let Ok(conn) = db_core::get_conn(pool) {
         if let Err(e) = db_free_tokens::create(&conn, req) {
-            // 本地副本写入失败不影响主流程，仅记录警告
             log::warn!("[FREE-TOKENS] 本地副本写入失败(已忽略): {}", e);
         }
     }
@@ -145,13 +144,19 @@ pub async fn list_sites(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 
     // 本地模式或远程回退：从数据库查询
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
-    match db_free_tokens::list(&conn) {
-        Ok(sites) => HttpResponse::Ok().json(json!({"sites": sites})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let pool = state.db_pool.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_free_tokens::list(&conn)
+            .map(|sites| json!({ "sites": sites }))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(v)) => HttpResponse::Ok().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
@@ -195,7 +200,13 @@ pub async fn create_site(
         {
             Ok(value) => {
                 // 远端创建成功：额外落一份本地副本，便于「我的推荐」展示与离线回退
-                save_local_copy(&state, &body.0);
+                let pool = state.db_pool.clone();
+                let req_clone = body.0.clone();
+                let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
+                    save_local_copy(&pool, &req_clone);
+                    Ok(())
+                })
+                .await;
                 return HttpResponse::Created().json(site_from_remote_or_request(&value, &body.0));
             }
             Err(e) => {
@@ -206,13 +217,18 @@ pub async fn create_site(
     }
 
     // 本地模式或远程降级：直接写入数据库
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
-    match db_free_tokens::create(&conn, &body.0) {
-        Ok(site) => HttpResponse::Created().json(site),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let pool = state.db_pool.clone();
+    let req = body.into_inner();
+    let result = tokio::task::spawn_blocking(move || -> Result<crate::db::models::FreeTokenSite, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_free_tokens::create(&conn, &req).map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(site)) => HttpResponse::Created().json(site),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
@@ -244,17 +260,23 @@ pub async fn delete_site(
     }
 
     // 删除本地记录
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<Result<bool, String>, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        match db_free_tokens::delete_user_site(&conn, &id) {
+            Ok(deleted) => Ok(Ok(deleted)),
+            Err(e) => Ok(Err(e.to_string())),
+        }
+    })
+    .await;
 
-    match db_free_tokens::delete_user_site(&conn, &id) {
-        Ok(true) => HttpResponse::Ok().json(json!({"success": true})),
-        // 本地无记录但远端已删除，仍视为成功
-        Ok(false) if remote_deleted => HttpResponse::Ok().json(json!({"success": true})),
-        Ok(false) => HttpResponse::NotFound().json(json!({"error": "Site not found"})),
-        Err(_) if remote_deleted => HttpResponse::Ok().json(json!({"success": true})),
-        Err(e) => HttpResponse::BadRequest().json(json!({"error": e.to_string()})),
+    match result {
+        Ok(Ok(Ok(true))) => HttpResponse::Ok().json(json!({ "success": true })),
+        Ok(Ok(Ok(false))) if remote_deleted => HttpResponse::Ok().json(json!({ "success": true })),
+        Ok(Ok(Ok(false))) => HttpResponse::NotFound().json(json!({ "error": "Site not found" })),
+        Ok(Ok(Err(_))) if remote_deleted => HttpResponse::Ok().json(json!({ "success": true })),
+        Ok(Ok(Err(e))) => HttpResponse::BadRequest().json(json!({ "error": e })),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }

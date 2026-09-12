@@ -26,7 +26,8 @@
         <div class="err-body" :class="{ collapsed: !expanded && msg.content.length > 60 }">{{ msg.content }}</div>
       </div>
 
-      <div v-else class="bubble px-14px py-9px rounded-12px text-14px leading-1.625 text-ink bg-surface border border-line whitespace-pre-wrap break-words min-w-64px min-h-22px" :class="{ mine: isUser }">{{ body }}</div>
+      <div v-else-if="isUser" class="bubble px-14px py-9px rounded-12px text-14px leading-[1.625] text-ink bg-surface border border-line whitespace-pre-wrap break-words min-w-64px min-h-22px" :class="{ mine: isUser }">{{ body }}</div>
+      <div v-else class="bubble markdown-body px-14px py-9px rounded-12px text-14px leading-[1.625] text-ink bg-surface border border-line break-words min-w-64px min-h-22px" :class="{ mine: isUser }" v-html="renderedBody"></div>
 
       <div v-if="showBranch || showRegen" class="msg-ops flex items-center gap-3px pt-2px px-2px text-ink-4">
         <template v-if="showBranch">
@@ -68,6 +69,7 @@
 import { computed, ref } from 'vue'
 import { User, Cpu, ArrowLeft, ArrowRight, Refresh, CircleClose } from '@element-plus/icons-vue'
 import type { BranchMessage } from '@/api/chat'
+import { renderMarkdown } from '@/lib/markdown'
 
 // Props 定义：msg 为消息数据，busy 标识是否正在生成中
 const props = defineProps<{ msg: BranchMessage; busy: boolean }>()
@@ -92,6 +94,9 @@ const body = computed(
     props.msg.content ||
     (props.msg.status === 'pending' || props.msg.status === 'streaming' ? '…' : ''),
 )
+
+// 助手消息的 Markdown 渲染结果
+const renderedBody = computed(() => renderMarkdown(body.value))
 
 // 格式化时间显示（月/日 时:分）
 const time = computed(() => {

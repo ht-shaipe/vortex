@@ -97,216 +97,224 @@ fn mask_connection(c: &crate::db::models::ProviderConnection) -> serde_json::Val
 pub async fn list_providers(
     state: web::Data<Arc<AppState>>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
+    let registry: Vec<_> = state.provider_registry.list().into_iter().cloned().collect();
 
-    // 查询所有连接并解密
-    let connections = db_providers::list(&conn, &state.encryption_key).unwrap_or_default();
-    // 获取提供商注册表
-    let registry = state.provider_registry.list();
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        let connections = db_providers::list(&conn, &encryption_key).unwrap_or_default();
 
-    let mut result = vec![];
-    // 为每个提供商定义汇总连接统计
-    for def in registry {
-        let provider_connections: Vec<_> = connections.iter()
-            .filter(|c| c.provider == def.id)
-            .collect();
-        result.push(json!({
-            "id": def.id,
-            "name": def.name,
-            "icon": def.icon,
-            "color": def.color,
-            "hasFree": def.has_free,
-            "noAuth": def.no_auth,
-            "authHint": def.auth_hint,
-            "serviceKinds": def.service_kinds,
-            "connections": provider_connections.len(), // 总连接数
-            "activeConnections": provider_connections.iter().filter(|c| c.is_active).count(), // 活跃连接数
-        }));
+        let mut result = vec![];
+        for def in &registry {
+            let provider_connections: Vec<_> = connections.iter()
+                .filter(|c| c.provider == def.id)
+                .collect();
+            result.push(json!({
+                "id": def.id,
+                "name": def.name,
+                "icon": def.icon,
+                "color": def.color,
+                "hasFree": def.has_free,
+                "noAuth": def.no_auth,
+                "authHint": def.auth_hint,
+                "serviceKinds": def.service_kinds,
+                "connections": provider_connections.len(),
+                "activeConnections": provider_connections.iter().filter(|c| c.is_active).count(),
+            }));
+        }
+
+        let masked_connections: Vec<_> = connections.iter().map(|c| mask_connection(c)).collect();
+        Ok(json!({"providers": result, "connections": masked_connections}))
+    })
+    .await;
+
+    match result {
+        Ok(Ok(v)) => HttpResponse::Ok().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
-
-    // 对所有连接进行脱敏处理
-    let masked_connections: Vec<_> = connections.iter().map(|c| mask_connection(c)).collect();
-    HttpResponse::Ok().json(json!({"providers": result, "connections": masked_connections}))
 }
 
 /// 处理 POST 请求，创建新的提供商连接。
-///
-/// - `state`：应用全局状态
-/// - `body`：创建连接请求体（含提供商 ID、密钥、配置等）
-/// - 返回值：201 Created 含脱敏后的连接对象，或 500 错误
 pub async fn create_provider(
     state: web::Data<Arc<AppState>>,
     body: web::Json<CreateProviderRequest>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
+    let req = body.into_inner();
 
-    // 创建连接并返回脱敏结果
-    match db_providers::create(&conn, &body, &state.encryption_key) {
-        Ok(provider) => HttpResponse::Created().json(mask_connection(&provider)),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_providers::create(&conn, &req, &encryption_key)
+            .map(|p| mask_connection(&p))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(v)) => HttpResponse::Created().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
 /// 处理 GET 请求，按 ID 获取单个提供商连接。
-///
-/// - `state`：应用全局状态
-/// - `path`：URL 路径中的连接 ID
-/// - 返回值：脱敏后的连接对象、404 未找到或 500 错误
 pub async fn get_provider(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
+    let id = path.into_inner();
 
-    let id = path.into_inner(); // 提取路径参数中的 ID
-    // 按 ID 查询连接
-    match db_providers::get_by_id(&conn, &id, &state.encryption_key) {
-        Ok(Some(provider)) => HttpResponse::Ok().json(mask_connection(&provider)),
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let result = tokio::task::spawn_blocking(move || -> Result<Option<serde_json::Value>, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_providers::get_by_id(&conn, &id, &encryption_key)
+            .map(|opt| opt.map(|p| mask_connection(&p)))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(Some(v))) => HttpResponse::Ok().json(v),
+        Ok(Ok(None)) => HttpResponse::NotFound().json(json!({ "error": "Provider not found" })),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
 /// 处理 PUT/PATCH 请求，按 ID 更新提供商连接。
-///
-/// - `state`：应用全局状态
-/// - `path`：URL 路径中的连接 ID
-/// - `body`：包含更新字段的 JSON 请求体
-/// - 返回值：脱敏后的更新后连接对象、404 未找到或 500 错误
 pub async fn update_provider(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
+    let id = path.into_inner();
+    let body = body.into_inner();
 
-    let id = path.into_inner(); // 提取路径参数中的 ID
-    // 更新连接
-    match db_providers::update(&conn, &id, &body, &state.encryption_key) {
-        Ok(Some(provider)) => HttpResponse::Ok().json(mask_connection(&provider)),
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let result = tokio::task::spawn_blocking(move || -> Result<Option<serde_json::Value>, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_providers::update(&conn, &id, &body, &encryption_key)
+            .map(|opt| opt.map(|p| mask_connection(&p)))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(Some(v))) => HttpResponse::Ok().json(v),
+        Ok(Ok(None)) => HttpResponse::NotFound().json(json!({ "error": "Provider not found" })),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
 /// 处理 DELETE 请求，按 ID 删除提供商连接。
-///
-/// - `state`：应用全局状态
-/// - `path`：URL 路径中的连接 ID
-/// - 返回值：`{ "success": true }`、404 未找到或 500 错误
 pub async fn delete_provider(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
+    let pool = state.db_pool.clone();
+    let id = path.into_inner();
 
-    let id = path.into_inner(); // 提取路径参数中的 ID
-    // 删除连接
-    match db_providers::delete(&conn, &id) {
-        Ok(true) => HttpResponse::Ok().json(json!({"success": true})),
-        Ok(false) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let result = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_providers::delete(&conn, &id).map_err(|e| e.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(true)) => HttpResponse::Ok().json(json!({ "success": true })),
+        Ok(Ok(false)) => HttpResponse::NotFound().json(json!({ "error": "Provider not found" })),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
 /// 处理 GET 请求，按 ID 获取提供商连接的解密后真实 API 密钥。
-///
-/// 与 [`get_provider`] 不同，本端点返回未脱敏的密钥明文，供前端复制到剪贴板使用。
-/// 仅在连接存在且配置了 api_key 时返回密钥；否则返回 404 或空值。
-///
-/// - `state`：应用全局状态
-/// - `path`：URL 路径中的连接 ID
-/// - 返回值：`{ "apiKey": "..." }`、404 未找到或 500 错误
 pub async fn get_api_key(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
 ) -> HttpResponse {
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
-
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
     let id = path.into_inner();
-    match db_providers::get_by_id(&conn, &id, &state.encryption_key) {
-        Ok(Some(provider)) => {
-            let api_key = provider.api_key.unwrap_or_default();
-            if api_key.is_empty() {
-                HttpResponse::NotFound().json(json!({"error": "该连接未配置 API 密钥"}))
-            } else {
-                HttpResponse::Ok().json(json!({ "apiKey": api_key }))
+
+    let result = tokio::task::spawn_blocking(move || -> Result<Result<String, String>, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        match db_providers::get_by_id(&conn, &id, &encryption_key) {
+            Ok(Some(p)) => {
+                let api_key = p.api_key.unwrap_or_default();
+                if api_key.is_empty() {
+                    Ok(Err("该连接未配置 API 密钥".to_string()))
+                } else {
+                    Ok(Ok(api_key))
+                }
             }
+            Ok(None) => Ok(Err("Provider not found".to_string())),
+            Err(e) => Err(e.to_string()),
         }
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    })
+    .await;
+
+    match result {
+        Ok(Ok(Ok(key))) => HttpResponse::Ok().json(json!({ "apiKey": key })),
+        Ok(Ok(Err(msg))) => HttpResponse::NotFound().json(json!({ "error": msg })),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
 /// 处理 POST 请求，测试指定提供商连接的可达性。
-///
-/// 向提供商的模型列表端点发起 GET 请求，根据响应状态判断连接是否正常，
-/// 并将测试结果（状态/错误/延迟）持久化到连接记录中。
-///
-/// - `state`：应用全局状态
-/// - `path`：URL 路径中的连接 ID
-/// - 返回值：`{ "status": "ok"|"error", "error": ..., "latencyMs": ... }`
 pub async fn test_provider(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let pool = state.db_pool.clone();
+    let encryption_key = state.encryption_key.clone();
+    let id = path.into_inner();
+    let id_for_db = id.clone();
+
+    // 1. DB 读取
+    let provider_result = tokio::task::spawn_blocking(move || -> Result<Option<crate::db::models::ProviderConnection>, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_providers::get_by_id(&conn, &id_for_db, &encryption_key).map_err(|e| e.to_string())
+    })
+    .await;
+
+    let provider = match provider_result {
+        Ok(Ok(Some(p))) => p,
+        Ok(Ok(None)) => return HttpResponse::NotFound().json(json!({ "error": "Provider not found" })),
+        Ok(Err(e)) => return HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => return HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     };
 
-    let id = path.into_inner(); // 提取路径参数中的 ID
-    // 查询连接信息
-    let provider = db_providers::get_by_id(&conn, &id, &state.encryption_key);
+    // 2. HTTP 连接测试（async）
+    let def = state.provider_registry.get(&provider.provider);
+    let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let test_result = test_connection(&provider, def, &upstream_client).await;
 
-    match provider {
-        Ok(Some(p)) => {
-            // 获取提供商定义
-            let def = state.provider_registry.get(&p.provider);
-            // 执行连接测试
-            let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
-            let test_result = test_connection(&p, def, &upstream_client).await;
-            // 持久化测试结果
-            let _ = db_providers::update_test_status(
-                &conn,
-                &id,
-                &test_result.status,
-                test_result.error.as_deref(),
-                test_result.latency_ms.map(|v| v as i64),
-            );
-            HttpResponse::Ok().json(json!({
-                "status": test_result.status,
-                "error": test_result.error,
-                "latencyMs": test_result.latency_ms,
-            }))
-        }
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Provider not found"})),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    }
+    // 3. DB 写入测试结果
+    let pool2 = state.db_pool.clone();
+    let status = test_result.status.clone();
+    let error = test_result.error.clone();
+    let latency = test_result.latency_ms.map(|v| v as i64);
+    let id2 = id.clone();
+    let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let conn = db_core::get_conn(&pool2).map_err(|e| e.to_string())?;
+        db_providers::update_test_status(&conn, &id2, &status, error.as_deref(), latency)
+            .map_err(|e| e.to_string())
+    })
+    .await;
+
+    HttpResponse::Ok().json(json!({
+        "status": test_result.status,
+        "error": test_result.error,
+        "latencyMs": test_result.latency_ms,
+    }))
 }
 
 /// 连接测试结果

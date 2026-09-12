@@ -3,7 +3,7 @@
  * 在桌面环境（Tauri）下检查、下载并安装应用更新，
  * 提供更新状态、进度、版本信息等响应式数据。
  */
-import { ref, readonly } from 'vue'
+import { ref, readonly, defineComponent, h } from 'vue'
 import { runtime } from '@/lib/runtime'
 
 /** 更新流程状态枚举。 */
@@ -145,9 +145,75 @@ async function relaunchApp(): Promise<void> {
   }
 }
 
+/** 下载进度通知内容组件（响应式读取 downloadProgress）。 */
+const ProgressContent = defineComponent({
+  setup() {
+    return () => h('div', { style: 'display: flex; flex-direction: column; gap: 8px; width: 240px;' }, [
+      h('span', { style: 'font-size: 12px; color: var(--ink-3);' }, `下载进度：${downloadProgress.value}%`),
+      h('div', { style: 'height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden;' }, [
+        h('div', {
+          style: `height: 100%; background: var(--accent); border-radius: 2px; width: ${downloadProgress.value}%; transition: width 0.2s ease;`,
+        }),
+      ]),
+    ])
+  },
+})
+
+/**
+ * 从通知栏直接启动更新流程。
+ * 下载完成后弹出确认框，用户确认后自动重启应用。
+ */
+async function startUpdateFromNotification(): Promise<void> {
+  if (status.value === 'downloading') return
+
+  try {
+    const { ElNotification, ElMessageBox } = await import('element-plus')
+
+    const downloadPromise = downloadAndInstall()
+
+    const progressNotification = ElNotification({
+      title: '正在下载更新',
+      message: h(ProgressContent),
+      type: 'info',
+      duration: 0,
+      position: 'bottom-right',
+    })
+
+    await downloadPromise
+    progressNotification.close()
+
+    if (status.value === 'ready') {
+      try {
+        await ElMessageBox.confirm(
+          '更新已下载完成，是否立即重启应用以完成安装？',
+          '更新完成',
+          {
+            confirmButtonText: '立即重启',
+            cancelButtonText: '稍后',
+            type: 'success',
+          },
+        )
+        await relaunchApp()
+      } catch {
+        // 用户选择"稍后"，可稍后在"关于"页面重启
+      }
+    } else if (status.value === 'error') {
+      ElNotification({
+        title: '更新下载失败',
+        message: errorMsg.value || '下载更新时出错',
+        type: 'error',
+        duration: 5000,
+        position: 'bottom-right',
+      })
+    }
+  } catch {
+    // 整个流程出错，静默处理
+  }
+}
+
 /**
  * 应用启动时静默检查更新。
- * 发现新版本时弹出通知提示用户前往"关于"页面查看。
+ * 发现新版本时弹出通知，带"立即更新"按钮可直接下载安装。
  */
 async function checkOnStartup(): Promise<void> {
   if (runtime.kind !== 'desktop') return
@@ -155,11 +221,22 @@ async function checkOnStartup(): Promise<void> {
     const hasUpdate = await checkForUpdate(true)
     if (hasUpdate && updateInfo.value) {
       const { ElNotification } = await import('element-plus')
-      ElNotification({
+
+      const notification = ElNotification({
         title: `发现新版本 v${updateInfo.value.version}`,
-        message: '点击"关于"页面查看详情并安装',
+        message: h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+          h('p', { style: 'margin: 0; font-size: 12px; color: var(--ink-3);' }, '点击"立即更新"直接下载安装'),
+          h('button', {
+            class: 'btn primary sm',
+            style: 'align-self: flex-start; cursor: pointer;',
+            onClick: () => {
+              notification.close()
+              void startUpdateFromNotification()
+            },
+          }, '立即更新'),
+        ]),
         type: 'info',
-        duration: 8000,
+        duration: 0,
         position: 'bottom-right',
       })
     }

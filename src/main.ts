@@ -13,6 +13,7 @@ import router from './router'
 import 'virtual:uno.css'
 import './styles/theme.css'
 import './styles/components.css'
+import './styles/markdown.css'
 import '@/composables/useTheme'
 
 // 创建 Vue 应用实例与 Pinia 实例

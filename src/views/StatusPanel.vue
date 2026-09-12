@@ -9,7 +9,7 @@
           class="sp-logo w-28px h-28px rounded-7px bg-ink text-accent grid place-items-center font-extrabold text-14px"
           >V</span
         >
-        <div class="sp-brand-text flex flex-col leading-1.15">
+        <div class="sp-brand-text flex flex-col leading-[1.15]">
           <span class="sp-name text-14px font-bold text-ink">Vortex</span>
           <span class="sp-version text-10.5px text-ink-4">v{{ status?.version ?? '—' }}</span>
         </div>
@@ -65,25 +65,25 @@
       </p>
       <div class="sp-stats-grid grid grid-cols-2 gap-8px">
         <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
-          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 tabular-nums">{{
+          <span class="sp-stat-num text-18px font-bold text-ink leading-[1.1] tabular-nums">{{
             status?.provider_count ?? 0
           }}</span>
           <span class="sp-stat-label text-10.5px text-ink-4">提供商</span>
         </div>
         <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
-          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 text-ok tabular-nums">{{
+          <span class="sp-stat-num text-18px font-bold text-ink leading-[1.1] text-ok tabular-nums">{{
             status?.active_provider_count ?? 0
           }}</span>
           <span class="sp-stat-label text-10.5px text-ink-4">活跃连接</span>
         </div>
         <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
-          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 tabular-nums">{{
+          <span class="sp-stat-num text-18px font-bold text-ink leading-[1.1] tabular-nums">{{
             status?.api_key_count ?? 0
           }}</span>
           <span class="sp-stat-label text-10.5px text-ink-4">API Key</span>
         </div>
         <div class="sp-stat flex flex-col items-center gap-2px py-6px px-4px bg-surface rounded-7px">
-          <span class="sp-stat-num text-18px font-bold text-ink leading-1.1 text-ok tabular-nums">{{
+          <span class="sp-stat-num text-18px font-bold text-ink leading-[1.1] text-ok tabular-nums">{{
             status?.active_api_key_count ?? 0
           }}</span>
           <span class="sp-stat-label text-10.5px text-ink-4">有效 Key</span>

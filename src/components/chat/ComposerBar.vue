@@ -42,7 +42,7 @@
       <textarea
         ref="taRef"
         v-model="draft"
-        class="composer-input flex-1 min-h-0 w-full pt-6px px-14px pb-2px border-none outline-none resize-none overflow-y-auto bg-transparent text-ink text-14px leading-1.6"
+        class="composer-input flex-1 min-h-0 w-full pt-6px px-14px pb-2px border-none outline-none resize-none overflow-y-auto bg-transparent text-ink text-14px leading-[1.6]"
         rows="1"
         :disabled="disabled"
         placeholder="输入消息…"

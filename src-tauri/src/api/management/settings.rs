@@ -1,7 +1,6 @@
 //! 设置管理端点
 //!
-//! 提供全局设置的读取与更新接口，供前端 UI 管理应用级配置。
-//! 所有操作委托 [`db_settings`](crate::db::settings) 数据库层完成。
+//! 同步 DB 操作通过 `spawn_blocking` 移至阻塞线程池，避免阻塞 actix async runtime。
 
 use actix_web::{web, HttpResponse};
 use crate::db::{core as db_core, settings as db_settings};
@@ -9,44 +8,38 @@ use crate::AppState;
 use serde_json::json;
 use std::sync::Arc;
 
-/// 处理 GET 请求，获取当前全局设置。
-///
-/// - `state`：应用全局状态
-/// - 返回值：设置 JSON 对象或 500 错误
-pub async fn get_settings(
-    state: web::Data<Arc<AppState>>,
-) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
-
-    // 读取设置
-    match db_settings::get_settings(&conn) {
-        Ok(settings) => HttpResponse::Ok().json(settings),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+pub async fn get_settings(state: web::Data<Arc<AppState>>) -> HttpResponse {
+    let pool = state.db_pool.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_settings::get_settings(&conn)
+            .map(|s| serde_json::to_value(s).unwrap_or(json!({})))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(v)) => HttpResponse::Ok().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
 
-/// 处理 PUT/POST 请求，更新全局设置。
-///
-/// - `state`：应用全局状态
-/// - `body`：包含新设置值的 JSON 请求体
-/// - 返回值：更新后的设置 JSON 对象或 500 错误
 pub async fn update_settings(
     state: web::Data<Arc<AppState>>,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
-    // 获取数据库连接
-    let conn = match db_core::get_conn(&state.db_pool) {
-        Ok(c) => c,
-        Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-    };
-
-    // 更新设置
-    match db_settings::update_settings(&conn, &body) {
-        Ok(settings) => HttpResponse::Ok().json(settings),
-        Err(e) => HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
+    let pool = state.db_pool.clone();
+    let body = body.into_inner();
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
+        db_settings::update_settings(&conn, &body)
+            .map(|s| serde_json::to_value(s).unwrap_or(json!({})))
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(v)) => HttpResponse::Ok().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }

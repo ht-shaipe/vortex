@@ -40,7 +40,7 @@
     </div>
 
     <!-- 说明提示 -->
-    <div class="notice text-12px leading-1.6 text-ink-3 bg-surface-3 border border-line rounded-sm py-8px px-12px mb-14px">
+    <div class="notice text-12px leading-[1.6] text-ink-3 bg-surface-3 border border-line rounded-sm py-8px px-12px mb-14px">
       免费额度与限速随平台政策变动，此处信息仅作参考，请以各平台官网为准。
       「我的推荐」会提交到远程服务器统一管理，本地同时保留副本便于离线查看。
     </div>
@@ -70,7 +70,7 @@
         <!-- 卡片头部：站点名与 API 支持标识 -->
         <div class="sc-head flex items-start justify-between gap-10px">
           <div class="sc-name flex items-center gap-7px flex-wrap min-w-0">
-            <span class="sc-title text-14px font-semibold text-ink leading-1.35">{{ s.name }}</span>
+            <span class="sc-title text-14px font-semibold text-ink leading-[1.35]">{{ s.name }}</span>
             <span v-if="s.source === 'user'" class="pill warn">我的推荐</span>
           </div>
           <span class="pill" :class="s.apiSupported ? 'ok' : 'neutral'">
@@ -79,7 +79,7 @@
         </div>
 
         <!-- 免费额度说明 -->
-        <div class="sc-quota text-12.5px leading-1.65 text-ink-2 bg-surface-3 rounded-sm py-8px px-11px">{{ s.freeQuota || '免费额度信息待补充' }}</div>
+        <div class="sc-quota text-12.5px leading-[1.65] text-ink-2 bg-surface-3 rounded-sm py-8px px-11px">{{ s.freeQuota || '免费额度信息待补充' }}</div>
 
         <!-- 区域与标签 -->
         <div class="sc-tags flex flex-wrap gap-5px">
@@ -99,7 +99,7 @@
         <CopyableBlock v-if="s.apiBase" variant="inline" :text="s.apiBase">{{ s.apiBase }}</CopyableBlock>
 
         <!-- 备注 -->
-        <div v-if="s.note" class="sc-note text-12px leading-1.65 text-ink-3">{{ s.note }}</div>
+        <div v-if="s.note" class="sc-note text-12px leading-[1.65] text-ink-3">{{ s.note }}</div>
 
         <!-- 卡片底部操作：申请入口、官网、删除 -->
         <div class="sc-foot flex items-center gap-8px flex-wrap mt-auto pt-4px">
@@ -154,7 +154,7 @@
             <!-- 免费额度：最多两行，截断时悬浮显示完整说明 -->
             <td>
               <div
-                class="tbl-quota text-12px leading-1.6 text-ink-2"
+                class="tbl-quota text-12px leading-[1.6] text-ink-2"
                 :title="s.freeQuota || undefined"
               >{{ s.freeQuota || '—' }}</div>
             </td>

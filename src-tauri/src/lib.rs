@@ -385,7 +385,7 @@ pub fn run() {
                 })
                 // 托盘图标点击事件处理
                 .on_tray_icon_event(|tray, event| {
-                    // 左键点击直接显示并聚焦主窗口
+                    // 左键点击：显示并聚焦主窗口（右键点击由系统自动弹出菜单）
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
