@@ -29,7 +29,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 reqwest = { version = "0.12", features = ["stream", "json", "native-tls", "http2"], default-features = false }
-openssl = "0.10"
+openssl = { version = "0.10", features = ["vendored"] }
 awc = { version = "3", features = ["openssl"] }
 aes-gcm = "0.10"
 base64 = "0.22"
