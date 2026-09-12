@@ -1,6 +1,6 @@
 [package]
 name = "vortex"
-version = "0.1.4"
+version = "0.1.5"
 description = "Vortex AI Gateway — Rust + Tauri"
 authors = ["Vortex"]
 edition = "2024"
