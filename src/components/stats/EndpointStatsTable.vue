@@ -1,7 +1,7 @@
 <template>
   <p v-if="rows.length === 0" class="hint m-0 text-body text-ink-4">该周期暂无数据</p>
   <div v-else class="card table-wrap overflow-hidden">
-    <table class="table">
+    <table class="table [&_tbody_tr]:!cursor-default">
       <thead>
         <tr>
           <th>端点</th>
@@ -40,6 +40,3 @@ import type { EndpointStat } from '@/api/stats'
 defineProps<{ rows: EndpointStat[] }>()
 </script>
 
-<style scoped>
-.table tbody tr { cursor: default; }
-</style>

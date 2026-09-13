@@ -1,8 +1,8 @@
 <template>
-  <section v-if="!hidden" class="mon flex flex-col">
-    <div class="mon-head flex items-start justify-between">
+  <section v-if="!hidden" class="mon flex flex-col gap-[var(--gap-md)]">
+    <div class="mon-head flex items-start justify-between gap-[var(--gap-md)]">
       <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">{{ title ?? (mode === 'live' ? '实时请求监控' : '端点请求记录') }}</h2>
-      <div class="mon-actions flex items-center shrink-0">
+      <div class="mon-actions flex items-center shrink-0 gap-[var(--gap-sm)]">
         <DateRangePicker
           v-if="mode === 'ranged' && !range"
           v-model="ownRange"
@@ -13,7 +13,7 @@
     <p v-if="loading" class="hint m-0 text-body text-ink-4">加载中…</p>
     <p v-else-if="items.length === 0" class="hint m-0 text-body text-ink-4">暂无请求记录</p>
     <div v-else class="card table-wrap overflow-hidden">
-      <table class="table">
+      <table class="table [&_tbody_tr]:!cursor-default">
         <thead>
           <tr>
             <th>时间</th>
@@ -55,11 +55,11 @@
                     <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ formatTokenK(r.outputTokens) }}</span></div>
                     <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ formatTokenK(r.cacheCreationTokens) }}</span></div>
                     <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ formatTokenK(r.cacheReadTokens) }}</span></div>
-                    <div class="tok-row total"><span>合计</span><span>{{ formatTokenK(totalTokens(r)) }}</span></div>
+                    <div class="tok-row total flex justify-between gap-16px border-t border-line-2 border-solid border-0 pt-4px font-semibold"><span>合计</span><span>{{ formatTokenK(totalTokens(r)) }}</span></div>
                     <div v-if="r.errorBody" class="tok-err text-err max-w-260px break-all">错误：{{ r.errorBody }}</div>
                   </div>
                 </template>
-                <span class="tok-trigger tnum inline-flex items-center gap-4px text-ink-3 cursor-default">
+                <span class="tok-trigger tnum inline-flex items-center gap-4px text-ink-3 hover:text-ink cursor-default">
                   {{ fmtInt(totalTokens(r)) }}
                   <el-icon :size="12"><InfoFilled /></el-icon>
                 </span>
@@ -173,11 +173,3 @@ function fmtDateTime(ts: number): string {
 }
 </script>
 
-<style scoped>
-.mon { gap: var(--gap-md); }
-.mon-head { gap: var(--gap-md); }
-.mon-actions { gap: var(--gap-sm); }
-.table tbody tr { cursor: default; }
-.tok-trigger:hover { color: var(--ink); }
-.tok-row.total { border-top: 1px solid var(--line-2); padding-top: 4px; font-weight: 600; }
-</style>

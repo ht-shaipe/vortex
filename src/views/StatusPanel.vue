@@ -1,6 +1,6 @@
 <template>
   <div
-    class="status-panel w-full h-screen box-border p-14px flex flex-col gap-10px bg-surface rounded-14px border border-line overflow-hidden"
+    class="status-panel w-full h-screen box-border p-14px flex flex-col gap-10px bg-surface rounded-14px border border-solid border-line overflow-hidden"
   >
     <!-- 顶部标题栏 -->
     <div class="sp-header flex items-center justify-between shrink-0">
@@ -24,14 +24,14 @@
     </div>
 
     <!-- 代理状态卡片 -->
-    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
-      <div class="sp-card-row flex items-center justify-between py-3px">
+    <div class="sp-card bg-surface-2 border border-solid border-line rounded-10px py-10px px-12px shrink-0">
+      <div class="sp-card-row flex items-center justify-between py-3px [.sp-card-row+&]:border-t border-t-line border-solid border-0">
         <span class="sp-label text-12.5px text-ink-3">代理端口</span>
         <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
           status?.proxy_port ?? '—'
         }}</span>
       </div>
-      <div class="sp-card-row flex items-center justify-between py-3px">
+      <div class="sp-card-row flex items-center justify-between py-3px [.sp-card-row+&]:border-t border-t-line border-solid border-0">
         <span class="sp-label text-12.5px text-ink-3">数据库</span>
         <span
           class="sp-value text-12.5px font-semibold text-ink"
@@ -40,13 +40,13 @@
           {{ status?.database_ok ? '正常' : '异常' }}
         </span>
       </div>
-      <div class="sp-card-actions mt-8px pt-8px border-t border-line">
+      <div class="sp-card-actions mt-8px pt-8px border-t border-line border-solid border-0">
         <button
           type="button"
-          class="sp-btn w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer"
+          class="sp-btn w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer transition-[opacity,background] duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
           :class="{
-            'primary bg-accent text-white': !status?.proxy_running,
-            'danger bg-err-bg text-err': status?.proxy_running,
+            'primary bg-accent text-white hover:opacity-90': !status?.proxy_running,
+            'danger bg-err-bg text-err hover:opacity-85': status?.proxy_running,
           }"
           :disabled="busy"
           @click="toggleProxy"
@@ -57,7 +57,7 @@
     </div>
 
     <!-- 连接统计 -->
-    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
+    <div class="sp-card bg-surface-2 border border-solid border-line rounded-10px py-10px px-12px shrink-0">
       <p
         class="sp-card-title m-0 mb-8px text-11px font-semibold tracking-0.05em uppercase text-ink-4"
       >
@@ -92,25 +92,25 @@
     </div>
 
     <!-- 今日用量 -->
-    <div class="sp-card bg-surface-2 border border-line rounded-10px py-10px px-12px shrink-0">
+    <div class="sp-card bg-surface-2 border border-solid border-line rounded-10px py-10px px-12px shrink-0">
       <p
         class="sp-card-title m-0 mb-8px text-11px font-semibold tracking-0.05em uppercase text-ink-4"
       >
         今日用量
       </p>
-      <div class="sp-card-row flex items-center justify-between py-3px">
+      <div class="sp-card-row flex items-center justify-between py-3px [.sp-card-row+&]:border-t border-t-line border-solid border-0">
         <span class="sp-label text-12.5px text-ink-3">请求数</span>
         <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
           fmt(status?.today_requests)
         }}</span>
       </div>
-      <div class="sp-card-row flex items-center justify-between py-3px">
+      <div class="sp-card-row flex items-center justify-between py-3px [.sp-card-row+&]:border-t border-t-line border-solid border-0">
         <span class="sp-label text-12.5px text-ink-3">输入 Token</span>
         <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
           fmt(status?.today_tokens_input)
         }}</span>
       </div>
-      <div class="sp-card-row flex items-center justify-between py-3px">
+      <div class="sp-card-row flex items-center justify-between py-3px [.sp-card-row+&]:border-t border-t-line border-solid border-0">
         <span class="sp-label text-12.5px text-ink-3">输出 Token</span>
         <span class="sp-value text-12.5px font-semibold text-ink tabular-nums">{{
           fmt(status?.today_tokens_output)
@@ -122,7 +122,7 @@
     <div class="sp-footer mt-auto shrink-0">
       <button
         type="button"
-        class="sp-btn ghost w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer bg-surface-3 text-ink-2"
+        class="sp-btn ghost w-full py-7px px-12px border-none rounded-7px text-12.5px font-semibold cursor-pointer bg-surface-3 text-ink-2 transition-[opacity,background] duration-150 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-line hover:text-ink"
         @click="showMainWindow"
       >
         打开主窗口
@@ -198,7 +198,7 @@ async function showMainWindow(): Promise<void> {
     // 先隐藏自身
     await getCurrentWindow().hide()
     // 显示主窗口
-    const main = WebviewWindow.getByLabel('main')
+    const main = await WebviewWindow.getByLabel('main')
     if (main) {
       await main.show()
       await main.unminimize()
@@ -245,29 +245,5 @@ onUnmounted(() => {
   50% {
     opacity: 0.35;
   }
-}
-
-/* 卡片行分隔线（兄弟选择器，保留） */
-.sp-card-row + .sp-card-row {
-  border-top: 1px solid var(--line);
-}
-
-/* 按钮：transition 与伪类样式保留 */
-.sp-btn {
-  transition: opacity 0.15s, background 0.15s;
-}
-.sp-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.sp-btn.primary:hover {
-  opacity: 0.9;
-}
-.sp-btn.danger:hover {
-  opacity: 0.85;
-}
-.sp-btn.ghost:hover {
-  background: var(--line);
-  color: var(--ink);
 }
 </style>

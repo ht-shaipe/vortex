@@ -42,12 +42,12 @@
     </div>
 
     <!-- 模型 checkbox 列表 -->
-    <el-scrollbar v-else class="model-scroll border border-line rounded-sm" max-height="420">
-      <div class="model-grid grid grid-cols-2 gap-2px p-8px">
+    <el-scrollbar v-else class="model-scroll border border-solid border-line rounded-sm" max-height="420">
+      <div class="model-grid grid grid-cols-2 max-600px:grid-cols-1 gap-2px p-8px">
         <label
           v-for="m in filteredModels"
           :key="m"
-          class="model-item flex items-center gap-8px px-10px py-7px rounded-sm cursor-pointer transition hover:bg-surface-2"
+          class="model-item flex items-center gap-8px px-10px py-7px rounded-sm cursor-pointer transition hover:bg-surface-2 [&.checked]:bg-accent-bg"
           :class="{ checked: isChecked(m) }"
         >
           <el-checkbox :model-value="isChecked(m)" @change="toggleModel(m)" />
@@ -167,51 +167,3 @@ function confirm(): void {
 }
 </script>
 
-<style scoped>
-.spin {
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.model-item.checked {
-  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
-}
-
-.btn {
-  padding: 7px 16px;
-  border-radius: var(--r-sm);
-  font-size: 13px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  color: var(--ink-1);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn:hover:not(:disabled) {
-  border-color: var(--ink-4);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-.btn.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-.btn.sm {
-  padding: 4px 12px;
-  font-size: 12px;
-}
-
-@media (max-width: 600px) {
-  .model-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

@@ -11,7 +11,7 @@
 //! - 响应恒为瞬时返回，前端模型选择框不再出现长时间空白/不可用。
 
 use actix_web::{web, HttpResponse};
-use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers};
+use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, settings as db_settings};
 use crate::AppState;
 use serde_json::json;
 use std::collections::HashSet;
@@ -38,6 +38,28 @@ pub async fn list_models(
     let mut models = vec![]; // 聚合所有已配置模型
     let mut seen = HashSet::new(); // 按完整模型 ID 去重（多连接同模型只出现一次）
 
+    // 先加载虚拟模型别名，提取所有已映射的真实模型
+    let aliases = db_aliases::list(&conn).unwrap_or_default();
+
+    // 读取通用设置：是否隐藏已映射的真实模型（默认 true）
+    let hide_mapped = db_settings::get(&conn, "settings", "general")
+        .ok()
+        .flatten()
+        .and_then(|v| v.get("hideMappedModels").cloned())
+        .map(|v| v.as_bool().unwrap_or(true))
+        .unwrap_or(true);
+
+    let mapped_targets: HashSet<String> = if hide_mapped {
+        aliases
+            .iter()
+            .filter(|a| a.is_active)
+            .flat_map(|a| a.targets.iter())
+            .map(|t| format!("{}/{}", t.provider, t.model))
+            .collect()
+    } else {
+        HashSet::new()
+    };
+
     // 遍历注册表中的每个提供商定义
     for def in state.provider_registry.list() {
         // 查询该提供商的连接列表（解密后的凭证在此场景无需使用）
@@ -56,6 +78,10 @@ pub async fn list_models(
                     continue;
                 }
                 let full = format!("{}/{}", def.id, id);
+                // 跳过已建立虚拟映射的真实模型（受 hideMappedModels 设置控制）
+                if mapped_targets.contains(&full) {
+                    continue;
+                }
                 if !seen.insert(full.clone()) {
                     continue;
                 }
@@ -71,16 +97,14 @@ pub async fn list_models(
     }
 
     // 追加虚拟模型别名（对外输出的虚拟模型名）
-    if let Ok(aliases) = db_aliases::list(&conn) {
-        for alias in aliases.iter().filter(|a| a.is_active) {
-            models.push(json!({
-                "id": alias.alias,
-                "object": "model",
-                "created": created,
-                "owned_by": "vortex-alias",
-                "permission": [],
-            }));
-        }
+    for alias in aliases.iter().filter(|a| a.is_active) {
+        models.push(json!({
+            "id": alias.alias,
+            "object": "model",
+            "created": created,
+            "owned_by": "vortex-alias",
+            "permission": [],
+        }));
     }
 
     // 返回 OpenAI 格式的模型列表

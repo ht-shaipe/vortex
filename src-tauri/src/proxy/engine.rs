@@ -115,6 +115,22 @@ impl ProxyEngine {
                     log::warn!("别名 '{}' 目标 provider '{}' 无活跃连接，跳过", alias.alias, target.provider);
                     continue;
                 };
+                // 熔断快速失败：目标连接处于 Open 态时直接跳过，不再重置重试。
+                // 熔断器在冷却期（默认 60s）后会自动转入 HalfOpen 放行探测请求，
+                // 因此这里若执行 reset，会让熔断对别名目标彻底失效——此前正是因此
+                // 导致每个请求都要完整重试一遍已确认故障的连接，长尾延迟显著。
+                let breaker_name = format!("{}:{}", def.id, conn_obj.id);
+                if !state.resilience_manager.is_available(&breaker_name) {
+                    log::warn!(
+                        "别名 '{}' 目标 {}/{} 熔断器打开，跳过（冷却后自动探测）",
+                        alias.alias,
+                        target.provider,
+                        target.model
+                    );
+                    last_err = Some(AppError::CircuitOpen(breaker_name));
+                    continue;
+                }
+
                 log::info!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
                 let result = self
                     .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
@@ -126,49 +142,6 @@ impl ProxyEngine {
                     }
                     Err(e) => {
                         let err_str = format!("{}", e);
-                        // 熔断器打开时：重置熔断器并重试一次（用户主动请求说明希望尝试该连接）
-                        if err_str.contains("Circuit breaker open") {
-                            let breaker_name = format!("{}:{}", def.id, conn_obj.id);
-                            log::info!("别名 '{}' 目标 {}/{} 熔断器打开，重置后重试", alias.alias, target.provider, target.model);
-                            state.resilience_manager.reset(&breaker_name);
-                            let retry_result = self
-                                .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
-                                .await;
-                            match retry_result {
-                                Ok(output) => {
-                                    log::info!("别名 '{}' 目标 {}/{} 重置后成功", alias.alias, target.provider, target.model);
-                                    return Ok(output);
-                                }
-                                Err(e2) => {
-                                    log::warn!("别名 '{}' 目标 {}/{} 重置后仍失败: {}，尝试下一个", alias.alias, target.provider, target.model, e2);
-                                    let latency = start.elapsed().as_millis() as i64;
-                                    let entry = UsageEntry {
-                                        id: 0,
-                    provider: Some(conn_obj.name.clone()),
-                                        model: Some(target.model.clone()),
-                                        connection_id: Some(conn_obj.id.clone()),
-                                        api_key_id: request.api_key.clone(),
-                                        api_key_name: None,
-                                        tokens_input: 0,
-                                        tokens_output: 0,
-                                        tokens_cache_read: 0,
-                                        tokens_cache_creation: 0,
-                                        tokens_reasoning: 0,
-                                        service_tier: "standard".to_string(),
-                                        status: "error".to_string(),
-                                        success: false,
-                                        error_code: Some(format!("{}", e2)),
-                                        latency_ms: Some(latency),
-                                        ttft_ms: None,
-                                        cost: 0.0,
-                                        timestamp: chrono::Utc::now().to_rfc3339(),
-                                    };
-                                    let _ = db_usage::record(&conn, &entry);
-                                    last_err = Some(e2);
-                                    continue;
-                                }
-                            }
-                        }
                         log::warn!("别名 '{}' 目标 {}/{} 失败: {}，尝试下一个", alias.alias, target.provider, target.model, e);
                         let latency = start.elapsed().as_millis() as i64;
                         let entry = UsageEntry {
@@ -337,9 +310,9 @@ impl ProxyEngine {
         for attempt in 0..=self.retry_policy.max_retries() {
             // 熔断器名称：provider_id:connection_id
             let breaker_name = format!("{}:{}", def.id, connection.id);
-            // 熔断器打开时跳过执行
+            // 熔断器打开时跳过执行（快速失败）
             if !state.resilience_manager.is_available(&breaker_name) {
-                last_err = Some(AppError::Provider(format!("Circuit breaker open for {}", breaker_name)));
+                last_err = Some(AppError::CircuitOpen(breaker_name));
                 break;
             }
 

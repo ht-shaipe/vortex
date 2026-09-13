@@ -17,7 +17,8 @@ use crate::AppState;
 
 /// 从远程响应中兼容提取站点数组，支持多种信封：
 /// - `{ sites: [...] }`
-/// - `{ code, result: [...] }` 或 `{ code, result: { sites: [...] } }`（dsa 风格）
+/// - `{ code, result: [...] }` 或 `{ code, result: { sites | list | records: [...] } }`（dsa / 分页风格）
+/// - `{ data: { list | records: [...] } }`
 /// - 裸数组 `[...]`
 ///
 /// - `value`：远程服务返回的 JSON 响应
@@ -27,12 +28,21 @@ fn extract_sites(value: &serde_json::Value) -> Vec<serde_json::Value> {
     if let Some(arr) = value.get("sites").and_then(|v| v.as_array()) {
         return arr.clone();
     }
-    // dsa 风格信封：{ result: [...] } 或 { result: { sites: [...] } }
-    if let Some(result) = value.get("result") {
-        if let Some(arr) = result.as_array() {
-            return arr.clone();
+    // 分页信封常见字段：result.list / result.records / data.list / data.records / rows / items
+    for key in ["result", "data"] {
+        if let Some(node) = value.get(key) {
+            if let Some(arr) = node.as_array() {
+                return arr.clone();
+            }
+            for sub in ["sites", "list", "records", "rows", "items"] {
+                if let Some(arr) = node.get(sub).and_then(|v| v.as_array()) {
+                    return arr.clone();
+                }
+            }
         }
-        if let Some(arr) = result.get("sites").and_then(|v| v.as_array()) {
+    }
+    for sub in ["rows", "items", "list", "records"] {
+        if let Some(arr) = value.get(sub).and_then(|v| v.as_array()) {
             return arr.clone();
         }
     }
@@ -41,6 +51,77 @@ fn extract_sites(value: &serde_json::Value) -> Vec<serde_json::Value> {
         return arr.clone();
     }
     Vec::new() // 无法识别
+}
+
+/// 校验远程响应的业务码：`code` 字段存在且不为 0/200 时视为业务失败。
+///
+/// - `value`：远程响应 JSON
+/// - 返回值：失败时携带 `message` 的错误
+fn check_remote_code(value: &serde_json::Value) -> Result<(), String> {
+    if let Some(code) = value.get("code").and_then(|c| c.as_i64()) {
+        if code != 0 && code != 200 {
+            let msg = value
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("远程接口返回业务错误");
+            return Err(format!("{} (code {})", msg, code));
+        }
+    }
+    Ok(())
+}
+
+/// 构造访问 hub 管理接口的请求头（含可选的 Bearer 认证）。
+///
+/// - `config`：应用配置
+/// - 返回值：包含 Content-Type 与可选 Authorization 的请求头
+fn hub_headers(config: &crate::config::AppConfig) -> HashMap<String, String> {
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    if !config.hub_token.is_empty() {
+        headers.insert(
+            "Authorization".to_string(),
+            format!("Bearer {}", config.hub_token),
+        );
+    }
+    headers
+}
+
+/// 通过分页接口聚合拉取远程全部站点。
+///
+/// 以 `pageSize = 50` 逐页 POST `{pageIndex, pageSize}`，直到返回条数不足一页
+/// 或达到安全页数上限（100 页）。
+///
+/// - `state`：应用全局状态
+/// - 返回值：聚合后的站点数组；接口业务失败（如未授权）时返回错误
+async fn fetch_all_remote_sites(state: &web::Data<Arc<AppState>>) -> Result<Vec<serde_json::Value>, String> {
+    let url = state.config.free_tokens_page_url.clone();
+    let headers = hub_headers(&state.config);
+    let page_size = 50;
+    let max_pages = 100;
+
+    let mut all: Vec<serde_json::Value> = Vec::new();
+    for page_index in 1..=max_pages {
+        let payload = json!({ "pageIndex": page_index, "pageSize": page_size }).to_string();
+        let value = remote_proxy::send_proxy_request(
+            &state.http_client,
+            &url,
+            "POST",
+            &headers,
+            Some(&payload),
+            30,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        check_remote_code(&value).map_err(|e| e.to_string())?;
+
+        let items = extract_sites(&value);
+        let count = items.len();
+        all.extend(items);
+        if count < page_size {
+            break;
+        }
+    }
+    Ok(all)
 }
 
 /// 从远程创建响应中取出站点对象；取不到则用请求体构造一个本地兜底对象。
@@ -114,27 +195,18 @@ fn save_local_copy(pool: &crate::db::core::DbPool, req: &CreateFreeTokenSiteRequ
 
 /// 处理 GET 请求，列出免费 Token 站点。
 ///
-/// 若配置了远程地址，优先从远程获取站点列表；远程失败时回退到本地数据库。
+/// 若配置了远程地址，优先通过分页接口聚合拉取远程站点列表；远程失败时回退到本地数据库。
 ///
 /// - `state`：应用全局状态
 /// - 返回值：`{ "sites": [...] }` 格式 JSON 响应
 pub async fn list_sites(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let remote = &state.config.free_tokens_remote;
-    // 远程模式：优先从远程获取
+    // 远程模式：优先从远程分页聚合拉取
     if !remote.is_empty() {
-        match remote_proxy::send_proxy_request(
-            &state.http_client,
-            remote,
-            "GET",
-            &HashMap::new(),
-            None,
-            30, // 30 秒超时
-        )
-        .await
-        {
-            Ok(value) => {
-                // 远程成功：提取站点数组返回
-                return HttpResponse::Ok().json(json!({ "sites": extract_sites(&value) }));
+        match fetch_all_remote_sites(&state).await {
+            Ok(sites) => {
+                // 远程成功：返回聚合后的站点列表（允许为空）
+                return HttpResponse::Ok().json(json!({ "sites": sites }));
             }
             Err(e) => {
                 // 远程失败：记录警告并回退本地
@@ -185,8 +257,7 @@ pub async fn create_site(
             Ok(p) => p,
             Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
         };
-        let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        let headers = hub_headers(&state.config);
 
         match remote_proxy::send_proxy_request(
             &state.http_client,
@@ -199,15 +270,20 @@ pub async fn create_site(
         .await
         {
             Ok(value) => {
-                // 远端创建成功：额外落一份本地副本，便于「我的推荐」展示与离线回退
-                let pool = state.db_pool.clone();
-                let req_clone = body.0.clone();
-                let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
-                    save_local_copy(&pool, &req_clone);
-                    Ok(())
-                })
-                .await;
-                return HttpResponse::Created().json(site_from_remote_or_request(&value, &body.0));
+                // 业务码校验：非 0/200 视为提交失败，降级本地
+                if let Err(e) = check_remote_code(&value) {
+                    log::warn!("[FREE-TOKENS] 远程提交业务失败，改为本地保存: {}", e);
+                } else {
+                    // 远端创建成功：额外落一份本地副本，便于「我的推荐」展示与离线回退
+                    let pool = state.db_pool.clone();
+                    let req_clone = body.0.clone();
+                    let _ = tokio::task::spawn_blocking(move || -> Result<(), String> {
+                        save_local_copy(&pool, &req_clone);
+                        Ok(())
+                    })
+                    .await;
+                    return HttpResponse::Created().json(site_from_remote_or_request(&value, &body.0));
+                }
             }
             Err(e) => {
                 // 远程失败：记录警告并降级为本地保存
@@ -247,11 +323,12 @@ pub async fn delete_site(
     let id = path.into_inner(); // 提取路径参数中的 ID
     let remote = &state.config.free_tokens_remote;
 
-    // 远端删除（best-effort，失败不影响本地结果）
+    // 远端删除（best-effort，失败不影响本地结果；新 cms 接口未明确删除路由，保持原路径拼接）
     let mut remote_deleted = false;
     if !remote.is_empty() {
         let url = format!("{}/{}", remote.trim_end_matches('/'), id);
-        if remote_proxy::send_proxy_request(&state.http_client, &url, "DELETE", &HashMap::new(), None, 30)
+        let headers = hub_headers(&state.config);
+        if remote_proxy::send_proxy_request(&state.http_client, &url, "DELETE", &headers, None, 30)
             .await
             .is_ok()
         {

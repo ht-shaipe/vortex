@@ -17,7 +17,7 @@
 
     <template v-else>
       <!-- 通用设置：主题、启动端口、界面语言 -->
-      <div v-if="active === 'general'" class="card section">
+      <div v-if="active === 'general'" class="card section mb-[var(--gap-lg)]">
         <div class="card-head">
           <div><div class="card-title">通用</div><div class="card-sub">界面与语言</div></div>
         </div>
@@ -56,11 +56,19 @@
             </div>
             <StatusBadge tone="neutral" label="简体中文" :dot="false" />
           </div>
+          <!-- 隐藏已映射的真实模型 -->
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">隐藏已映射的真实模型</div>
+              <div class="setting-desc">已建立虚拟模型映射的远端模型不再输出给下游，仅暴露虚拟模型名</div>
+            </div>
+            <el-switch v-model="form.hide_mapped_models" @change="saveField('hideMappedModels', form.hide_mapped_models)" />
+          </div>
         </div>
       </div>
 
       <!-- 安全与访问：Token 鉴权与 CORS -->
-      <div v-else-if="active === 'security'" class="card section">
+      <div v-else-if="active === 'security'" class="card section mb-[var(--gap-lg)]">
         <div class="card-head">
           <div><div class="card-title">安全与访问</div><div class="card-sub">控制网关访问凭据与 CORS 响应头</div></div>
         </div>
@@ -69,7 +77,7 @@
           <div class="setting-row">
             <div>
               <div class="setting-label">Token 鉴权</div>
-              <div class="setting-desc">开启后，请求必须在 <span class="mono">Authorization</span> 头携带正确 token</div>
+              <div class="setting-desc">开启后，请求必须在 <span class="font-mono text-12px">Authorization</span> 头携带正确 token</div>
             </div>
             <el-switch v-model="form.security.tokenAuth" @change="(v: boolean) => saveSecurity('tokenAuth', v)" />
           </div>
@@ -81,7 +89,7 @@
               <div class="setting-desc">请妥善保管，重新生成会使旧 token 失效</div>
             </div>
             <div class="token-controls flex items-center gap-10px flex-nowrap">
-              <el-input v-model="form.security.token" class="token-input w-300px" readonly placeholder="未生成" />
+              <el-input v-model="form.security.token" class="token-input w-300px flex-none" readonly placeholder="未生成" />
               <button type="button" class="btn sm" :disabled="!form.security.token" @click="copyToken">
                 <el-icon :size="13"><CopyDocument /></el-icon> 复制
               </button>
@@ -104,11 +112,11 @@
           <div v-if="form.security.cors" class="setting-row">
             <div>
               <div class="setting-label">允许的来源</div>
-              <div class="setting-desc">多个来源用逗号分隔，<span class="mono">*</span> 表示允许全部</div>
+              <div class="setting-desc">多个来源用逗号分隔，<span class="font-mono text-12px">*</span> 表示允许全部</div>
             </div>
             <div class="cors-controls flex items-center gap-10px flex-nowrap">
-              <el-input v-model="form.security.corsOrigins" class="cors-input w-260px" placeholder="*" @blur="saveSecurity('corsOrigins', form.security.corsOrigins)" />
-              <span class="header-tag font-mono text-11px text-ink-4 bg-surface-3 border border-line rounded-sm py-3px px-8px whitespace-nowrap">Access-Control-Allow-Origin</span>
+              <el-input v-model="form.security.corsOrigins" class="cors-input w-260px flex-none" placeholder="*" @blur="saveSecurity('corsOrigins', form.security.corsOrigins)" />
+              <span class="header-tag font-mono text-11px text-ink-4 bg-surface-3 border border-solid border-line rounded-sm py-3px px-8px whitespace-nowrap">Access-Control-Allow-Origin</span>
             </div>
           </div>
         </div>
@@ -117,7 +125,7 @@
       <!-- 高级设置：User-Agent 覆盖与危险区域 -->
       <template v-else>
         <!-- User-Agent 覆盖 -->
-        <div class="card section">
+        <div class="card section mb-[var(--gap-lg)]">
           <div class="card-head">
             <div><div class="card-title">User-Agent 覆盖</div><div class="card-sub">自定义发往上游的 UA，清空则透传客户端原始 UA</div></div>
           </div>
@@ -142,7 +150,7 @@
         </div>
 
         <!-- 危险区域：恢复出厂设置 -->
-        <div class="danger-card section border border-err rounded-lg bg-err-bg py-16px px-20px">
+        <div class="danger-card section mb-[var(--gap-lg)] border border-solid border-err rounded-lg bg-err-bg py-16px px-20px">
           <div class="danger-head flex items-center gap-6px text-13px font-semibold text-err mb-12px">
             <el-icon :size="14"><WarningFilled /></el-icon>
             <span>危险区域</span>
@@ -160,7 +168,7 @@
 
     <!-- 恢复出厂确认弹窗 -->
     <el-dialog v-model="resetOpen" title="恢复出厂设置" width="420">
-      <p class="reset-warn">此操作将清空所有数据且不可撤销，确定继续吗？</p>
+      <p class="m-0 text-14px text-ink-2 leading-[1.6]">此操作将清空所有数据且不可撤销，确定继续吗？</p>
       <template #footer>
         <button type="button" class="btn" @click="resetOpen = false">取消</button>
         <button type="button" class="btn danger" :disabled="resetting" @click="doReset">{{ resetting ? '清理中…' : '确认恢复' }}</button>
@@ -215,6 +223,7 @@ const form = reactive({
   proxy_port: 10168,
   openai_ua: '',
   anthropic_ua: '',
+  hide_mapped_models: true,
   security: {
     tokenAuth: false,
     token: '',
@@ -237,6 +246,7 @@ function applySettings(data: Record<string, unknown>) {
   if (g.proxy_port != null) form.proxy_port = Number(g.proxy_port)
   if (g.openai_ua != null) form.openai_ua = String(g.openai_ua)
   if (g.anthropic_ua != null) form.anthropic_ua = String(g.anthropic_ua)
+  if (g.hideMappedModels != null) form.hide_mapped_models = Boolean(g.hideMappedModels)
 
   const s = (data.security ?? {}) as Record<string, unknown>
   if (s.tokenAuth != null) form.security.tokenAuth = Boolean(s.tokenAuth)
@@ -344,15 +354,3 @@ onMounted(() => {
   autoStart.init()
 })
 </script>
-
-<style scoped>
-.section { margin-bottom: var(--gap-lg); }
-
-.mono { font-family: var(--font-mono); font-size: 12px; }
-.token-input { flex: 0 0 auto; }
-.cors-input { flex: 0 0 auto; }
-</style>
-
-<style>
-.reset-warn { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
-</style>

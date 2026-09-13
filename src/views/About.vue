@@ -4,14 +4,14 @@
     <PageHeader title="关于" sub="Vortex AI Gateway" />
 
     <!-- 应用信息卡片：图标、版本、简介与相关链接 -->
-    <div class="card section">
-      <div class="card-body about-hero flex gap-20px items-start">
+    <div class="card mb-[var(--gap-lg)]">
+      <div class="card-body about-hero flex gap-20px items-start [&_.para:last-child]:mb-0">
         <img class="app-mark w-56px h-56px rounded-14px object-cover shrink-0" src="@/images/logo.png" alt="Vortex" />
         <div class="about-info">
           <div class="about-name text-20px font-bold">Vortex</div>
           <div class="about-meta mono text-11.5px text-ink-3 mt-4px">v{{ currentVersion || '0.1.0' }} · MIT License · Tauri 2 + Rust + Vue 3</div>
           <p class="about-desc text-13px text-ink-2 leading-[1.7] my-12px">统一的 AI 网关桌面应用，将多家 AI 提供商聚合为 OpenAI 兼容 API。支持多种路由策略、组合模型、API 密钥管理与用量统计。</p>
-          <div class="about-links">
+          <div class="about-links flex gap-[var(--gap-sm)]">
             <a class="btn" href="https://v2.tauri.app" target="_blank" rel="noopener">Tauri 文档</a>
             <a class="btn" href="https://element-plus.org" target="_blank" rel="noopener">Element Plus</a>
           </div>
@@ -20,7 +20,7 @@
     </div>
 
     <!-- 检查更新：根据状态展示不同 UI -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">检查更新</div>
@@ -28,7 +28,7 @@
         </div>
         <StatusBadge :tone="statusTone" :label="statusLabel" />
       </div>
-      <div class="card-body">
+      <div class="card-body [&_.para:last-child]:mb-0">
         <!-- 空闲态：可发起检查 -->
         <template v-if="status === 'idle'">
           <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">点击下方按钮检查是否有新版本。</p>
@@ -50,7 +50,7 @@
             发现新版本 <strong>v{{ updateInfo.version }}</strong>
             <span v-if="updateInfo.date"> · {{ updateInfo.date.slice(0, 10) }}</span>
           </p>
-          <div v-if="updateInfo.body" class="release-notes mt-8px mb-12px py-10px px-12px bg-surface-3 border border-line rounded-sm max-h-200px overflow-y-auto">
+          <div v-if="updateInfo.body" class="release-notes mt-8px mb-12px py-10px px-12px bg-surface-3 border border-solid border-line rounded-sm max-h-200px overflow-y-auto [&_pre]:text-12px [&_pre]:text-ink-2 [&_pre]:leading-[1.6] [&_pre]:whitespace-pre-wrap [&_pre]:[word-break:break-word] [&_pre]:m-0">
             <pre>{{ updateInfo.body }}</pre>
           </div>
           <div class="btn-row flex gap-8px">
@@ -62,7 +62,7 @@
         <template v-else-if="status === 'downloading'">
           <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">正在下载更新… {{ downloadProgress }}%</p>
           <div class="progress-bar h-6px bg-surface-3 rounded-3px overflow-hidden">
-            <div class="progress-fill h-full bg-accent rounded-3px" :style="{ width: downloadProgress + '%' }" />
+            <div class="progress-fill h-full bg-accent rounded-3px transition-[width] duration-200 ease-[ease]" :style="{ width: downloadProgress + '%' }" />
           </div>
         </template>
         <!-- 下载完成待重启 -->
@@ -79,27 +79,27 @@
     </div>
 
     <!-- 通知测试：模拟免费 Token 发现通知 -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">通知测试</div>
           <div class="card-sub">模拟免费 Token 发现通知</div>
         </div>
       </div>
-      <div class="card-body">
+      <div class="card-body [&_.para:last-child]:mb-0">
         <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">点击按钮测试通知弹出效果，通知会显示在右下角，点击通知可跳转到免费 Token 页面。</p>
         <button type="button" class="btn primary" @click="testNotification()">发送测试通知</button>
       </div>
     </div>
 
     <!-- 免责声明 -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">免责声明</div>
         </div>
       </div>
-      <div class="card-body">
+      <div class="card-body [&_.para:last-child]:mb-0">
         <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">本软件仅作为本地 API 网关代理工具，不存储、不转发你的对话内容到任何第三方服务。所有请求直接从你的设备发往你配置的 AI 提供商。</p>
         <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">请确保你拥有所使用 AI 提供商 API 的合法访问权限，并遵守各提供商的服务条款。使用本软件产生的任何费用由用户自行承担。</p>
         <p class="para text-13px text-ink-2 leading-[1.75] m-0 mb-10px">本软件按「现状」提供，不提供任何明示或暗示的担保。</p>
@@ -170,14 +170,3 @@ onMounted(() => {
   }
 })
 </script>
-
-<style scoped>
-.section { margin-bottom: var(--gap-lg); }
-.about-links { display: flex; gap: var(--gap-sm); }
-.para:last-child { margin-bottom: 0; }
-.release-notes pre {
-  font-size: 12px; color: var(--ink-2); line-height: 1.6;
-  white-space: pre-wrap; word-break: break-word; margin: 0;
-}
-.progress-fill { transition: width 0.2s ease; }
-</style>

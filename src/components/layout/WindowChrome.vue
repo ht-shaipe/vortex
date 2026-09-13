@@ -1,8 +1,8 @@
 <template>
   <!-- 顶部拖拽区：纯 JS 闭包方式实现，每次拖动独立状态，避免拖一次后失效 -->
-  <div class="window-chrome flex text-center justify-between items-center" data-tauri-drag-region>
-    <div class="chrome-left">
-      <button class="collapse-btn" :title="collapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggleCollapsed">
+  <div class="window-chrome flex text-center justify-between items-center w-full h-38px shrink-0 select-none bg-transparent" data-tauri-drag-region>
+    <div class="flex items-center pl-8px">
+      <button class="flex items-center justify-center w-26px h-26px border-none rounded-6px bg-transparent text-ink-3 cursor-pointer transition-colors hover:bg-surface-3 hover:text-ink" :title="collapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggleCollapsed">
         <el-icon :size="16">
           <Fold v-if="!collapsed" />
           <Expand v-else />
@@ -10,31 +10,31 @@
       </button>
     </div>
     <div class="text-center">Vortex · AI Gateway</div>
-    <div class="chrome-right">
+    <div class="flex items-center gap-12px pr-12px relative">
       <!-- 网关状态指示灯 -->
-      <div class="gw-status" :title="`网关 ${healthOk ? '运行中' : '未启动'} · :10168`">
-        <span class="gw-dot" :class="healthOk ? 'on' : 'off'" />
-        <span class="gw-text" :class="healthOk ? 'on' : 'off'">网关{{ healthOk ? '运行中' : '未启动' }}</span>
+      <div class="flex items-center gap-6px text-12px text-ink-3" :title="`网关 ${healthOk ? '运行中' : '未启动'} · :10168`">
+        <span class="w-7px h-7px rounded-full [&.on]:bg-ok [&.on]:shadow-[0_0_0_3px_color-mix(in_oklab,var(--ok)_20%,transparent)] [&.off]:bg-err [&.off]:shadow-[0_0_0_3px_color-mix(in_oklab,var(--err)_20%,transparent)]" :class="healthOk ? 'on' : 'off'" />
+        <span class="font-medium [&.on]:text-ok [&.off]:text-err" :class="healthOk ? 'on' : 'off'">网关{{ healthOk ? '运行中' : '未启动' }}</span>
       </div>
       <!-- 通知图标 -->
-      <button class="bell-btn" title="通知" @click="showNotifPanel = !showNotifPanel">
+      <button class="bell-btn relative flex items-center justify-center w-26px h-26px border-none rounded-6px bg-transparent text-ink-3 cursor-pointer transition-colors hover:bg-surface-3 hover:text-ink" title="通知" @click="showNotifPanel = !showNotifPanel">
         <el-icon :size="16">
           <Bell />
         </el-icon>
-        <span v-if="unreadCount > 0" class="bell-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+        <span v-if="unreadCount > 0" class="absolute -top-2px -right-2px min-w-15px h-15px px-4px rounded-8px bg-err text-white text-10px font-semibold leading-15px text-center">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
       </button>
       <!-- 通知下拉面板 -->
-      <div v-if="showNotifPanel" class="notif-panel">
-        <div class="notif-head">
+      <div v-if="showNotifPanel" class="notif-panel absolute top-34px right-0 w-340px max-h-420px bg-surface border border-solid border-line rounded-md shadow-[0_12px_40px_-12px_rgba(0,0,0,0.5)] z-100 flex flex-col overflow-hidden">
+        <div class="flex items-center justify-between px-14px py-12px border-b border-line border-solid border-0 text-13px font-semibold">
           <span>通知</span>
-          <button v-if="latestNotifications.length" class="notif-mark"
+          <button v-if="latestNotifications.length" class="text-12px text-accent-ink bg-none border-none cursor-pointer"
             @click="markAllRead(); showNotifPanel = false">全部已读</button>
         </div>
-        <div class="notif-list">
-          <div v-if="latestNotifications.length === 0" class="notif-empty">暂无通知</div>
-          <div v-for="n in latestNotifications" :key="n.id" class="notif-item" @click="openNotif(n)">
-            <div class="notif-title">{{ n.title }}</div>
-            <div class="notif-body">{{ n.body }}</div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="latestNotifications.length === 0" class="py-32px text-center text-13px text-ink-4">暂无通知</div>
+          <div v-for="n in latestNotifications" :key="n.id" class="px-14px py-10px border-b border-line border-solid border-0 cursor-pointer transition-colors hover:bg-surface-3 last:border-b-0" @click="openNotif(n)">
+            <div class="text-13px font-medium text-ink mb-2px">{{ n.title }}</div>
+            <div class="text-12px text-ink-3 leading-[1.5]">{{ n.body }}</div>
           </div>
         </div>
       </div>
@@ -52,27 +52,14 @@ import { ElIcon } from 'element-plus'
 import { Fold, Expand, Bell } from '@element-plus/icons-vue'
 import { useSidebarCollapsed } from '@/composables/useSidebarCollapsed'
 import { useNotifications } from '@/composables/useNotifications'
-import { runtime } from '@/lib/runtime'
+import { useGatewayStatus } from '@/composables/useGatewayStatus'
 import type { NotificationItem } from '@/api/notifications'
 
 const { collapsed, toggleCollapsed } = useSidebarCollapsed()
 const { unreadCount, latestNotifications, markAllRead, startPolling } = useNotifications()
+const { healthOk } = useGatewayStatus()
 
-const healthOk = ref(false)
 const showNotifPanel = ref(false)
-let _healthTimer: ReturnType<typeof setInterval> | null = null
-let _unlistenTray: (() => void) | undefined
-
-/** 轮询后端健康检查接口。 */
-async function checkHealth() {
-  try {
-    const res = await fetch('http://localhost:10168/api/health')
-    const data = await res.json()
-    healthOk.value = data.status === 'ok'
-  } catch {
-    healthOk.value = false
-  }
-}
 
 /** 点击通知项：打开外链或跳转免费 Token 页，并关闭面板。 */
 function openNotif(n: NotificationItem) {
@@ -93,217 +80,12 @@ function onDocClick(e: MouseEvent) {
 }
 
 onMounted(async () => {
-  checkHealth()
-  _healthTimer = setInterval(checkHealth, 10000)
   startPolling()
   document.addEventListener('click', onDocClick)
-  // 监听托盘代理启停事件，立即更新网关状态指示灯
-  if (runtime.kind === 'desktop') {
-    const { listen } = await import('@tauri-apps/api/event')
-    _unlistenTray = await listen<string>('tray-action', (e) => {
-      if (e.payload === 'started') healthOk.value = true
-      else if (e.payload === 'stopped') healthOk.value = false
-    })
-  }
 })
 
 onUnmounted(() => {
-  if (_healthTimer) clearInterval(_healthTimer)
-  _unlistenTray?.()
   document.removeEventListener('click', onDocClick)
 })
 </script>
 
-<style scoped>
-.window-chrome {
-  width: 100%;
-  height: 38px;
-  flex-shrink: 0;
-  user-select: none;
-  -webkit-user-select: none;
-  background: transparent;
-}
-
-.chrome-left {
-  display: flex;
-  align-items: center;
-  padding-left: 8px;
-}
-
-.collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.collapse-btn:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-
-.chrome-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-right: 12px;
-  position: relative;
-}
-
-/* 网关状态 */
-.gw-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-.gw-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.gw-dot.on {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 20%, transparent);
-}
-
-.gw-dot.off {
-  background: var(--err);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--err) 20%, transparent);
-}
-
-.gw-text {
-  font-weight: 500;
-
-  &.on {
-    color: var(--ok);
-  }
-
-  &.off {
-    color: var(--err);
-  }
-}
-
-
-/* 通知按钮 */
-.bell-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.bell-btn:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-
-.bell-badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--err);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 15px;
-  text-align: center;
-}
-
-/* 通知面板 */
-.notif-panel {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  width: 340px;
-  max-height: 420px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md, 12px);
-  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.5);
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.notif-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.notif-mark {
-  font-size: 12px;
-  color: var(--accent-ink, oklch(0.78 0.10 280));
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-.notif-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.notif-empty {
-  padding: 32px 0;
-  text-align: center;
-  font-size: 13px;
-  color: var(--ink-4);
-}
-
-.notif-item {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.notif-item:hover {
-  background: var(--surface-3);
-}
-
-.notif-item:last-child {
-  border-bottom: none;
-}
-
-.notif-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
-
-.notif-body {
-  font-size: 12px;
-  color: var(--ink-3);
-  line-height: 1.5;
-}
-</style>

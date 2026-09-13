@@ -1,10 +1,17 @@
 <template>
   <div class="wizard max-w-560px mx-auto">
-    <!-- 页面头部：标题与副标题 -->
-    <PageHeader title="添加提供方" sub="从内置提供商中选择一个接入 AI 服务" />
+    <!-- 页面头部：标题、副标题与提供方类型切换 -->
+    <PageHeader title="添加提供方" sub="从内置提供商中选择一个接入 AI 服务">
+      <template #actions>
+        <div class="radio-group">
+          <button type="button" class="radio-option active">预置提供方</button>
+          <button type="button" class="radio-option" @click="$router.push('/subscriptions/custom')">自定义提供方</button>
+        </div>
+      </template>
+    </PageHeader>
 
     <div class="card">
-      <div class="card-body form flex flex-col pt-24px">
+      <div class="card-body form flex flex-col gap-[var(--gap-lg)] pt-24px">
         <!-- 提供方选择 -->
         <div class="field flex flex-col gap-6px">
           <label class="field-label text-12px font-medium text-ink-2">提供方</label>
@@ -36,13 +43,27 @@
         </div>
 
         <!-- 自定义设置：可折叠，用于覆盖默认 base_url -->
-        <details class="custom-block border-t border-line pt-14px" :open="needsBaseUrl">
-          <summary>自定义设置</summary>
+        <details class="custom-block border-t border-line border-solid border-0 pt-14px" :open="needsBaseUrl">
+          <summary class="flex items-center gap-4px text-12px font-semibold text-ink-2 cursor-pointer list-none before:content-['▸'] before:text-10px before:text-ink-3 before:transition-transform open:before:rotate-90 [&::-webkit-details-marker]:hidden">自定义设置</summary>
           <div class="custom-body flex flex-col gap-14px pt-14px pb-4px">
             <div class="field flex flex-col gap-6px">
               <label class="field-label text-12px font-medium text-ink-2">API 地址 <em v-if="needsBaseUrl">*</em></label>
               <el-input v-model="form.baseUrl" :placeholder="needsBaseUrl ? 'https://api.your-provider.com/v1' : '提供方默认'" />
               <div class="field-hint text-11.5px text-ink-4">{{ needsBaseUrl ? '请填写实际可用的 API 端点地址' : '仅在官方端点被墙或你想走代理/中转时填写' }}</div>
+            </div>
+
+            <!-- API 格式：默认跟随提供方，选择后覆盖其接口协议 -->
+            <div class="field flex flex-col gap-6px">
+              <label class="field-label text-12px font-medium text-ink-2">API 格式</label>
+              <el-select v-model="form.apiFormat" placeholder="跟随提供方默认" style="width: 100%">
+                <el-option
+                  v-for="p in apiFormats"
+                  :key="p.value"
+                  :label="p.label"
+                  :value="p.value"
+                />
+              </el-select>
+              <div class="field-hint text-11.5px text-ink-4">默认使用提供方自身的接口协议；仅在提供方端点与所选格式不一致时修改。</div>
             </div>
           </div>
         </details>
@@ -50,24 +71,27 @@
         <!-- 模型目录：可拉取可用模型并多选 -->
         <div class="field flex flex-col gap-6px">
           <div class="row-between flex items-center justify-between">
-            <span class="field-label static text-12px font-medium text-ink-2">模型目录</span>
+            <span class="field-label static text-12px font-semibold text-ink-2">模型目录</span>
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels" @click="fetchModels">
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
           </div>
           <!-- 已选模型列表：第一个为默认模型 -->
-          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
+          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-solid border-line rounded-sm">
             <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
-              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
+              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center [&.primary]:text-ok [&.primary]:font-semibold" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
               <span class="model-id mono shrink-0 w-150px text-12px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis" :title="m.id">{{ m.id }}</span>
-              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1" />
-              <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
+              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1 [&_.el-input__inner]:text-12px" />
+              <button type="button" class="inline-flex items-center justify-center gap-6px rounded-sm border border-solid border-line bg-transparent text-ink-3 text-14px leading-none font-medium whitespace-nowrap px-8px py-0 cursor-pointer transition-colors hover:text-err hover:border-err" @click="removeModel(m.id)" title="移除">×</button>
             </div>
           </div>
-          <div v-else class="model-line text-12px text-ink-3 py-8px px-12px bg-surface-2 border border-line rounded-sm">尚未选择模型</div>
+          <div v-else class="model-line text-12px text-ink-3 py-8px px-12px bg-surface-2 border border-solid border-line rounded-sm">尚未选择模型</div>
           <div class="model-actions flex items-center gap-10px mt-8px">
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels || availableModels.length === 0" @click="modelDialogVisible = true">
               选择模型
+            </button>
+            <button type="button" class="btn sm" @click="manualModelDialogVisible = true">
+              手动添加
             </button>
             <span class="model-hint-inline text-11.5px text-ink-4">
               点击「获取可用模型」从远程加载，再通过弹窗勾选；首个即默认模型。
@@ -76,6 +100,18 @@
         </div>
       </div>
     </div>
+
+    <!-- 手动添加模型对话框：Plan 类端点等不支持模型列表接口时使用 -->
+    <el-dialog v-model="manualModelDialogVisible" title="手动添加模型" width="420">
+      <div class="flex flex-col gap-12px">
+        <el-input v-model="manualModelId" placeholder="模型 ID（如 doubao-seed-1-6-250615）" class="font-mono" />
+        <el-input v-model="manualModelName" placeholder="展示名称（可选）" />
+      </div>
+      <template #footer>
+        <button class="btn" @click="manualModelDialogVisible = false">取消</button>
+        <button class="btn accent" @click="addManualModel">添加</button>
+      </template>
+    </el-dialog>
 
     <!-- 模型选择对话框 -->
     <ModelSelectDialog
@@ -87,7 +123,7 @@
     />
 
     <!-- 底部操作按钮 -->
-    <div class="wizard-actions flex justify-end">
+    <div class="wizard-actions flex justify-end gap-[var(--gap-sm)] mt-[var(--gap-lg)]">
       <button type="button" class="btn" @click="$router.back()">取消</button>
       <button type="button" class="btn primary" :disabled="!canSubmit || saving" @click="submit">
         {{ saving ? '保存中…' : '添加模型' }}
@@ -141,8 +177,24 @@ const form = reactive({
   provider: '',
   apiKey: '',
   baseUrl: '',
+  apiFormat: '',
   priority: 0,
 })
+
+// 可选的 API 格式（'' = 跟随提供方默认；label 按接口路径展示）
+const apiFormats = [
+  { value: 'anthropic-messages', label: 'Anthropic Messages (/v1/messages)' },
+  { value: 'openai-completions', label: 'Chat Completions (/chat/completions)' },
+  { value: 'openai-responses', label: 'Responses (/responses)' },
+]
+
+/** API 格式对应的接口路径后缀。 */
+function chatPathOf(format: string): string | undefined {
+  if (format === 'anthropic-messages') return '/messages'
+  if (format === 'openai-completions') return '/chat/completions'
+  if (format === 'openai-responses') return '/responses'
+  return undefined
+}
 
 // 当前选中的提供商定义
 const selectedDef = computed(() => allProviders.value.find((p) => p.id === form.provider))
@@ -192,7 +244,11 @@ async function fetchModels() {
     if (res.models && res.models.length) {
       availableModels.value = res.models
       modelDialogVisible.value = true
-      ElMessage.success(`已获取 ${res.models.length} 个可用模型，请在弹窗中勾选`)
+      if (res.warning) {
+        ElMessage.warning(res.warning)
+      } else {
+        ElMessage.success(`已获取 ${res.models.length} 个可用模型，请在弹窗中勾选`)
+      }
     } else {
       availableModels.value = []
       ElMessage.warning(res.warning || '未返回模型列表，可手动输入模型 ID')
@@ -211,6 +267,31 @@ async function fetchModels() {
  */
 function removeModel(id: string) {
   selectedModels.value = selectedModels.value.filter((m) => m.id !== id)
+}
+
+// 手动添加模型对话框状态
+const manualModelDialogVisible = ref(false)
+const manualModelId = ref('')
+const manualModelName = ref('')
+
+/**
+ * 手动添加模型到已选列表（Plan 类端点等不支持模型列表接口时使用）。
+ */
+function addManualModel() {
+  const id = manualModelId.value.trim()
+  if (!id) {
+    ElMessage.warning('请输入模型 ID')
+    return
+  }
+  if (selectedModels.value.some((m) => m.id === id)) {
+    ElMessage.warning('该模型已存在')
+    return
+  }
+  selectedModels.value.push({ id, name: manualModelName.value.trim() })
+  manualModelId.value = ''
+  manualModelName.value = ''
+  manualModelDialogVisible.value = false
+  ElMessage.success('已添加')
 }
 
 /**
@@ -232,6 +313,7 @@ function onModelConfirm(ids: string[]) {
 function resetForm() {
   form.apiKey = ''
   form.baseUrl = ''
+  form.apiFormat = ''
   selectedModels.value = []
   availableModels.value = []
 }
@@ -256,6 +338,9 @@ async function submit() {
       defaultModel: selectedModels.value[0]?.id || undefined, // 首个模型作为默认
       models,
       priority: form.priority,
+      // 用户显式选择了 API 格式时才覆盖提供方默认协议
+      apiProtocol: form.apiFormat || undefined,
+      chatPath: chatPathOf(form.apiFormat),
     })
     router.push('/subscriptions')
   } finally {
@@ -278,43 +363,3 @@ onMounted(async () => {
 // 切换提供方时重置密钥、地址与模型选择
 watch(() => form.provider, () => resetForm())
 </script>
-
-<style scoped>
-.form { gap: var(--gap-lg); }
-.field-label.static { font-weight: 600; }
-.wizard-actions { gap: var(--gap-sm); margin-top: var(--gap-lg); }
-
-.custom-block > summary {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-2);
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.custom-block > summary::before {
-  content: '▸';
-  font-size: 10px;
-  color: var(--ink-3);
-  transition: transform 0.15s;
-}
-.custom-block[open] > summary::before { transform: rotate(90deg); }
-.custom-block > summary::-webkit-details-marker { display: none; }
-
-.model-idx.primary {
-  color: var(--ok);
-  font-weight: 600;
-}
-.model-name :deep(.el-input__inner) { font-size: 12px; }
-.btn.sm.ghost {
-  border-color: var(--line);
-  color: var(--ink-3);
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 8px;
-  background: transparent;
-}
-.btn.sm.ghost:hover { color: var(--err); border-color: var(--err); }
-</style>

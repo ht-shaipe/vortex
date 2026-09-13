@@ -11,7 +11,7 @@
     <p v-else-if="!loaded" class="sync-desc">读取中…</p>
     <p v-else-if="list.length === 0" class="sync-desc">暂无备份</p>
 
-    <div v-else class="table-wrap border border-line rounded-md overflow-hidden">
+    <div v-else class="table-wrap border border-solid border-line rounded-md overflow-hidden">
       <table class="table">
         <thead>
           <tr>

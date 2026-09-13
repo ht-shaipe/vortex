@@ -1,5 +1,5 @@
 <template>
-  <div class="trend flex flex-col">
+  <div class="trend flex flex-col gap-[var(--gap-md)]">
     <div class="trend-head flex items-center justify-between">
       <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">调用趋势</h2>
       <div class="range-tabs">
@@ -132,6 +132,3 @@ const option = computed(() => {
 })
 </script>
 
-<style scoped>
-.trend { gap: var(--gap-md); }
-</style>

@@ -25,22 +25,22 @@
             <div class="bar-left flex items-center gap-10px">
               <button
                 type="button"
-                class="sel-all inline-flex items-center gap-7px border-none bg-transparent text-xs text-ink-3"
+                class="sel-all inline-flex items-center gap-7px border-none bg-transparent text-xs text-ink-3 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="visibleImportable.length === 0"
                 @click="selectAll"
               >
-                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms" :class="{ on: allSelected, dim: visibleImportable.length === 0 }">
+                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-solid border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms [&.on]:bg-accent [&.on]:border-accent [&.dim]:opacity-50" :class="{ on: allSelected, dim: visibleImportable.length === 0 }">
                   <el-icon v-if="allSelected" :size="11"><Check /></el-icon>
                 </span>
                 全选
               </button>
-              <button type="button" class="link-btn border-none bg-transparent py-2px px-6px rounded-4px text-xs text-ink-3 transition-colors duration-120ms" :disabled="selected.size === 0" @click="deselectAll">
+              <button type="button" class="link-btn border-none bg-transparent py-2px px-6px rounded-4px text-xs text-ink-3 transition-colors duration-120ms enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed" :disabled="selected.size === 0" @click="deselectAll">
                 取消全选
               </button>
-              <div class="filters flex items-center gap-4px pl-10px border-l border-line">
+              <div class="filters flex items-center gap-4px pl-10px border-l border-line border-solid border-0">
                 <button
                   type="button"
-                  class="filter-btn h-24px px-8px border border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms"
+                  class="filter-btn h-24px px-8px border border-solid border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms hover:opacity-100 hover:bg-surface-3 hover:text-ink [&.on]:opacity-100 [&.on]:border-accent-line [&.on]:bg-accent-bg [&.on]:text-accent-ink"
                   :class="{ on: appFilter.claude }"
                   aria-label="仅显示 Claude"
                   aria-pressed="appFilter.claude"
@@ -50,7 +50,7 @@
                 </button>
                 <button
                   type="button"
-                  class="filter-btn h-24px px-8px border border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms"
+                  class="filter-btn h-24px px-8px border border-solid border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms hover:opacity-100 hover:bg-surface-3 hover:text-ink [&.on]:opacity-100 [&.on]:border-accent-line [&.on]:bg-accent-bg [&.on]:text-accent-ink"
                   :class="{ on: appFilter.codex }"
                   aria-label="仅显示 Codex"
                   aria-pressed="appFilter.codex"
@@ -65,13 +65,13 @@
             </span>
           </div>
 
-          <el-scrollbar class="dlg-list flex-1 min-h-0 border border-line rounded-sm" max-height="46vh">
+          <el-scrollbar class="dlg-list flex-1 min-h-0 border border-solid border-line rounded-sm" max-height="46vh">
             <p v-if="visibleItems.length === 0" class="hint m-0 py-24px px-8px text-center text-sm text-ink-4">当前筛选下没有可展示的项</p>
             <template v-else>
               <div
                 v-for="item in visibleItems"
                 :key="item.ccSwitchId"
-                class="row flex items-start gap-10px py-9px px-12px border-b border-line cursor-pointer outline-none transition-colors duration-100ms"
+                class="row flex items-start gap-10px py-9px px-12px border-b border-line border-solid border-0 cursor-pointer outline-none transition-colors duration-100ms last:border-b-0 hover:bg-surface-2 [&.dim]:opacity-50 [&.dim]:cursor-not-allowed"
                 :class="{ dim: item.status === 'skipped' }"
                 role="checkbox"
                 :aria-checked="selected.has(item.ccSwitchId)"
@@ -81,7 +81,7 @@
                 @keydown.enter.prevent="item.status === 'ok' && toggle(item.ccSwitchId)"
                 @keydown.space.prevent="item.status === 'ok' && toggle(item.ccSwitchId)"
               >
-                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms" :class="{ on: selected.has(item.ccSwitchId), dim: item.status === 'skipped' }">
+                <span class="box grid place-items-center shrink-0 w-15px h-15px mt-2px border border-solid border-line-2 rounded-4px bg-surface text-white transition-colors duration-120ms [&.on]:bg-accent [&.on]:border-accent [&.dim]:opacity-50" :class="{ on: selected.has(item.ccSwitchId), dim: item.status === 'skipped' }">
                   <el-icon v-if="selected.has(item.ccSwitchId)" :size="11"><Check /></el-icon>
                 </span>
                 <div class="row-main flex flex-col gap-1px flex-1 min-w-0">
@@ -91,9 +91,9 @@
                   <span v-else class="row-sub text-xs text-ink-4">{{ item.apiKeyMasked || '—' }}</span>
                 </div>
                 <div class="row-trail flex items-center gap-5px shrink-0 self-center">
-                  <span class="badge py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3" :class="item.appType">{{ item.appType }}</span>
+                  <span class="badge py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3 [&.claude]:bg-warn-bg [&.claude]:text-warn [&.codex]:bg-accent-bg [&.codex]:text-accent-ink" :class="item.appType">{{ item.appType }}</span>
                   <el-icon :size="11" class="trail-arrow text-ink-5"><Right /></el-icon>
-                  <span class="badge kind py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3" :title="`导入为 provider: ${item.transformer}`">{{ item.transformer }}</span>
+                  <span class="badge kind font-mono py-1px px-5px rounded-3px text-10px font-medium bg-surface-3 text-ink-3 [&.codex]:bg-accent-bg [&.codex]:text-accent-ink" :title="`导入为 provider: ${item.transformer}`">{{ item.transformer }}</span>
                 </div>
               </div>
             </template>
@@ -236,27 +236,3 @@ async function onImport(): Promise<void> {
 }
 </script>
 
-<style scoped>
-.sel-all:disabled { cursor: not-allowed; opacity: 0.5; }
-.link-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
-.link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.filter-btn:hover { opacity: 1; background: var(--surface-3); color: var(--ink); }
-.filter-btn.on {
-  opacity: 1;
-  border-color: var(--accent-line);
-  background: var(--accent-bg);
-  color: var(--accent-ink);
-}
-
-.row:last-child { border-bottom: none; }
-.row:hover { background: var(--surface-2); }
-.row.dim { opacity: 0.5; cursor: not-allowed; }
-
-.box.on { background: var(--accent); border-color: var(--accent); }
-.box.dim { opacity: 0.5; }
-
-.badge.claude { background: var(--warn-bg); color: var(--warn); }
-.badge.codex { background: var(--accent-bg); color: var(--accent-ink); }
-.badge.kind { font-family: var(--font-mono); }
-</style>

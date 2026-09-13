@@ -1,8 +1,8 @@
 <template>
-  <aside class="topics flex flex-col h-full w-full border-r border-line bg-surface-2">
-    <div class="topics-head flex items-center justify-between shrink-0 pt-14px pr-10px pb-12px pl-16px border-b border-line">
+  <aside class="topics flex flex-col h-full w-full border-r border-line border-solid border-0 bg-surface-2">
+    <div class="topics-head flex items-center justify-between shrink-0 gap-[var(--gap-sm)] pt-14px pr-10px pb-12px pl-16px border-b border-line border-solid border-0">
       <span class="topics-title text-13px font-semibold tracking-0.03em text-ink-2">会话</span>
-      <button type="button" class="btn bare icon topics-new w-24px h-24px rounded-6px text-ink-3 transition" title="新建对话" aria-label="新建对话" @click="emit('new')">
+      <button type="button" class="btn bare icon topics-new w-24px h-24px rounded-6px text-ink-3 transition hover:bg-surface-3 hover:text-ink" title="新建对话" aria-label="新建对话" @click="emit('new')">
         <el-icon :size="15"><Plus /></el-icon>
       </button>
     </div>
@@ -11,24 +11,24 @@
       <p v-if="topics.length === 0" class="topics-empty m-0 pt-28px px-8px text-center text-12.5px text-ink-4">暂无会话</p>
       <ul v-else class="topics-list list-none m-0 p-0 flex flex-col gap-1px">
         <li v-for="t in topics" :key="t.id">
-          <div class="topic-row relative flex items-center gap-2px pt-7px pr-8px pb-7px pl-10px rounded-8px text-13.5px text-ink-2 cursor-pointer transition" :class="{ active: activeId === t.id }">
-            <span class="topic-indicator" />
+          <div class="topic-row relative flex items-center gap-2px pt-7px pr-8px pb-7px pl-10px rounded-8px text-13.5px text-ink-2 cursor-pointer transition hover:bg-surface-3 hover:text-ink [&.active]:bg-accent-bg [&.active]:text-accent-ink [&.active]:font-medium dark:[&.active]:bg-surface-3 dark:[&.active]:text-ink [&:hover_.topic-op]:opacity-100 [&.active_.topic-op]:opacity-100 [&.active_.topic-indicator]:scale-y-100" :class="{ active: activeId === t.id }">
+            <span class="topic-indicator absolute left-2px top-1/2 -translate-y-1/2 scale-y-0 w-3px h-16px rounded-2px bg-accent transition-transform duration-150 ease" />
             <input
               v-if="editingId === t.id"
               ref="editInput"
               v-model="editingTitle"
-              class="topic-input flex-1 min-w-0 h-26px px-8px text-13.5px text-ink bg-surface border border-accent rounded-6px outline-none"
+              class="topic-input flex-1 min-w-0 h-26px px-8px text-13.5px text-ink bg-surface border border-solid border-accent rounded-6px outline-none"
               @click.stop
               @blur="onBlur(t)"
               @keydown.enter.prevent="commitRename(t)"
               @keydown.esc.prevent="cancelRename(true)"
             />
-            <button v-else type="button" class="topic-name flex-1 min-w-0 text-left overflow-hidden text-ellipsis whitespace-nowrap" @click="emit('select', t.id)">
+            <button v-else type="button" class="topic-name flex-1 min-w-0 text-left overflow-hidden text-ellipsis whitespace-nowrap border-none bg-transparent p-0 cursor-pointer" @click="emit('select', t.id)">
               {{ t.title || '新对话' }}
             </button>
             <button
               type="button"
-              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition"
+              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition hover:text-ink hover:bg-surface-3 dark:hover:bg-surface-2"
               title="重命名"
               aria-label="重命名"
               @click.stop="beginRename(t)"
@@ -37,7 +37,7 @@
             </button>
             <button
               type="button"
-              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition"
+              class="topic-op shrink-0 inline-flex items-center justify-center w-22px h-22px p-0 border-none rounded-5px bg-transparent text-ink-4 opacity-0 cursor-pointer transition hover:text-ink hover:bg-surface-3 dark:hover:bg-surface-2"
               title="删除"
               aria-label="删除"
               @click.stop="emit('delete', t)"
@@ -116,45 +116,3 @@ function commitRename(topic: ChatTopic): void {
 }
 </script>
 
-<style scoped>
-.topics-head { gap: var(--gap-sm); }
-.topics-new:hover {
-  background: var(--surface-3);
-  color: var(--ink);
-}
-
-.topic-row:hover { background: var(--surface-3); color: var(--ink); }
-.topic-row.active {
-  background: var(--accent-bg);
-  color: var(--accent-ink);
-  font-weight: 500;
-}
-html.dark .topic-row.active { background: var(--surface-3); color: var(--ink); }
-
-.topic-indicator {
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0);
-  width: 3px;
-  height: 16px;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: transform 0.15s ease;
-}
-.topic-row.active .topic-indicator { transform: translateY(-50%) scaleY(1); }
-
-.topic-name {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-.topic-row:hover .topic-op,
-.topic-row.active .topic-op { opacity: 1; }
-.topic-op:hover { color: var(--ink); background: var(--surface-3); }
-html.dark .topic-op:hover { background: var(--surface-2); }
-</style>

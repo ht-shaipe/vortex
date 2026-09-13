@@ -1,5 +1,12 @@
 <template>
-  <div class="copyable relative" :class="variant">
+  <div
+    class="copyable relative border-none
+      [&.block_.copy-body]:bg-surface-3 [&.block_.copy-body]:border [&.block_.copy-body]:border-solid [&.block_.copy-body]:border-line [&.block_.copy-body]:rounded-sm [&.block_.copy-body]:pt-10px [&.block_.copy-body]:pb-10px [&.block_.copy-body]:pl-12px [&.block_.copy-body]:pr-36px [&.block_.copy-body]:font-mono [&.block_.copy-body]:text-12.5px [&.block_.copy-body]:leading-[1.7] [&.block_.copy-body]:text-ink-2 [&.block_.copy-body]:overflow-x-auto [&.block_.copy-body]:whitespace-pre
+      [&.block_.copy-btn]:absolute [&.block_.copy-btn]:top-6px [&.block_.copy-btn]:right-6px [&.block_.copy-btn]:z-1
+      [&.inline]:flex [&.inline]:items-center [&.inline]:gap-8px
+      [&.inline_.copy-body]:bg-surface-3 [&.inline_.copy-body]:border [&.inline_.copy-body]:border-solid [&.inline_.copy-body]:border-line [&.inline_.copy-body]:rounded-sm [&.inline_.copy-body]:pt-6px [&.inline_.copy-body]:pb-6px [&.inline_.copy-body]:pl-12px [&.inline_.copy-body]:pr-6px [&.inline_.copy-body]:font-mono [&.inline_.copy-body]:text-12px [&.inline_.copy-body]:text-ink-2 [&.inline_.copy-body]:flex-1 [&.inline_.copy-body]:overflow-hidden [&.inline_.copy-body]:whitespace-nowrap [&.inline_.copy-body]:text-ellipsis"
+    :class="variant"
+  >
     <div class="copy-body">
       <template v-if="variant === 'block' && lang">
         <!-- eslint-disable-next-line vue/no-v-html -->
@@ -62,44 +69,6 @@ async function copy() {
   setTimeout(() => (copied.value = false), 1500) // 1.5 秒后恢复图标
 }
 </script>
-
-
-<style scoped>
-
-.copyable.block .copy-body {
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 10px 36px 10px 12px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--ink-2);
-  overflow-x: auto;
-  white-space: pre;
-}
-.copyable.block .copy-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
-}
-.copyable.inline { display: flex; align-items: center; gap: 8px; }
-.copyable.inline .copy-body {
-  background: var(--surface-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 6px 6px 6px 12px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-2);
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-</style>
 
 <style>
 /* highlight.js 主题 — 用 CSS 变量适配明暗 */

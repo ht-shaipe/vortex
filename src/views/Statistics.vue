@@ -3,23 +3,39 @@
     <!-- 页面头部：标题与副标题 -->
     <PageHeader title="统计" sub="端点调用与 Token 用量的多维分析" />
 
-    <!-- 顶部切换标签：端点统计 / 用量统计 -->
-    <div class="tabs">
-      <button
-        v-for="t in TOP_TABS"
-        :key="t.key"
-        type="button"
-        class="tab"
-        :class="{ active: tab === t.key }"
-        @click="tab = t.key"
-      >
-        {{ t.label }}
-      </button>
-    </div>
-
-    <!-- 按选中标签渲染对应统计面板 -->
-    <EndpointStatsPanel v-if="tab === 'endpoint'" />
-    <UsagePanel v-else />
+    <!-- 按选中标签渲染对应统计面板：顶部切换标签通过插槽并入面板操作栏，与操作按钮同一行 -->
+    <EndpointStatsPanel v-if="tab === 'endpoint'">
+      <template #top-tabs>
+        <div class="tabs mb-0 border-b-none">
+          <button
+            v-for="t in TOP_TABS"
+            :key="t.key"
+            type="button"
+            class="tab"
+            :class="{ active: tab === t.key }"
+            @click="tab = t.key"
+          >
+            {{ t.label }}
+          </button>
+        </div>
+      </template>
+    </EndpointStatsPanel>
+    <UsagePanel v-else>
+      <template #top-tabs>
+        <div class="tabs mb-0 border-b-none">
+          <button
+            v-for="t in TOP_TABS"
+            :key="t.key"
+            type="button"
+            class="tab"
+            :class="{ active: tab === t.key }"
+            @click="tab = t.key"
+          >
+            {{ t.label }}
+          </button>
+        </div>
+      </template>
+    </UsagePanel>
   </div>
 </template>
 

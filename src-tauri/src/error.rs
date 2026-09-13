@@ -40,6 +40,13 @@ pub enum AppError {
     /// 上游 AI 提供商返回的错误。
     #[error("Provider error: {0}")]
     Provider(String),
+    /// 熔断器处于打开态，请求被快速失败拦截。
+    ///
+    /// 携带熔断器名称（`provider_id:connection_id`）。此前调用方依赖错误文案中的
+    /// "Circuit breaker open" 字符串匹配来判断熔断，一旦文案调整就会静默失效，
+    /// 因此改为结构化变体，由调用方通过模式匹配识别。
+    #[error("Circuit breaker open for {0}")]
+    CircuitOpen(String),
     /// 路由策略相关错误。
     #[error("Routing error: {0}")]
     Routing(String),
@@ -86,6 +93,7 @@ impl actix_web::ResponseError for AppError {
                 AppError::Unauthorized(_) => "UNAUTHORIZED",
                 AppError::Provider(_) => "PROVIDER_ERROR",
                 AppError::Routing(_) => "ROUTING_ERROR",
+                AppError::CircuitOpen(_) => "CIRCUIT_OPEN",
                 _ => "INTERNAL_ERROR",
             },
             "message": self.to_string(),

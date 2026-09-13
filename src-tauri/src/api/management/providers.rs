@@ -413,6 +413,89 @@ async fn test_connection(
         }
     }
 
+    // 火山方舟 Plan 端点（/api/plan、/api/coding）不提供 /models 路由（固定 404），
+    // 改用一次最小的对话请求（max_tokens=1）做连通性与鉴权测试
+    let is_volces_plan = def.id == "custom-openai"
+        && reqwest::Url::parse(&url)
+            .ok()
+            .map(|u| {
+                u.host_str().unwrap_or("").ends_with("volces.com")
+                    && (u.path().contains("/api/plan/") || u.path().contains("/api/coding/"))
+            })
+            .unwrap_or(false);
+    if is_volces_plan {
+        let base_trimmed = base_url.trim_end_matches('/');
+        let chat_url = format!("{}/chat/completions", base_trimmed);
+        // 测试模型优先用默认模型，其次第一个挂载模型
+        let model = connection
+            .default_model
+            .clone()
+            .filter(|m| !m.trim().is_empty())
+            .or_else(|| {
+                connection
+                    .models
+                    .as_ref()
+                    .and_then(|ms| ms.first().map(|m| m.id.clone()))
+            })
+            .unwrap_or_default();
+        let payload = json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "stream": false,
+        })
+        .to_string();
+
+        let start = std::time::Instant::now();
+        let mut req = client.post(&chat_url).insert_header((
+            "Content-Type",
+            "application/json",
+        ));
+        if let Some(ref api_key) = connection.api_key {
+            if !api_key.trim().is_empty() {
+                req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
+            }
+        }
+        req = req.insert_header(("Content-Type", "application/json"));
+
+        return match tokio::time::timeout(std::time::Duration::from_secs(15), req.send_body(payload)).await {
+            Ok(Ok(mut response)) => {
+                let latency = start.elapsed().as_millis() as u64;
+                let status_code = response.status();
+                if status_code.is_success() {
+                    TestResult { status: "ok".into(), error: None, latency_ms: Some(latency) }
+                } else {
+                    let bytes = response.body().await.unwrap_or_default();
+                    let body = String::from_utf8_lossy(&bytes)
+                        .chars()
+                        .take(280)
+                        .collect::<String>();
+                    let snippet = if body.is_empty() { String::new() } else { format!(" · {}", body) };
+                    let hint = match status_code.as_u16() {
+                        401 | 403 => "密钥无效或无该 Plan 套餐权限".to_string(),
+                        404 => format!("模型「{}」不存在或不在当前 Plan 套餐内", model),
+                        _ => format!("远程返回 HTTP {}", status_code.as_u16()),
+                    };
+                    TestResult {
+                        status: "error".into(),
+                        error: Some(format!("{}{}", hint, snippet)),
+                        latency_ms: Some(latency),
+                    }
+                }
+            }
+            Ok(Err(e)) => TestResult {
+                status: "error".into(),
+                error: Some(format!("无法连接到该地址：{}", e)),
+                latency_ms: None,
+            },
+            Err(_) => TestResult {
+                status: "error".into(),
+                error: Some("请求超过 15 秒未响应，请检查网络与地址可达性".into()),
+                latency_ms: None,
+            },
+        };
+    }
+
     // 构造 GET 请求
     let mut req = client.get(&url);
 
@@ -553,6 +636,23 @@ pub async fn preview_models(
             }
         }
         None => return HttpResponse::BadRequest().json(json!({ "error": "API 地址缺少主机名" })),
+    }
+
+    // 火山方舟 Agent/Coding Plan 专属端点不返回模型列表（/models 响应为空），
+    // 改为返回官方套餐内常用预置模型，用户可按需勾选或再手动补充
+    if parsed.host_str().unwrap_or("").ends_with("volces.com")
+        && (parsed.path().contains("/api/plan/") || parsed.path().contains("/api/coding/"))
+    {
+        return HttpResponse::Ok().json(json!({
+            "models": [
+                "doubao-seed-evolving",
+                "doubao-seed-2-0",
+                "doubao-seed-2-0-code",
+                "doubao-seed-1-6",
+                "doubao-seed-1-6-flash",
+            ],
+            "warning": "Plan 端点不提供模型列表接口，以上为套餐常用预置模型；如需其他模型请「手动添加」（模型 ID 可在火山引擎控制台复制）",
+        }));
     }
 
     // 鉴权方式

@@ -1,19 +1,23 @@
 <template>
-  <div class="panel flex flex-col">
-    <div class="panel-bar flex items-center justify-between flex-wrap">
-      <div class="tabs slim mb-0 border-b-none">
-        <button
-          v-for="t in appTabs"
-          :key="t.key"
-          type="button"
-          class="tab"
-          :class="{ active: app === t.key }"
-          @click="app = t.key"
-        >
-          {{ t.label }}
-        </button>
+  <div class="panel flex flex-col gap-[var(--gap-xl)]">
+    <div class="panel-bar flex items-center justify-between flex-wrap gap-[var(--gap-lg)]">
+      <div class="flex items-center flex-wrap gap-[var(--gap-lg)]">
+        <!-- 顶部页面切换标签（由父级通过插槽传入，与操作按钮同行） -->
+        <slot name="top-tabs" />
+        <div class="tabs slim mb-0 border-b-none [&_.tab]:px-12px [&_.tab]:py-5px">
+          <button
+            v-for="t in appTabs"
+            :key="t.key"
+            type="button"
+            class="tab"
+            :class="{ active: app === t.key }"
+            @click="app = t.key"
+          >
+            {{ t.label }}
+          </button>
+        </div>
       </div>
-      <div class="panel-actions flex items-center">
+      <div class="panel-actions flex items-center gap-[var(--gap-sm)]">
         <DateRangePicker v-model="range" />
         <button type="button" class="btn sm" :disabled="syncing" @click="sync">
           <el-icon :size="13" :class="{ spin: syncing }"><Refresh /></el-icon>刷新
@@ -21,7 +25,7 @@
       </div>
     </div>
 
-    <div class="kpi-row grid">
+    <div class="kpi-row grid grid-cols-[repeat(4,1fr)] gap-[var(--gap-md)] [@media(max-width:900px)]:!grid-cols-[repeat(2,1fr)]">
       <StatCard label="请求数" :value="summary?.totalRequests ?? 0" />
       <StatCard label="输入 Token" :value="summary?.totalInputTokens ?? 0" hint-below>
         <template #hint>
@@ -40,21 +44,21 @@
       </StatCard>
     </div>
 
-    <section class="sec flex flex-col">
+    <section class="sec flex flex-col gap-[var(--gap-sm)]">
       <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">调用热力图</h2>
-      <div class="card sec-body">
+      <div class="card sec-body p-[var(--pad-card)]">
         <UsageHeatmap :totals="dayTotals" />
       </div>
     </section>
 
-    <section class="card sec-body">
+    <section class="card sec-body p-[var(--pad-card)]">
       <UsageTrendChart :data="trendData" />
     </section>
 
-    <section v-if="dayModelRows.length > 0" class="sec flex flex-col">
+    <section v-if="dayModelRows.length > 0" class="sec flex flex-col gap-[var(--gap-sm)]">
       <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">按日期 · 模型</h2>
       <div class="card table-wrap overflow-hidden">
-        <table class="table">
+        <table class="table [&_tbody_tr]:!cursor-default">
           <thead>
             <tr>
               <th>日期</th>
@@ -69,7 +73,7 @@
           <tbody>
             <template v-for="g in groups" :key="g.date">
               <tr v-for="(r, i) in g.rows" :key="`${g.date}-${r.appType}-${r.model}-${i}`">
-                <td v-if="i === 0" :rowspan="g.rows.length" class="num date-cell border-r border-line">{{ g.date }}</td>
+                <td v-if="i === 0" :rowspan="g.rows.length" class="num date-cell !align-top border-r border-line border-solid border-0">{{ g.date }}</td>
                 <td class="small text-sm text-ink-3">{{ r.appType || '—' }}</td>
                 <td class="mono small text-sm text-ink-3">{{ r.model || '—' }}</td>
                 <td class="right num text-right">{{ fmtInt(r.requests) }}</td>
@@ -236,15 +240,3 @@ watch([appType, trendWin], () => void loadByHour(), { immediate: true })
 void loadAppTypes() // 初始加载来源列表
 </script>
 
-<style scoped>
-.panel { gap: var(--gap-xl); }
-.panel-bar { gap: var(--gap-lg); }
-.panel-actions { gap: var(--gap-sm); }
-.tabs.slim .tab { padding: 5px 12px; }
-.kpi-row { grid-template-columns: repeat(4, 1fr); gap: var(--gap-md); }
-@media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
-.sec { gap: var(--gap-sm); }
-.sec-body { padding: var(--pad-card); }
-.table tbody tr { cursor: default; }
-.date-cell { vertical-align: top; }
-</style>

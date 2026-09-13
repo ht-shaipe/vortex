@@ -23,9 +23,13 @@ pub struct AppConfig {
     pub require_api_key: bool,
     /// 日志级别，默认 `"info"`。
     pub log_level: String,
-    /// 免费 Token 的远程服务基址（列表 GET 与提交 POST 共用）。
+    /// 免费 Token 的远程服务基址（提交 POST 与删除 DELETE 共用）。
     /// 为空时免费 Token 完全走本地 SQLite；非空时列表与提交改为远程。
     pub free_tokens_remote: String,
+    /// 免费 Token 分页列表接口地址（POST，请求体 `{pageIndex, pageSize}`）。
+    pub free_tokens_page_url: String,
+    /// 访问 hub 管理接口的认证令牌（可选）。非空时以 `Authorization: Bearer` 携带。
+    pub hub_token: String,
 }
 
 impl AppConfig {
@@ -40,7 +44,9 @@ impl AppConfig {
     /// | `VORTEX_PORT` | 服务端口 | `10168` |
     /// | `VORTEX_REQUIRE_API_KEY` | 是否要求 API Key | `false` |
     /// | `VORTEX_LOG_LEVEL` | 日志级别 | `info` |
-    /// | `VORTEX_FREE_TOKENS_REMOTE` | 免费 Token 远程服务地址 | `https://hub.htui.cc/api/edge/free_tokens` |
+    /// | `VORTEX_FREE_TOKENS_REMOTE` | 免费 Token 提交/删除接口地址 | `https://hub.htui.cc/api/cms/token_site` |
+    /// | `VORTEX_FREE_TOKENS_PAGE_URL` | 免费 Token 分页列表接口地址（POST） | `https://hub.htui.cc/api/cms/token_site/page` |
+    /// | `VORTEX_HUB_TOKEN` | hub 管理接口认证令牌（可选，Bearer 方式携带） | 空 |
     ///
     /// # 返回值
     ///
@@ -84,9 +90,14 @@ impl AppConfig {
             // 日志级别默认 info
             log_level: std::env::var("VORTEX_LOG_LEVEL")
                 .unwrap_or_else(|_| "info".to_string()),
-            // 免费 Token 远程服务地址
+            // 免费 Token 远程服务地址（提交与删除）
             free_tokens_remote: std::env::var("VORTEX_FREE_TOKENS_REMOTE")
-                .unwrap_or_else(|_| "https://hub.htui.cc/api/edge/free_tokens".to_string()),
+                .unwrap_or_else(|_| "https://hub.htui.cc/api/cms/token_site".to_string()),
+            // 免费 Token 分页列表接口地址
+            free_tokens_page_url: std::env::var("VORTEX_FREE_TOKENS_PAGE_URL")
+                .unwrap_or_else(|_| "https://hub.htui.cc/api/cms/token_site/page".to_string()),
+            // hub 管理接口认证令牌（可选）
+            hub_token: std::env::var("VORTEX_HUB_TOKEN").unwrap_or_default(),
         }
     }
 

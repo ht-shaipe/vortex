@@ -1,7 +1,14 @@
 <template>
   <div class="wizard max-w-560px mx-auto">
-    <!-- 页面头部：标题与副标题 -->
-    <PageHeader title="自定义提供方" sub="接入任意 OpenAI 兼容端点" />
+    <!-- 页面头部：标题、副标题与提供方类型切换 -->
+    <PageHeader title="自定义提供方" sub="接入任意 OpenAI 兼容端点">
+      <template #actions>
+        <div class="radio-group">
+          <button type="button" class="radio-option" @click="$router.push('/subscriptions/new')">预置提供方</button>
+          <button type="button" class="radio-option active">自定义提供方</button>
+        </div>
+      </template>
+    </PageHeader>
 
     <div class="card">
       <div class="card-body form flex flex-col gap-[var(--gap-lg)] pt-24px">
@@ -30,9 +37,9 @@
           <el-input v-model="form.apiKey" type="password" show-password placeholder="输入 API 密钥" />
         </div>
 
-        <!-- API 协议选择 -->
+        <!-- API 格式选择 -->
         <div class="field flex flex-col gap-6px">
-          <label class="field-label text-12px font-medium text-ink-2">API 协议 <span class="req text-err ml-2px">*</span></label>
+          <label class="field-label text-12px font-medium text-ink-2">API 格式 <span class="req text-err ml-2px">*</span></label>
           <el-select v-model="form.apiProtocol" placeholder="选择协议" style="width: 100%" @change="onProtocolChange">
             <el-option
               v-for="p in protocols"
@@ -47,18 +54,18 @@
         <!-- 模型目录：获取远程模型后弹窗多选，或手动添加 -->
         <div class="field flex flex-col gap-6px">
           <div class="row-between flex items-center justify-between">
-            <span class="field-label static text-12px font-medium text-ink-2">模型目录</span>
+            <span class="field-label static text-12px font-semibold text-ink-2">模型目录</span>
             <button type="button" class="btn sm" :disabled="!canFetchModels || fetchingModels" @click="fetchModels">
               {{ fetchingModels ? '获取中…' : '获取可用模型' }}
             </button>
           </div>
           <!-- 已选模型列表：首位为默认模型 -->
-          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-line rounded-sm">
+          <div v-if="selectedModels.length" class="model-list flex flex-col gap-6px mt-8px p-10px bg-surface-2 border border-solid border-line rounded-sm">
             <div class="model-row flex items-center gap-8px" v-for="(m, i) in selectedModels" :key="m.id">
-              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
+              <span class="model-idx shrink-0 w-34px text-11px text-ink-4 text-center [&.primary]:text-ok [&.primary]:font-semibold" :class="{ primary: i === 0 }" :title="i === 0 ? '默认模型（用于路由回退）' : ''">{{ i === 0 ? '默认' : i + 1 }}</span>
               <span class="model-id mono shrink-0 w-150px text-12px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis" :title="m.id">{{ m.id }}</span>
-              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1" />
-              <button type="button" class="btn sm ghost" @click="removeModel(m.id)" title="移除">×</button>
+              <el-input v-model="m.name" placeholder="自定义名称（可选）" size="small" class="model-name flex-1 [&_.el-input__inner]:text-12px" />
+              <button type="button" class="inline-flex items-center justify-center gap-6px rounded-sm border border-solid border-line bg-transparent text-ink-3 text-14px leading-none font-medium whitespace-nowrap px-8px py-0 cursor-pointer transition-colors hover:text-err hover:border-err" @click="removeModel(m.id)" title="移除">×</button>
             </div>
           </div>
           <div v-else class="model-hint text-11.5px text-ink-4 py-10px px-12px bg-surface-2 border border-dashed border-line rounded-sm text-center">点击「获取可用模型」从远程拉取并在弹窗中勾选；或手动添加模型 ID。</div>
@@ -137,11 +144,11 @@ const selectedModels = ref<{ id: string; name: string }[]>([])
 /** 已选模型 ID 列表（传给 ModelSelectDialog） */
 const selIds = computed<string[]>(() => selectedModels.value.map((m) => m.id))
 
-// 可选的 API 协议
+// 可选的 API 格式（label 按接口路径展示，value 为后端协议标识）
 const protocols = [
-  { value: 'openai-completions', label: 'openai-completions' },
-  { value: 'openai-responses', label: 'openai-responses' },
-  { value: 'anthropic-messages', label: 'anthropic-messages' }
+  { value: 'anthropic-messages', label: 'Anthropic Messages (/v1/messages)' },
+  { value: 'openai-completions', label: 'Chat Completions (/chat/completions)' },
+  { value: 'openai-responses', label: 'Responses (/responses)' },
 ]
 
 // 表单状态
@@ -285,21 +292,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.field-label.static { font-weight: 600; }
-.model-idx.primary {
-  color: var(--ok);
-  font-weight: 600;
-}
-.model-name :deep(.el-input__inner) { font-size: 12px; }
-.btn.sm.ghost {
-  border-color: var(--line);
-  color: var(--ink-3);
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 8px;
-  background: transparent;
-}
-.btn.sm.ghost:hover { color: var(--err); border-color: var(--err); }
-</style>

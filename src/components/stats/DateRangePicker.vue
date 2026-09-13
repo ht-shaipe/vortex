@@ -15,7 +15,7 @@
     </template>
 
     <!-- 快捷项：点击即生效 -->
-    <div class="presets flex flex-wrap gap-6px pb-12px border-b border-line">
+    <div class="presets flex flex-wrap gap-6px pb-12px border-b border-line border-solid border-0">
       <button
         v-for="p in presetList"
         :key="p.key"
@@ -28,13 +28,13 @@
       </button>
     </div>
 
-    <div class="body flex pt-12px">
+    <div class="body flex gap-[var(--gap-lg)] pt-12px">
       <!-- 左：起止时间输入 -->
-      <div class="fields flex flex-col w-232px shrink-0">
+      <div class="fields flex flex-col gap-[var(--gap-md)] w-232px shrink-0">
         <div
           v-for="f in fields"
           :key="f.field"
-          class="field flex flex-col gap-6px py-9px px-10px border border-line rounded-sm cursor-pointer"
+          class="field flex flex-col gap-6px py-9px px-10px border border-solid border-line rounded-sm cursor-pointer transition-[border-color,box-shadow] duration-120 hover:border-line-2 [&.active]:border-accent [&.active]:shadow-[0_0_0_2px_var(--accent-bg)]"
           :class="{ active: activeField === f.field }"
           @click="activeField = f.field"
         >
@@ -44,7 +44,7 @@
               type="text"
               inputmode="numeric"
               spellcheck="false"
-              class="ipt flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
+              class="ipt flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-solid border-line rounded-5px outline-none font-mono focus:border-accent dark:[color-scheme:dark]"
               :value="ymd(f.ms)"
               placeholder="YYYY-MM-DD"
               @focus="activeField = f.field"
@@ -54,7 +54,7 @@
               type="text"
               inputmode="numeric"
               spellcheck="false"
-              class="ipt time flex-1 min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-line rounded-5px outline-none"
+              class="ipt time grow-0 shrink-0 basis-82px min-w-0 h-28px py-0 px-6px text-sm text-ink bg-surface border border-solid border-line rounded-5px outline-none font-mono focus:border-accent dark:[color-scheme:dark]"
               :value="fmtTimeInput(f.ms)"
               placeholder="HH:MM"
               @focus="activeField = f.field"
@@ -82,15 +82,15 @@
             <el-icon :size="14"><ArrowRight /></el-icon>
           </button>
         </div>
-        <div class="cal-week grid text-center text-xs text-ink-4">
+        <div class="cal-week grid grid-cols-[repeat(7,1fr)] text-center text-xs text-ink-4 [&_span]:py-3px">
           <span v-for="w in WEEKDAYS" :key="w">{{ w }}</span>
         </div>
-        <div class="cal-grid grid gap-1px">
+        <div class="cal-grid grid grid-cols-[repeat(7,1fr)] gap-1px">
           <button
             v-for="dayMs in days"
             :key="dayMs"
             type="button"
-            class="cal-day h-28px border-none bg-transparent rounded-5px text-sm text-ink-2 cursor-pointer"
+            class="cal-day h-28px border-none bg-transparent rounded-5px text-sm text-ink-2 cursor-pointer transition-[background,color] duration-120 hover:bg-surface-3 [&.out]:text-ink-5 [&.in-range]:bg-accent-bg [&.in-range]:text-accent-ink [&.endpoint]:bg-accent [&.endpoint]:text-white [&.endpoint]:font-semibold [&.today]:shadow-[inset_0_0_0_1px_var(--accent-line)]"
             :class="dayClass(dayMs)"
             @click="pickDay(dayMs)"
           >
@@ -279,30 +279,3 @@ function apply(): void {
 }
 </script>
 
-<style scoped>
-.body { gap: var(--gap-lg); }
-.fields { gap: var(--gap-md); }
-.field { transition: border-color 0.12s, box-shadow 0.12s; }
-.field:hover { border-color: var(--line-2); }
-.field.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-bg);
-}
-.ipt { font-family: var(--font-mono); }
-.ipt:focus { border-color: var(--accent); }
-.ipt.time { flex: 0 0 82px; }
-html.dark .ipt { color-scheme: dark; }
-.cal-week { grid-template-columns: repeat(7, 1fr); }
-.cal-week span { padding: 3px 0; }
-.cal-grid { grid-template-columns: repeat(7, 1fr); }
-.cal-day { transition: background 0.12s, color 0.12s; }
-.cal-day:hover { background: var(--surface-3); }
-.cal-day.out { color: var(--ink-5); }
-.cal-day.in-range { background: var(--accent-bg); color: var(--accent-ink); }
-.cal-day.endpoint {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-.cal-day.today { box-shadow: inset 0 0 0 1px var(--accent-line); }
-</style>

@@ -47,7 +47,7 @@
  * Sidebar.vue — 左侧导航栏
  * 职责：展示品牌标识、主导航项与底部导航项，支持折叠/展开，定时刷新供应商数量徽章。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElIcon } from 'element-plus'
 import {
@@ -66,10 +66,12 @@ import {
 } from '@element-plus/icons-vue'
 import { listProviders } from '@/api/providers'
 import { useSidebarCollapsed } from '@/composables/useSidebarCollapsed'
+import { useGatewayStatus } from '@/composables/useGatewayStatus'
 
 const route = useRoute() // 当前路由对象，用于高亮激活项
 
 const { collapsed } = useSidebarCollapsed()
+const { healthOk } = useGatewayStatus()
 
 /** 导航项数据结构。 */
 interface NavItem {
@@ -86,7 +88,7 @@ const providerCount = ref(0) // 已配置的供应商连接数量
 // 主导航项列表（含徽章/圆点指示）
 const mainItems = computed<NavItem[]>(() => [
   { to: '/guide', label: '接入指南', icon: Reading },
-  { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: 'ok' },
+  { to: '/live-routing', label: '实时路由', icon: DataLine, dot: true, dotTone: healthOk.value ? 'ok' : 'err' },
   { to: '/subscriptions', label: '订阅管理', icon: Key, badge: providerCount.value > 0 ? String(providerCount.value) : null },
   { to: '/model-aliases', label: '模型映射', icon: CopyDocument },
   { to: '/statistics', label: '数据统计', icon: Histogram },
@@ -122,6 +124,9 @@ async function loadCounts() {
 
 onMounted(() => {
   loadCounts() // 首次加载
-  setInterval(loadCounts, 10000) // 每 10 秒轮询刷新
+  // 连接数量仅在本应用内增删时变化：路由切换时刷新 + 60 秒低频兜底轮询，
+  // 避免每 10 秒高频请求 /api/providers
+  watch(() => route.path, () => loadCounts())
+  setInterval(loadCounts, 60000)
 })
 </script>

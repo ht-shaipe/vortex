@@ -1,6 +1,6 @@
 <template>
-  <div class="pager flex items-center justify-between text-sm text-ink-3">
-    <span class="pager-info">
+  <div class="pager flex items-center justify-between gap-[var(--gap-sm)] text-sm text-ink-3">
+    <span class="pager-info whitespace-nowrap">
       共 <span class="tnum font-semibold text-ink-2">{{ total }}</span> 条 · 第
       <span class="tnum font-semibold text-ink-2">{{ page }}</span>/<span class="tnum">{{ totalPages }}</span> 页
     </span>
@@ -24,11 +24,11 @@
         <el-icon :size="13"><ArrowLeft /></el-icon>
       </button>
       <template v-for="p in visiblePages" :key="p">
-        <span v-if="p === '...'" class="pager-ellipsis">…</span>
+        <span v-if="p === '...'" class="pager-ellipsis inline-flex items-center px-4px text-ink-4 text-13px">…</span>
         <button
           v-else
           type="button"
-          class="btn sm pager-num"
+          class="btn sm pager-num min-w-32px justify-center tabular-nums [&.active]:bg-accent [&.active]:text-white [&.active]:border-accent [&.active:hover]:bg-accent [&.active:hover]:text-white [&.active:hover]:border-accent"
           :class="{ active: p === page }"
           @click="emit('update:page', p as number)"
         >{{ p }}</button>
@@ -84,24 +84,3 @@ const visiblePages = computed<(number | '...')[]>(() => {
 })
 </script>
 
-<style scoped>
-.pager { gap: var(--gap-sm); }
-.pager-info { white-space: nowrap; }
-.pager-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 4px;
-  color: var(--ink-4);
-  font-size: 13px;
-}
-.pager-num {
-  min-width: 32px;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-}
-.pager-num.active {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-</style>

@@ -1,6 +1,6 @@
 <template>
-  <div class="empty-state py-48px px-24px text-center text-ink-3">
-    <div class="empty-icon w-32px h-32px mx-auto mb-12px text-ink-4"><component :is="icon" /></div>
+  <div class="nil-state py-48px px-24px text-center text-ink-3">
+    <div class="empty-icon w-32px h-32px mx-auto mb-12px text-ink-4 [&_svg]:w-32px [&_svg]:h-32px"><component :is="icon" /></div>
     <div class="empty-title text-14px font-semibold text-ink-2 mb-6px">{{ title }}</div>
     <div v-if="desc" class="empty-desc text-12.5px leading-[1.6] mb-16px">{{ desc }}</div>
     <slot />
@@ -20,7 +20,3 @@ withDefaults(
   { icon: DataBoard, title: '', desc: '' },
 )
 </script>
-
-<style scoped>
-.empty-icon :deep(svg) { width: 32px; height: 32px; }
-</style>

@@ -326,6 +326,36 @@ pub fn run() {
                 });
             }
 
+            // 终端终止信号兜底：tauri dev 下 Ctrl+C（SIGINT）、kill（SIGTERM）、
+            // 关闭终端（SIGHUP）时确保应用连同内嵌网关一起完全退出，
+            // 避免孤儿进程继续驻留托盘并占用网关端口
+            #[cfg(unix)]
+            {
+                let signal_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let mut sigint = match signal(SignalKind::interrupt()) {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let mut sigterm = match signal(SignalKind::terminate()) {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let mut sighup = match signal(SignalKind::hangup()) {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    tokio::select! {
+                        _ = sigint.recv() => {},
+                        _ = sigterm.recv() => {},
+                        _ = sighup.recv() => {},
+                    }
+                    log::info!("收到终止信号，退出应用");
+                    signal_handle.exit(0);
+                });
+            }
+
             // 主窗口关闭时隐藏到托盘：不退出应用，网关与托盘保持运行
             if let Some(main) = app.get_webview_window("main") {
                 let main_clone = main.clone();

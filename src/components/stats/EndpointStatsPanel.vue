@@ -1,17 +1,21 @@
 <template>
   <div class="panel flex flex-col gap-[var(--gap-xl)]">
-    <div class="panel-bar flex items-center justify-end gap-[var(--gap-sm)]">
-      <DateRangePicker v-model="range" :presets="PERIOD_PRESETS" />
-      <HistoryDialog @changed="reload" />
-      <button type="button" class="btn sm" :disabled="loading" @click="reload">
-        <el-icon :size="13" :class="{ spin: loading }"><Refresh /></el-icon>刷新
-      </button>
+    <div class="panel-bar flex items-center justify-between flex-wrap gap-[var(--gap-lg)]">
+      <!-- 顶部页面切换标签（由父级通过插槽传入，与操作按钮同行） -->
+      <slot name="top-tabs" />
+      <div class="panel-actions flex items-center gap-[var(--gap-sm)]">
+        <DateRangePicker v-model="range" :presets="PERIOD_PRESETS" />
+        <HistoryDialog @changed="reload" />
+        <button type="button" class="btn sm" :disabled="loading" @click="reload">
+          <el-icon :size="13" :class="{ spin: loading }"><Refresh /></el-icon>刷新
+        </button>
+      </div>
     </div>
 
     <p v-if="loading && !overview" class="hint m-0 text-body text-ink-4">加载中…</p>
 
     <template v-else>
-      <div class="kpi-row grid grid-cols-4 gap-[var(--gap-md)]">
+      <div class="kpi-row grid grid-cols-4 gap-[var(--gap-md)] [@media(max-width:900px)]:!grid-cols-2">
         <StatCard label="请求" :value="stats?.requests ?? 0">
           <template v-if="showTrend" #hint>
             <TrendBadge :pct="overview!.trend.requestsPct" />
@@ -252,6 +256,3 @@ const stats = computed<PeriodStats | undefined>(() => {
 const showTrend = computed(() => activePeriod.value === 'today' && !!overview.value?.trend)
 </script>
 
-<style scoped>
-@media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
-</style>

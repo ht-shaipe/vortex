@@ -1,7 +1,10 @@
 <template>
   <div class="card stat-card flex flex-col gap-6px py-14px px-18px">
     <span class="stat-label">{{ label }}</span>
-    <div class="stat-line flex items-center justify-between min-h-30px" :class="{ below: hintBelow }">
+    <div
+      class="stat-line flex items-center justify-between gap-[var(--gap-sm)] min-h-30px [&.below]:flex-col [&.below]:items-start [&.below]:justify-start [&.below]:gap-1px"
+      :class="{ below: hintBelow }"
+    >
       <span class="stat-val tnum">{{ display }}</span>
       <slot name="hint" />
     </div>
@@ -31,13 +34,3 @@ const display = computed(() =>
   typeof props.value === 'number' ? props.value.toLocaleString() : props.value,
 )
 </script>
-
-<style scoped>
-.stat-line { gap: var(--gap-sm); }
-.stat-line.below {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 1px;
-}
-</style>

@@ -1,3 +1,6 @@
+// release 构建时使用 Windows GUI 子系统，避免启动时弹出控制台窗口
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! 程序入口模块。
 //!
 //! 本文件是 Vortex AI Gateway 可执行程序的入口点，仅负责调用核心库

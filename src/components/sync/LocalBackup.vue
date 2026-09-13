@@ -14,7 +14,7 @@
       </button>
 
       <div class="import-group flex items-center gap-8px">
-        <select v-model="strategy" class="strategy-select h-30px px-8px border border-line rounded-sm bg-surface text-ink text-sm outline-none" aria-label="同名处理策略">
+        <select v-model="strategy" class="strategy-select h-30px px-8px border border-solid border-line rounded-sm bg-surface text-ink text-sm outline-none" aria-label="同名处理策略">
           <option value="skip">跳过同名</option>
           <option value="overwrite">覆盖同名</option>
         </select>

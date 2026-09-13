@@ -2,13 +2,13 @@
   <div class="composer-wrap pt-8px px-20px pb-16px">
     <div
       ref="cardRef"
-      class="composer relative flex flex-col w-full max-w-780px mx-auto overflow-hidden border border-line rounded-lg bg-surface transition"
+      class="composer relative flex flex-col w-full max-w-780px mx-auto overflow-hidden border border-solid border-line rounded-lg bg-surface shadow-sm transition focus-within:border-accent-line focus-within:shadow-[0_0_0_3px_var(--accent-bg)] [&.resizing]:transition-none"
       :class="{ resizing: dragH !== null }"
       :style="{ height: shellPx + 'px' }"
     >
       <!-- 顶部拖拽条：手往上 = 变高 -->
       <div
-        class="composer-grip flex items-center justify-center h-12px shrink-0 cursor-ns-resize"
+        class="composer-grip flex items-center justify-center h-12px shrink-0 cursor-ns-resize [&.locked]:cursor-default"
         :class="{ locked: expanded }"
         role="separator"
         aria-orientation="horizontal"
@@ -21,14 +21,14 @@
         @pointerup="onPointerUp"
         @pointercancel="onPointerCancel"
       >
-        <span class="grip-bar block w-32px h-3px rounded-999px bg-ink-5 opacity-0 transition" :class="{ on: gripHover || dragH !== null }" />
+        <span class="grip-bar block w-32px h-3px rounded-999px bg-ink-5 opacity-0 transition [&.on]:opacity-100" :class="{ on: gripHover || dragH !== null }" />
       </div>
 
       <!-- 右上角展开/收起 -->
       <div class="composer-corner absolute top-0 right-0 z-2 w-32px h-30px" @pointerenter="cornerHover = true" @pointerleave="cornerHover = false">
         <button
           type="button"
-          class="corner-btn"
+          class="corner-btn absolute top-6px right-6px grid place-items-center w-22px h-22px border-none rounded-full bg-surface-3 text-ink-3 opacity-0 translate-[6px_-6px] scale-75 pointer-events-none transition-[opacity,transform,background-color,color] duration-150 [&.show]:opacity-100 [&.show]:translate-0 [&.show]:scale-100 [&.show]:pointer-events-auto hover:text-ink hover:bg-line"
           :class="{ show: cornerHover }"
           :aria-pressed="expanded"
           :aria-label="expanded ? '收起输入框' : '展开输入框'"
@@ -42,7 +42,7 @@
       <textarea
         ref="taRef"
         v-model="draft"
-        class="composer-input flex-1 min-h-0 w-full pt-6px px-14px pb-2px border-none outline-none resize-none overflow-y-auto bg-transparent text-ink text-14px leading-[1.6]"
+        class="composer-input flex-1 min-h-0 w-full pt-6px px-14px pb-2px border-none outline-none resize-none overflow-y-auto bg-transparent text-ink text-14px leading-[1.6] placeholder:text-ink-4 disabled:opacity-50"
         rows="1"
         :disabled="disabled"
         placeholder="输入消息…"
@@ -58,7 +58,7 @@
         <button
           v-if="busy"
           type="button"
-          class="send-btn"
+          class="send-btn grid place-items-center w-28px h-28px border border-solid border-line-2 rounded-full bg-surface text-ink-2 shrink-0 transition-[background-color,color,opacity,transform] duration-120 [&:hover:not(:disabled)]:bg-surface-3 [&:hover:not(:disabled)]:text-ink disabled:opacity-35 disabled:cursor-not-allowed [&.primary]:bg-accent [&.primary]:border-transparent [&.primary]:text-white [&.primary:hover:not(:disabled)]:opacity-92 [&.primary:hover:not(:disabled)]:-translate-y-1px"
           title="停止生成"
           aria-label="停止生成"
           @click="emit('abort')"
@@ -68,7 +68,7 @@
         <button
           v-else
           type="button"
-          class="send-btn primary"
+          class="send-btn primary grid place-items-center w-28px h-28px border border-solid border-line-2 rounded-full bg-surface text-ink-2 shrink-0 transition-[background-color,color,opacity,transform] duration-120 [&:hover:not(:disabled)]:bg-surface-3 [&:hover:not(:disabled)]:text-ink disabled:opacity-35 disabled:cursor-not-allowed [&.primary]:bg-accent [&.primary]:border-transparent [&.primary]:text-white [&.primary:hover:not(:disabled)]:opacity-92 [&.primary:hover:not(:disabled)]:-translate-y-1px"
           :disabled="!canSend"
           title="发送"
           aria-label="发送"
@@ -248,59 +248,3 @@ function onKeydown(e: KeyboardEvent): void {
 }
 </script>
 
-<style scoped>
-.composer { box-shadow: var(--shadow-sm); }
-/* 拖拽时关掉过渡，否则不跟手 */
-.composer.resizing { transition: none; }
-.composer:focus-within {
-  border-color: var(--accent-line, var(--line-2));
-  box-shadow: 0 0 0 3px var(--accent-bg, rgba(0, 0, 0, 0.03));
-}
-
-.composer-grip.locked { cursor: default; }
-.grip-bar.on { opacity: 1; }
-
-.corner-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 50%;
-  background: var(--surface-3);
-  color: var(--ink-3);
-  opacity: 0;
-  transform: translate(6px, -6px) scale(0.75);
-  pointer-events: none;
-  transition: opacity 0.15s, transform 0.15s, background 0.12s, color 0.12s;
-}
-.corner-btn.show {
-  opacity: 1;
-  transform: translate(0, 0) scale(1);
-  pointer-events: auto;
-}
-.corner-btn:hover { color: var(--ink); background: var(--line); }
-
-.composer-input::placeholder { color: var(--ink-4); }
-.composer-input:disabled { opacity: 0.5; }
-
-.send-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--line-2);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink-2);
-  transition: background 0.12s, color 0.12s, opacity 0.12s, transform 0.12s;
-  flex-shrink: 0;
-}
-.send-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
-.send-btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
-.send-btn.primary:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
-.send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-</style>

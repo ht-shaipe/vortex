@@ -1,12 +1,12 @@
 <template>
-  <div class="app" :class="{ 'sidebar-collapsed': collapsed }" data-tauri-drag-region>
+  <div class="grid grid-cols-[auto_1fr] h-screen w-full max-w-full overflow-hidden bg-bg" :class="{ 'sidebar-collapsed': collapsed }" data-tauri-drag-region>
     <Sidebar
       :collapsed="collapsed"
       :collapsible="true"
       :active="route.path"
       @toggle="collapsed = !collapsed"
     />
-    <main class="main" :class="{ flush }" data-tauri-drag-region>
+    <main class="main flex flex-col [&.flush]:p-0" :class="{ flush }" data-tauri-drag-region>
       <!-- 拖拽区：作为布局流中的实际头部元素，参照 dsa 项目实现 -->
       <WindowChrome data-tauri-drag-region />
       <router-view v-if="flush" />
@@ -41,22 +41,3 @@ const flush = computed(() => {
   return !NON_FLUSH_SUB.includes(route.path)
 })
 </script>
-
-<style scoped>
-.app {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  height: 100vh;
-  overflow: hidden;
-}
-.main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100vh;
-  overflow: hidden;
-}
-.main.flush {
-  padding: 0;
-}
-</style>

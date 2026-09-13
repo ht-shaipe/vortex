@@ -9,7 +9,7 @@
     <template #reference>
       <button
         type="button"
-        class="ms-trigger inline-flex items-center gap-7px min-w-200px max-w-340px h-32px px-10px border border-line rounded-sm bg-surface text-ink-2 text-sm transition"
+        class="ms-trigger inline-flex items-center gap-7px min-w-200px max-w-340px h-32px px-10px border border-line rounded-sm bg-surface text-ink-2 text-sm transition hover:border-line-2 hover:text-ink hover:bg-surface-2 [&.placeholder]:border-dashed [&.placeholder]:text-warn [&.placeholder_.ms-trigger-text]:text-warn"
         :class="{ placeholder: isPlaceholder }"
         :title="triggerTitle"
       >
@@ -17,37 +17,37 @@
         <el-icon v-else :size="14" class="ms-trigger-icon shrink-0 text-ink-4"><Cpu /></el-icon>
         <span v-if="selected && !isPlaceholder && groupPrefix" class="ms-group-chip shrink-0 max-w-96px overflow-hidden text-ellipsis whitespace-nowrap text-10.5px leading-1 px-7px py-3px rounded-999px bg-surface-3 text-ink-3">{{ groupPrefix }}</span>
         <span class="ms-trigger-text flex-1 min-w-0 text-left overflow-hidden text-ellipsis whitespace-nowrap font-mono text-12.5px">{{ triggerText }}</span>
-        <el-icon :size="12" class="ms-caret shrink-0 text-ink-4 transition" :class="{ flipped: open }"><ArrowDown /></el-icon>
+        <el-icon :size="12" class="ms-caret shrink-0 text-ink-4 transition [&.flipped]:rotate-180" :class="{ flipped: open }"><ArrowDown /></el-icon>
       </button>
     </template>
 
     <div class="ms-panel flex flex-col">
-      <div class="ms-search flex items-center gap-6px pt-7px px-10px border-b border-line text-ink-4">
+      <div class="ms-search flex items-center gap-6px pt-7px px-10px border-b border-line border-solid border-0 text-ink-4">
         <el-icon :size="13"><Search /></el-icon>
         <input
           ref="searchInput"
           v-model="query"
-          class="ms-search-input flex-1 min-w-0 border-none outline-none bg-transparent text-sm text-ink"
+          class="ms-search-input flex-1 min-w-0 border-none outline-none bg-transparent text-sm text-ink placeholder:text-ink-4"
           placeholder="搜索模型..."
         />
       </div>
 
       <el-scrollbar class="ms-list pt-4px pb-4px" height="320px">
         <p v-if="filtered.length === 0" class="ms-empty m-0 pt-22px px-8px text-center text-sm text-ink-4">无匹配模型</p>
-        <div v-for="g in filtered" :key="g.id" class="ms-group">
+        <div v-for="g in filtered" :key="g.id" class="ms-group [&_ul]:list-none [&_ul]:m-0 [&_ul]:p-0">
           <p class="ms-group-name m-0 pt-5px px-10px pb-3px text-xs font-semibold tracking-0.06em uppercase text-ink-4">
-            <img v-if="groupLogo(g.id)" :src="groupLogo(g.id) || ''" class="ms-group-logo w-14px h-14px mr-5px object-contain" alt="" />
+            <img v-if="groupLogo(g.id)" :src="groupLogo(g.id) || ''" class="ms-group-logo inline-block w-14px h-14px mr-5px object-contain align-[-2px]" alt="" />
             {{ g.name }}
           </p>
           <ul>
             <li v-for="m in g.models" :key="m">
               <button
                 type="button"
-                class="ms-item relative flex items-center gap-7px w-full px-10px py-6px border-none bg-transparent text-left text-body text-ink-2 transition"
+                class="ms-item relative flex items-center gap-7px w-full px-10px py-6px border-none bg-transparent text-left text-body text-ink-2 transition hover:bg-surface-3 hover:text-ink [&.active]:bg-accent-bg [&.active]:text-accent-ink dark:[&.active]:text-ink"
                 :class="{ active: modelKey(g.id, m) === value }"
                 @click="pick(g.id, m)"
               >
-                <span v-if="modelKey(g.id, m) === value" class="ms-bar" aria-hidden="true" />
+                <span v-if="modelKey(g.id, m) === value" class="ms-bar absolute left-0 top-4px bottom-4px w-2px rounded-r-2px bg-accent" aria-hidden="true" />
                 <span v-if="groupHasItemLogos(g.id)" class="ms-item-logo w-16px h-16px shrink-0 inline-flex items-center justify-center">
                   <img v-if="itemLogo(g.id, m)" :src="itemLogo(g.id, m) || ''" class="w-full h-full object-contain" alt="" />
                 </span>
@@ -59,7 +59,7 @@
         </div>
       </el-scrollbar>
 
-      <button type="button" class="ms-config flex items-center gap-7px px-10px py-8px border-none border-t border-line bg-transparent text-sm text-ink-3 transition" @click="onConfigure">
+      <button type="button" class="ms-config flex items-center gap-7px px-10px py-8px border-t border-line border-solid border-0 bg-transparent text-sm text-ink-3 transition hover:bg-surface-3 hover:text-ink" @click="onConfigure">
         <el-icon :size="13"><Setting /></el-icon>
         {{ configureText }}
       </button>
@@ -224,35 +224,6 @@ function groupHasItemLogos(groupId: string): boolean {
 }
 </script>
 
-<style scoped>
-.ms-trigger:hover { border-color: var(--line-2); color: var(--ink); background: var(--surface-2); }
-.ms-trigger.placeholder { border-style: dashed; color: var(--warn, #b8860b); }
-.ms-trigger.placeholder .ms-trigger-text { color: var(--warn, #b8860b); }
-.ms-group-logo { vertical-align: -2px; }
-
-.ms-caret.flipped { transform: rotate(180deg); }
-
-.ms-search-input::placeholder { color: var(--ink-4); }
-
-.ms-group ul { list-style: none; margin: 0; padding: 0; }
-
-.ms-item:hover { background: var(--surface-3); color: var(--ink); }
-.ms-item.active { background: var(--accent-bg); color: var(--accent-ink); }
-html.dark .ms-item.active { color: var(--ink); }
-.ms-bar {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-}
-
-.ms-config:hover { background: var(--surface-3); color: var(--ink); }
-</style>
-
-<!-- 弹层被 teleport 到 body，需非 scoped 覆盖 Element Plus 内边距 -->
 <style>
 .ms-popper.el-popover.el-popper { padding: 0; }
 </style>

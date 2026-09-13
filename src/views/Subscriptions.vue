@@ -33,16 +33,16 @@
     <!-- 订阅列表 -->
     <div v-else class="card">
       <!-- 工具条：搜索 / 计数 / 批量测试 -->
-      <div class="list-bar flex items-center gap-10px px-14px py-10px border-b border-line">
+      <div class="list-bar flex items-center gap-10px px-14px py-10px border-b border-line border-solid border-0">
         <el-input
           v-model="keyword"
           placeholder="搜索名称 / 提供方 / 模型"
           clearable
           size="small"
-          class="list-search"
+          class="list-search max-w-240px"
         />
         <span class="spacer flex-1" />
-        <span class="list-count text-11.5px text-ink-4 shrink-0">共 {{ filtered.length }} 个连接</span>
+        <span class="list-count text-11.5px text-ink-4 shrink-0 tabular-nums">共 {{ filtered.length }} 个连接</span>
         <button type="button" class="btn sm shrink-0" :disabled="testingAll || filtered.length === 0" @click="testAll">
           <el-icon v-if="testingAll" class="spin" :size="12"><Loading /></el-icon>
           {{ testingAll ? `测试中 ${progress.done}/${progress.total}` : '全部测试' }}
@@ -72,27 +72,30 @@
           <tr v-for="conn in filtered" :key="conn.id" @click="$router.push(`/subscriptions/${conn.id}`)">
             <!-- 状态列：健康时直接显示响应耗时（绿色），失败/禁用/未测试给出文字状态 -->
             <td>
-              <div class="status-cell flex items-center gap-6px">
+              <div class="status-cell flex items-center gap-6px whitespace-nowrap">
                 <span v-if="isTesting(conn.id)" class="testing inline-flex items-center gap-4px text-11.5px text-ink-3">
                   <el-icon class="spin" :size="12"><Loading /></el-icon>测试中
                 </span>
                 <el-tooltip v-else :content="statusTip(conn)" placement="top" :show-after="200">
-                  <span class="lat-pill" :class="statusTone(conn)">
-                    <i class="lat-dot" aria-hidden="true" />
-                    <span class="lat-text">{{ statusLabel(conn) }}</span>
+                  <span
+                    class="lat-pill inline-flex items-center gap-5px max-w-full py-[1.5px] px-7px border border-solid border-transparent rounded-full text-11.5px tabular-nums whitespace-nowrap bg-surface-2 text-ink-3 cursor-default [&.ok]:bg-ok-bg [&.ok]:text-ok [&.err]:bg-err-bg [&.err]:text-err [&.warn]:bg-warn-bg [&.warn]:text-warn [&.neutral]:bg-surface-2 [&.neutral]:text-ink-4"
+                    :class="statusTone(conn)"
+                  >
+                    <i class="lat-dot w-5px h-5px shrink-0 rounded-full bg-current" aria-hidden="true" />
+                    <span class="lat-text overflow-hidden text-ellipsis">{{ statusLabel(conn) }}</span>
                   </span>
                 </el-tooltip>
                 <el-tooltip v-if="statusTone(conn) === 'err' && conn.lastError" :content="conn.lastError" placement="top">
-                  <el-icon class="err-icon shrink-0" :size="13"><WarningFilled /></el-icon>
+                  <el-icon class="err-icon shrink-0 text-err cursor-help" :size="13"><WarningFilled /></el-icon>
                 </el-tooltip>
               </div>
             </td>
 
             <!-- 提供商图标与名称 -->
             <td>
-              <div class="prov-cell flex items-center gap-10px min-w-0">
+              <div class="prov-cell flex items-center gap-10px min-w-0 max-w-full">
                 <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :color="provColor(conn.provider)" :size="24" />
-                <div class="prov-meta min-w-0">
+                <div class="prov-meta min-w-0 max-w-180px">
                   <div class="prov-name text-13px font-medium text-ink whitespace-nowrap overflow-hidden text-ellipsis" :title="conn.name">{{ conn.name }}</div>
                   <div class="prov-id mono text-11px text-ink-4 whitespace-nowrap overflow-hidden text-ellipsis" :title="conn.baseUrl || conn.provider">
                     {{ conn.baseUrl || conn.provider }}
@@ -103,14 +106,14 @@
 
             <!-- 模型标签：超出 maxTags 折叠为 +N -->
             <td>
-              <div v-if="conn.models && conn.models.length" class="model-tags flex flex-wrap gap-4px items-center">
+              <div v-if="conn.models && conn.models.length" class="model-tags flex flex-wrap gap-x-4px gap-y-3px items-center">
                 <span
                   v-for="(m, i) in visibleModels(conn)"
                   :key="m.id"
-                  class="model-tag inline-flex items-center gap-4px text-11px py-1px px-6px bg-surface-2 border border-line rounded-8px text-ink-2 whitespace-nowrap max-w-150px overflow-hidden text-ellipsis"
+                  class="model-tag inline-flex items-center gap-4px text-11px leading-[1.55] py-1px px-6px bg-surface-2 border border-solid border-line rounded-8px text-ink-2 whitespace-nowrap max-w-150px overflow-hidden text-ellipsis"
                   :title="modelTagTitle(m)"
                 >
-                  <i v-if="i === 0" class="def-dot" aria-hidden="true" />
+                  <i v-if="i === 0" class="def-dot w-5px h-5px rounded-full bg-accent shrink-0" aria-hidden="true" />
                   {{ modelTagLabel(m) }}
                 </span>
                 <el-tooltip
@@ -118,13 +121,13 @@
                   :content="overflowModels(conn)"
                   placement="top"
                 >
-                  <span class="model-tag more inline-flex items-center text-11px py-1px px-6px bg-surface-2 border border-line rounded-8px text-ink-2 whitespace-nowrap">+{{ conn.models.length - maxTags }}</span>
+                  <span class="model-tag more inline-flex items-center text-11px leading-[1.55] py-1px px-6px bg-surface-2 border border-solid border-line rounded-8px text-ink-3 whitespace-nowrap cursor-default">+{{ conn.models.length - maxTags }}</span>
                 </el-tooltip>
               </div>
               <!-- 无模型列表时回退展示默认模型 -->
               <div
                 v-else
-                class="model-cell text-12.5px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis tabular-nums"
+                class="model-cell text-12.5px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis tabular-nums [&.empty]:text-ink-4"
                 :class="{ empty: !conn.defaultModel }"
               >
                 <el-tooltip
@@ -144,8 +147,8 @@
             <td class="num">{{ fmtTime(conn.updatedAt || conn.createdAt) }}</td>
 
             <!-- 行内操作：直接测试健康状态 + 进入详情 -->
-            <td class="action-cell">
-              <div class="action-btns">
+            <td class="action-cell pl-8px pr-14px">
+              <div class="action-btns flex items-center justify-end gap-6px [&_.btn.sm]:py-4px [&_.btn.sm]:px-8px [&_.btn.sm]:text-11.5px">
                 <button
                   type="button"
                   class="btn sm"
@@ -440,74 +443,3 @@ async function load() {
 
 onMounted(load)
 </script>
-
-<style scoped>
-.list-bar .list-search { max-width: 240px; }
-.list-count { font-variant-numeric: tabular-nums; }
-
-.testing { color: var(--ink-3); }
-.err-icon { color: var(--err); cursor: help; }
-
-/* 状态列：胶囊 + 圆点。健康态用绿色展示响应耗时，不再出现「健康」二字 */
-.status-cell { white-space: nowrap; }
-.lat-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  padding: 1.5px 7px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  background: var(--surface-2);
-  color: var(--ink-3);
-  cursor: default;
-}
-.lat-dot {
-  width: 5px;
-  height: 5px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: currentColor;
-}
-.lat-text { overflow: hidden; text-overflow: ellipsis; }
-.lat-pill.ok { background: var(--ok-bg); color: var(--ok); }
-.lat-pill.err { background: var(--err-bg); color: var(--err); }
-.lat-pill.warn { background: var(--warn-bg); color: var(--warn); }
-.lat-pill.neutral { background: var(--surface-2); color: var(--ink-4); }
-
-/* 提供商列：限制最大宽度，防止挤压模型列 */
-.prov-cell { max-width: 100%; }
-.prov-meta { max-width: 180px; }
-
-/* 模型标签：紧凑、统一，默认模型用小点标识而非绿色背景 */
-.model-tags { row-gap: 3px; }
-.model-tag {
-  line-height: 1.55;
-  border-color: var(--line);
-}
-.def-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.model-tag.more {
-  color: var(--ink-3);
-  cursor: default;
-}
-.model-cell.empty { color: var(--ink-4); }
-
-/* 行内操作：按钮水平排列，避免堆叠撑高行 */
-.action-cell { padding-left: 8px; padding-right: 14px; }
-.action-btns {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.action-btns .btn.sm { padding: 4px 8px; font-size: 11.5px; }
-</style>

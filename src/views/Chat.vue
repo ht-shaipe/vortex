@@ -1,9 +1,10 @@
 <template>
   <div class="chat-root flex flex-1 h-full min-h-0 bg-bg">
-    <!-- 会话侧栏：会话列表与新建/重命名/删除入口 -->
+    <!-- 会话侧栏：会话列表与新建/重命名/删除入口。
+         宽度类互斥绑定：w-208px 与 w-0 同时存在时会受 UnoCSS 生成顺序影响互相覆盖 -->
     <div
-      class="chat-side shrink-0 w-208px overflow-hidden"
-      :class="{ 'collapsed w-0': layout.topicListCollapsed }"
+      class="chat-side shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+      :class="layout.topicListCollapsed ? 'collapsed w-0' : 'w-208px'"
     >
       <TopicList
         :topics="topics"
@@ -19,7 +20,7 @@
     <div ref="columnEl" class="chat-col flex flex-col flex-1 min-w-0 min-h-0">
       <!-- 头部：侧边栏切换、标题与模型选择器 -->
       <header
-        class="chat-head flex items-center justify-between gap-12px shrink-0 px-16px pb-9px border-b border-line bg-surface"
+        class="chat-head flex items-center justify-between gap-12px shrink-0 px-16px pt-9px pb-9px border-b border-line border-solid border-0 bg-surface"
       >
         <div class="head-left flex items-center gap-8px">
           <el-tooltip :content="`${sidebarToggleLabel} (Ctrl+[)`" placement="bottom">
@@ -590,16 +591,6 @@ function goConfigure(): void {
 </script>
 
 <style scoped>
-/* 侧边栏折叠过渡动画（transition 难以用原子类表达，保留） */
-.chat-side {
-  transition: width 0.2s ease-in-out;
-}
-
-/* 头部：拖动由 AppLayout 顶部的 WindowChrome 统一处理 */
-.chat-head {
-  padding-top: 9px;
-}
-
 /* el-scrollbar 内部 padding（:deep() 穿透选择器，保留） */
 .chat-scroll :deep(.el-scrollbar__view) {
   padding: 20px 20px 12px;

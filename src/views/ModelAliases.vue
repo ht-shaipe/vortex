@@ -12,14 +12,14 @@
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
 
-    <div v-else-if="aliases.length === 0" class="card empty-state">
+    <div v-else-if="aliases.length === 0" class="card nil-state py-60px">
       <el-icon :size="32" class="text-ink-5"><Connection /></el-icon>
       <p class="text-ink-3 mt-12px">尚未配置虚拟模型映射</p>
       <p class="text-12px text-ink-4 mt-4px">创建虚拟模型名后，客户端用该名称请求，网关按优先级依次尝试映射的真实模型</p>
     </div>
 
-    <div v-else class="alias-list">
-      <div v-for="a in aliases" :key="a.id" class="card alias-card">
+    <div v-else class="flex flex-col gap-12px">
+      <div v-for="a in aliases" :key="a.id" class="card py-16px px-20px">
         <div class="alias-head flex items-center justify-between">
           <div class="flex items-center gap-10px">
             <span class="alias-name font-mono text-15px font-semibold">{{ a.alias }}</span>
@@ -37,8 +37,8 @@
           </div>
         </div>
         <div class="alias-targets mt-12px">
-          <div v-for="(t, i) in a.targets" :key="i" class="target-row flex items-center gap-8px py-4px">
-            <span class="target-idx">{{ i + 1 }}</span>
+          <div v-for="(t, i) in a.targets" :key="i" class="target-row flex items-center gap-8px py-4px text-13px">
+            <span class="target-idx inline-flex items-center justify-center w-20px h-20px rounded-full bg-surface-3 text-ink-4 text-11px font-semibold shrink-0">{{ i + 1 }}</span>
             <span class="pill pill--accent font-mono">{{ t.provider }}</span>
             <span class="text-13px text-ink-2 font-mono">{{ t.model }}</span>
             <span v-if="t.connection_id" class="text-11px text-ink-4">· {{ connNameMap[t.connection_id] ?? t.connection_id.slice(0, 8) }}</span>
@@ -49,18 +49,18 @@
 
     <!-- 编辑/创建弹窗 -->
     <el-dialog v-model="dialogOpen" :title="editing ? '编辑映射' : '新建映射'" width="600">
-      <div class="dialog-body">
-        <div class="form-row">
-          <label>虚拟模型名</label>
+      <div class="dialog-body flex flex-col gap-16px">
+        <div class="form-row flex flex-col gap-6px">
+          <label class="text-13px font-medium text-ink-2">虚拟模型名</label>
           <el-input v-model="form.alias" placeholder="如 my-smart-model" class="font-mono" />
         </div>
-        <div class="form-row">
-          <label>映射目标（按顺序故障转移）</label>
+        <div class="form-row flex flex-col gap-6px">
+          <label class="text-13px font-medium text-ink-2">映射目标（按顺序故障转移）</label>
           <div v-if="modelOptions.length === 0" class="text-13px text-ink-4 py-8px">
             当前没有已接入的模型，请先在「提供商管理」中添加连接并配置模型
           </div>
-          <div v-for="(t, i) in form.targets" :key="i" class="target-edit flex items-center gap-8px mb-8px">
-            <span class="target-idx">{{ i + 1 }}</span>
+          <div v-for="(t, i) in form.targets" :key="i" class="target-edit flex items-center gap-8px mb-8px flex-wrap">
+            <span class="target-idx inline-flex items-center justify-center w-20px h-20px rounded-full bg-surface-3 text-ink-4 text-11px font-semibold shrink-0">{{ i + 1 }}</span>
             <el-select
               v-model="t._selected"
               placeholder="选择已接入的模型"
@@ -89,7 +89,7 @@
             <el-icon :size="12"><Plus /></el-icon> 添加目标
           </button>
         </div>
-        <div class="form-row">
+        <div class="form-row flex flex-col gap-6px">
           <el-switch v-model="form.is_active" />
           <span class="ml-8px text-13px text-ink-3">启用</span>
         </div>
@@ -290,52 +290,3 @@ onMounted(() => {
   loadModelOptions()
 })
 </script>
-
-<style scoped>
-.empty-state {
-  text-align: center;
-  padding: 60px 24px;
-}
-.alias-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.alias-card {
-  padding: 16px 20px;
-}
-.target-row {
-  font-size: 13px;
-}
-.target-idx {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--surface-3);
-  color: var(--ink-4);
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.form-row label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-}
-.target-edit {
-  flex-wrap: wrap;
-}
-</style>

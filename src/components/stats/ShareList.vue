@@ -4,7 +4,7 @@
     <div v-for="it in sorted" :key="it.name" class="share-row grid grid-cols-[140px_1fr_80px] gap-10px items-center">
       <span class="share-name mono text-12px text-ink-2 overflow-hidden text-ellipsis whitespace-nowrap">{{ it.name }}</span>
       <div class="share-track h-6px bg-surface-3 rounded-3px overflow-hidden">
-        <div class="share-bar h-full bg-accent rounded-3px" :style="{ width: pct(it.value) + '%' }" />
+        <div class="share-bar h-full bg-accent rounded-3px transition-[width] duration-300" :style="{ width: pct(it.value) + '%' }" />
       </div>
       <span class="share-val num text-12px text-ink-3 text-right">{{ it.value.toLocaleString() }}</span>
     </div>
@@ -29,7 +29,3 @@ function pct(v: number): number {
   return Math.round((v / max.value) * 100)
 }
 </script>
-
-<style scoped>
-.share-bar { transition: width 0.3s; }
-</style>

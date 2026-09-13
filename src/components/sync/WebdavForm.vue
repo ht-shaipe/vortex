@@ -15,7 +15,7 @@
         <input
           :id="`wd-${f.k}`"
           v-model="form[f.k]"
-          class="field-input h-32px px-9px border border-line rounded-sm bg-surface text-ink text-body outline-none transition-colors duration-120ms"
+          class="field-input h-32px px-9px border border-solid border-line rounded-sm bg-surface text-ink text-body outline-none transition-colors duration-120ms focus:border-accent placeholder:text-ink-4"
           :type="f.type ?? 'text'"
           :placeholder="f.ph"
         />
@@ -93,7 +93,3 @@ async function onSave(): Promise<void> {
 }
 </script>
 
-<style scoped>
-.field-input:focus { border-color: var(--accent); }
-.field-input::placeholder { color: var(--ink-4); }
-</style>

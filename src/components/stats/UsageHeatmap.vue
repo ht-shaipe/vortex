@@ -12,7 +12,7 @@
 
     <!-- 星期标签列 + 格子：同一 grid（列流式填充，前 7 项为标签列） -->
     <div
-      class="heat-grid grid"
+      class="heat-grid grid grid-rows-[repeat(7,auto)] grid-flow-col"
       :style="{ gridTemplateColumns: gridColumns, gap: GAP }"
       @mouseleave="tooltip = null"
     >
@@ -22,7 +22,7 @@
       <div
         v-for="cell in cells"
         :key="cell.date"
-        class="heat-cell aspect-square w-full rounded-2px"
+        class="heat-cell aspect-square w-full rounded-2px transition-transform duration-100 hover:scale-135"
         :style="{ backgroundColor: cellColor(cell.date) }"
         @mouseenter="showTip(cell, $event)"
       />
@@ -128,15 +128,6 @@ function showTip(cell: HeatmapCell, ev: MouseEvent): void {
   tooltip.value = { cell, x, y: rect.top }
 }
 </script>
-
-<style scoped>
-.heat-grid {
-  grid-template-rows: repeat(7, auto);
-  grid-auto-flow: column;
-}
-.heat-cell { transition: transform 0.1s; }
-.heat-cell:hover { transform: scale(1.35); }
-</style>
 
 <style>
 /* Teleport 到 body，不能用 scoped */

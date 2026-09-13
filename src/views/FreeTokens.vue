@@ -36,11 +36,11 @@
         <el-icon :size="13"><Star /></el-icon>我的推荐
       </button>
 
-      <div class="tb-count ml-auto text-12px text-ink-3">共 <b>{{ filtered.length }}</b> / {{ sites.length }} 个站点</div>
+      <div class="tb-count ml-auto text-12px text-ink-3 [&_b]:text-ink [&_b]:font-mono">共 <b>{{ filtered.length }}</b> / {{ sites.length }} 个站点</div>
     </div>
 
     <!-- 说明提示 -->
-    <div class="notice text-12px leading-[1.6] text-ink-3 bg-surface-3 border border-line rounded-sm py-8px px-12px mb-14px">
+    <div class="text-12px leading-[1.65] text-ink-3 bg-surface-3 border border-solid border-line rounded-sm py-8px px-12px mb-14px">
       免费额度与限速随平台政策变动，此处信息仅作参考，请以各平台官网为准。
       「我的推荐」会提交到远程服务器统一管理，本地同时保留副本便于离线查看。
     </div>
@@ -65,7 +65,7 @@
     </div>
 
     <!-- 卡片视图 -->
-    <div v-else-if="view === 'card'" class="grid gap-14px">
+    <div v-else-if="view === 'card'" class="grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-14px">
       <div v-for="s in filtered" :key="s.id" class="card site-card flex flex-col gap-9px py-14px px-16px">
         <!-- 卡片头部：站点名与 API 支持标识 -->
         <div class="sc-head flex items-start justify-between gap-10px">
@@ -79,7 +79,7 @@
         </div>
 
         <!-- 免费额度说明 -->
-        <div class="sc-quota text-12.5px leading-[1.65] text-ink-2 bg-surface-3 rounded-sm py-8px px-11px">{{ s.freeQuota || '免费额度信息待补充' }}</div>
+        <div class="sc-quota text-12.5px leading-[1.65] text-ink-2 bg-surface-3 rounded-sm py-8px px-11px [word-break:break-word] [overflow-wrap:break-word] min-h-[1.65em]">{{ s.freeQuota || '免费额度信息待补充' }}</div>
 
         <!-- 区域与标签 -->
         <div class="sc-tags flex flex-wrap gap-5px">
@@ -89,9 +89,9 @@
 
         <!-- 门槛与格式等元信息 -->
         <div class="sc-meta flex flex-wrap gap-x-12px gap-y-8px">
-          <span class="text-11px text-ink-3" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑定信用卡' : '免绑卡' }}</span>
+          <span class="text-11px text-ink-3 [&.ok]:text-ok [&.warn]:text-warn" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑定信用卡' : '免绑卡' }}</span>
           <span v-if="s.requiresVerify" class="meta text-11px text-ink-3">需实名 / 手机验证</span>
-          <span v-if="s.apiFormat" class="meta mono text-11px text-ink-3">{{ s.apiFormat }}</span>
+          <span v-if="s.apiFormat" class="meta mono text-11px text-ink-3 [&.mono]:font-mono">{{ s.apiFormat }}</span>
           <span v-if="s.providerId" class="meta text-11px text-ink-3">已内置 · {{ s.providerId }}</span>
         </div>
 
@@ -99,10 +99,10 @@
         <CopyableBlock v-if="s.apiBase" variant="inline" :text="s.apiBase">{{ s.apiBase }}</CopyableBlock>
 
         <!-- 备注 -->
-        <div v-if="s.note" class="sc-note text-12px leading-[1.65] text-ink-3">{{ s.note }}</div>
+        <div v-if="s.note" class="sc-note text-12px leading-[1.65] text-ink-3 line-clamp-3 [word-break:break-word] [overflow-wrap:break-word] max-h-[calc(1.65em_*_3)] pt-1px">{{ s.note }}</div>
 
         <!-- 卡片底部操作：申请入口、官网、删除 -->
-        <div class="sc-foot flex items-center gap-8px flex-wrap mt-auto pt-4px">
+        <div class="sc-foot flex items-center gap-8px flex-wrap mt-auto pt-4px [&_.by]:text-11px [&_.by]:text-ink-4 [&_.by]:ml-auto">
           <button v-if="linkFor(s)" class="btn sm accent" @click="openLink(linkFor(s))">
             <el-icon :size="13"><Link /></el-icon>申请入口
           </button>
@@ -114,7 +114,7 @@
     </div>
 
     <!-- 表格视图 -->
-    <div v-else class="card tbl-wrap overflow-x-auto">
+    <div v-else class="card tbl-wrap overflow-x-auto [&_.table]:min-w-960px [&_.table]:table-fixed [&_tbody_tr]:cursor-default">
       <table class="table">
         <colgroup>
           <col style="width: 176px" />
@@ -154,14 +154,14 @@
             <!-- 免费额度：最多两行，截断时悬浮显示完整说明 -->
             <td>
               <div
-                class="tbl-quota text-12px leading-[1.6] text-ink-2"
+                class="tbl-quota text-12px leading-[1.6] text-ink-2 line-clamp-2 min-h-[calc(12px_*_1.6_*_2)]"
                 :title="s.freeQuota || undefined"
               >{{ s.freeQuota || '—' }}</div>
             </td>
             <!-- 门槛 -->
             <td>
-              <div class="tbl-gates flex flex-wrap gap-x-8px gap-y-4px">
-                <span class="text-11px text-ink-3" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑卡' : '免绑卡' }}</span>
+              <div class="tbl-gates flex flex-wrap gap-x-8px gap-y-4px [&_.meta]:whitespace-nowrap">
+                <span class="text-11px text-ink-3 [&.ok]:text-ok [&.warn]:text-warn" :class="['meta', s.requiresCard ? 'warn' : 'ok']">{{ s.requiresCard ? '需绑卡' : '免绑卡' }}</span>
                 <span v-if="s.requiresVerify" class="meta text-11px text-ink-3">需实名</span>
               </div>
             </td>
@@ -193,12 +193,12 @@
       class="ft-dialog"
     >
       <div class="ft-body">
-        <div class="form flex flex-col gap-11px">
-          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">站点信息</div>
+        <div class="form flex flex-col gap-11px pt-14px px-20px pb-16px">
+          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-0 after:content-[''] after:flex-1 after:h-1px after:bg-line">站点信息</div>
 
           <!-- 站点名称 -->
           <div class="form-row flex flex-col gap-6px">
-            <div class="f-label text-12px font-medium text-ink-2">站点名称 <em>*</em></div>
+            <div class="f-label text-12px font-medium text-ink-2 [&_em]:text-err [&_em]:not-italic">站点名称 <em>*</em></div>
             <el-input v-model="form.name" placeholder="例如：某某 AI 开放平台" />
           </div>
 
@@ -214,7 +214,7 @@
             </div>
           </div>
 
-          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">额度与接口</div>
+          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px after:content-[''] after:flex-1 after:h-1px after:bg-line">额度与接口</div>
 
           <!-- 区域与 API Base URL -->
           <div class="form-2col grid grid-cols-2 gap-11px items-start">
@@ -245,30 +245,30 @@
 
           <!-- 三个布尔属性开关卡片 -->
           <div class="switch-grid grid grid-cols-3 gap-8px">
-            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.apiSupported }" @click="form.apiSupported = !form.apiSupported">
-              <div class="sc-text flex flex-col min-w-0">
+            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-solid border-line rounded-sm bg-surface-2 cursor-pointer transition-[border-color,background-color] duration-120 hover:border-line-2 [&.on]:border-accent [&.on]:bg-surface [&_.el-switch]:shrink-0" :class="{ on: form.apiSupported }" @click="form.apiSupported = !form.apiSupported">
+              <div class="sc-text flex flex-col min-w-0 leading-[1.5]">
                 <span class="sc-t text-12px font-medium text-ink-2">支持 API</span>
-                <span class="sc-d text-10.5px text-ink-4">可编程调用</span>
+                <span class="sc-d text-10.5px text-ink-4 mt-2px">可编程调用</span>
               </div>
               <el-switch v-model="form.apiSupported" @click.stop />
             </div>
-            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.requiresCard }" @click="form.requiresCard = !form.requiresCard">
-              <div class="sc-text flex flex-col min-w-0">
+            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-solid border-line rounded-sm bg-surface-2 cursor-pointer transition-[border-color,background-color] duration-120 hover:border-line-2 [&.on]:border-accent [&.on]:bg-surface [&_.el-switch]:shrink-0" :class="{ on: form.requiresCard }" @click="form.requiresCard = !form.requiresCard">
+              <div class="sc-text flex flex-col min-w-0 leading-[1.5]">
                 <span class="sc-t text-12px font-medium text-ink-2">需绑卡</span>
-                <span class="sc-d text-10.5px text-ink-4">要信用卡</span>
+                <span class="sc-d text-10.5px text-ink-4 mt-2px">要信用卡</span>
               </div>
               <el-switch v-model="form.requiresCard" @click.stop />
             </div>
-            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-line rounded-sm bg-surface-2 cursor-pointer" :class="{ on: form.requiresVerify }" @click="form.requiresVerify = !form.requiresVerify">
-              <div class="sc-text flex flex-col min-w-0">
+            <div class="switch-card flex items-center justify-between gap-6px py-8px px-10px border border-solid border-line rounded-sm bg-surface-2 cursor-pointer transition-[border-color,background-color] duration-120 hover:border-line-2 [&.on]:border-accent [&.on]:bg-surface [&_.el-switch]:shrink-0" :class="{ on: form.requiresVerify }" @click="form.requiresVerify = !form.requiresVerify">
+              <div class="sc-text flex flex-col min-w-0 leading-[1.5]">
                 <span class="sc-t text-12px font-medium text-ink-2">需实名</span>
-                <span class="sc-d text-10.5px text-ink-4">手机 / 实名</span>
+                <span class="sc-d text-10.5px text-ink-4 mt-2px">手机 / 实名</span>
               </div>
               <el-switch v-model="form.requiresVerify" @click.stop />
             </div>
           </div>
 
-          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px">补充信息</div>
+          <div class="f-group-title flex items-center gap-8px text-11px font-semibold text-ink-4 tracking-0.05em mt-3px after:content-[''] after:flex-1 after:h-1px after:bg-line">补充信息</div>
 
           <!-- 标签与推荐人 -->
           <div class="form-2col grid grid-cols-2 gap-11px items-start">
@@ -578,95 +578,6 @@ onMounted(load)
 // 视图选择持久化，避免每次进页面都要重选
 watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))
 </script>
-
-<style scoped>
-/* ---------- 页面提示 ---------- */
-.notice {
-  line-height: 1.65;
-}
-
-/* ---------- 工具条 ---------- */
-.tb-count b { color: var(--ink); font-family: var(--font-mono); }
-
-/* ---------- 卡片视图 ---------- */
-.grid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
-.sc-foot .by { font-size: 11px; color: var(--ink-4); margin-left: auto; }
-
-/* 免费额度与备注：避免中文顶部被截断，长英文/路径自动换行 */
-.sc-quota {
-  word-break: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.65;
-  min-height: 1.65em;
-}
-.sc-note {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.65;
-  max-height: calc(1.65em * 3);
-  padding-top: 1px;
-}
-
-.meta.ok { color: var(--ok); }
-.meta.warn { color: var(--warn); }
-.meta.mono { font-family: var(--font-mono); }
-
-/* ---------- 表格视图 ---------- */
-/* 固定布局锁定列宽（auto 布局下中文会被逐字压成竖排），窄窗口横向滚动 */
-.tbl-wrap .table { min-width: 960px; table-layout: fixed; }
-.tbl-wrap .table td { vertical-align: middle; }
-.tbl-gates .meta { white-space: nowrap; }
-.table tbody tr { cursor: default; }
-
-/* 免费额度：最多两行，统一行高，截断处显示省略号 */
-.tbl-quota {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-height: calc(12px * 1.6 * 2);
-}
-
-/* ---------- 弹窗表单 ---------- */
-.f-label em { color: var(--err); font-style: normal; }
-
-/* 分区小标题：左侧文案 + 右侧延伸细线 */
-.f-group-title::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-.f-group-title:first-child { margin-top: 0; }
-
-/* 三个布尔属性：整块可点击的开关卡片，替代原先裸露的开关 */
-.switch-card { transition: border-color 0.12s, background 0.12s; }
-.switch-card:hover { border-color: var(--line-2); }
-.switch-card.on { border-color: var(--accent); background: var(--surface); }
-.switch-card :deep(.el-switch) { flex-shrink: 0; }
-.sc-text {
-  line-height: 1.5;
-}
-.sc-d {
-  margin-top: 2px;
-}
-
-/* 弹窗内容由 body 原生滚动，滚动条用 webkit 伪元素做细 */
-.ft-dialog .el-dialog__body {
-  padding: 0;
-  overflow-y: auto;
-  max-height: 62vh;
-}
-.ft-body .form {
-  padding: 14px 20px 16px;
-}
-</style>
 
 <!-- 弹窗通过 append-to-body 挂到 body 下，Element Plus 自身的容器元素
      没有本组件的 scoped 标记，因此容器级样式统一用 .ft-dialog 前缀限定 -->

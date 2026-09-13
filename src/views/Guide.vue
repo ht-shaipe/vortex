@@ -11,7 +11,7 @@
     </div>
 
     <!-- 第 1 步：启动网关，展示对外协议的 base_url -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">第 1 步 · 启动网关</div>
@@ -33,7 +33,7 @@
     </div>
 
     <!-- 第 2 步：配置客户端，按所选协议展示对应代码示例 -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">第 2 步 · 配置客户端</div>
@@ -61,7 +61,7 @@
     </div>
 
     <!-- 第 3 步：模型命名格式说明表 -->
-    <div class="card section">
+    <div class="card mb-[var(--gap-lg)]">
       <div class="card-head">
         <div>
           <div class="card-title">第 3 步 · 指定模型</div>
@@ -151,8 +151,3 @@ const claudeSnippet = `# 设置环境变量
 export ANTHROPIC_BASE_URL=${anthropicBaseUrl}
 export ANTHROPIC_API_KEY=your-vortex-api-key`
 </script>
-
-<style scoped>
-.section { margin-bottom: var(--gap-lg); }
-
-</style>

@@ -7,8 +7,11 @@
     <p v-if="loading" class="hint m-0 text-body text-ink-4">加载中…</p>
     <p v-else-if="rows.length === 0" class="hint m-0 text-body text-ink-4">暂无历史记录</p>
     <div v-else class="hist flex flex-col gap-[var(--gap-md)]">
-      <el-scrollbar class="hist-scroll border border-line rounded-md" max-height="58vh">
-        <table class="table">
+      <el-scrollbar
+        class="hist-scroll border border-solid border-line rounded-md [&_.table_thead_th]:sticky [&_.table_thead_th]:top-0 [&_.table_thead_th]:z-1 [&_.table_thead_th]:bg-surface"
+        max-height="58vh"
+      >
+        <table class="table [&_tbody_tr]:!cursor-default">
           <thead>
             <tr>
               <th>日期</th>
@@ -147,12 +150,3 @@ async function delDay(date: string): Promise<void> {
 }
 </script>
 
-<style scoped>
-.hist-scroll .table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
-}
-.table tbody tr { cursor: default; }
-</style>
