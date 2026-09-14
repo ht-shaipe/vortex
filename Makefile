@@ -2,6 +2,7 @@
 #
 # 常用命令:
 #   make release                    # 自动 bump patch 并发布（最常用）
+#   make release '修复xxx问题'       # 同上，说明文字作为本次提交消息
 #   make release VERSION=0.2.0      # 发布指定版本
 #   make minor                      # bump minor 并发布
 #   make major                      # bump major 并发布
@@ -22,6 +23,20 @@ GIT_REMOTE     := origin
 GIT_BRANCH     := $(shell git branch --show-current)
 REPO_URL       := https://github.com/ht-shaipe/vortex
 
+# ── 提交消息（位置参数）──────────────────────────────────
+# 用法: make release '修复xxx问题' / make minor '新功能说明'
+# release/patch/minor/major 后面的文字会作为"提交未提交改动"的 commit message；
+# 未提供时使用默认消息。注意: 文字会被 make 当作目标，若与已有目标重名会被优先执行。
+MSG_WORDS  := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+COMMIT_MSG := $(if $(RELEASE_MSG),$(RELEASE_MSG),$(strip $(MSG_WORDS)))
+SYNC_MSG   := $(if $(COMMIT_MSG),$(COMMIT_MSG),chore: sync changes before v$(RELEASE_VERSION))
+
+# 让位置参数不触发 "No rule to make target" 错误
+ifneq ($(words $(MSG_WORDS)),0)
+$(MSG_WORDS):
+	@:
+endif
+
 # 颜色
 C_RESET  := \033[0m
 C_GREEN  := \033[32m
@@ -39,6 +54,7 @@ help:
 	@echo ""
 	@echo "$(C_CYAN)常用命令:$(C_RESET)"
 	@echo "  make release                    自动 bump patch 并发布（提交所有改动→bump→推送）"
+	@echo "  make release '修复xxx问题'       同上，说明文字作为本次提交消息"
 	@echo "  make release VERSION=0.2.0      发布指定版本"
 	@echo "  make minor                      bump minor 并发布"
 	@echo "  make major                      bump major 并发布"
@@ -101,9 +117,9 @@ release:
 	@printf "确认发布？[y/N] " && read ans && test "$$ans" = "y" || (echo "$(C_YELLOW)已取消$(C_RESET)" && exit 1)
 	@if [ "$(SKIP_CHECK)" != "1" ]; then $(MAKE) check; fi
 	@if ! git diff --quiet || ! git diff --cached --quiet; then \
-		echo "$(C_CYAN)▶ 提交未提交的改动...$(C_RESET)"; \
+		echo "$(C_CYAN)▶ 提交未提交的改动（消息: $(SYNC_MSG)）...$(C_RESET)"; \
 		git add -A; \
-		git commit -m "chore: sync changes before v$(RELEASE_VERSION)"; \
+		git commit -m "$(SYNC_MSG)"; \
 		echo "$(C_GREEN)✓ 已提交未暂存改动$(C_RESET)"; \
 	fi
 	@$(MAKE) sync-version VERSION=$(RELEASE_VERSION)
@@ -130,10 +146,10 @@ release:
 # ── 快捷命令 ─────────────────────────────────────────────
 
 minor:
-	@$(MAKE) release VERSION=$(shell node -p "const v=require('./package.json').version.split('.');v[1]++;v[2]=0;v.join('.')")
+	@$(MAKE) release VERSION=$(shell node -p "const v=require('./package.json').version.split('.');v[1]++;v[2]=0;v.join('.')") $(if $(COMMIT_MSG),RELEASE_MSG="$(COMMIT_MSG)")
 
 major:
-	@$(MAKE) release VERSION=$(shell node -p "const v=require('./package.json').version.split('.');v[0]++;v[1]=0;v[2]=0;v.join('.')")
+	@$(MAKE) release VERSION=$(shell node -p "const v=require('./package.json').version.split('.');v[0]++;v[1]=0;v[2]=0;v.join('.')") $(if $(COMMIT_MSG),RELEASE_MSG="$(COMMIT_MSG)")
 
 # ── 辅助命令 ─────────────────────────────────────────────
 

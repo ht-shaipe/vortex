@@ -36,7 +36,7 @@
         <el-icon :size="13"><Star /></el-icon>我的推荐
       </button>
 
-      <div class="tb-count ml-auto text-12px text-ink-3 [&_b]:text-ink [&_b]:font-mono">共 <b>{{ filtered.length }}</b> / {{ sites.length }} 个站点</div>
+      <div class="tb-count ml-auto text-12px text-ink-3 [&_b]:text-ink [&_b]:font-mono">本页 <b>{{ filtered.length }}</b> 个 · 共 {{ total }} 个站点</div>
     </div>
 
     <!-- 说明提示 -->
@@ -309,6 +309,15 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 分页条：远程与本地数据统一分页展示 -->
+    <Pagination
+      v-if="!loading && !loadError && total > pageSize"
+      v-model:page="page"
+      :page-size="pageSize"
+      :total="total"
+      class="mt-16px"
+    />
   </div>
 </template>
 
@@ -324,6 +333,7 @@ import { Plus, Select, Star, Link, Loading } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
+import Pagination from '@/components/stats/Pagination.vue'
 import { runtime } from '@/lib/runtime'
 import {
   listFreeTokenSites,
@@ -335,12 +345,17 @@ import {
 /** 视图模式：卡片或表格 */
 type ViewMode = 'card' | 'table'
 
-// 站点列表
+// 站点列表（当前页）
 const sites = ref<FreeTokenSite[]>([])
 // 是否正在加载
 const loading = ref(true)
 // 加载错误信息
 const loadError = ref('')
+
+// 分页状态：远程与本地数据统一走分页
+const page = ref(1)
+const pageSize = 12
+const total = ref(0)
 
 // 当前视图模式（从 localStorage 恢复）
 const view = ref<ViewMode>((localStorage.getItem('vortex-free-token-view') as ViewMode) || 'card')
@@ -438,14 +453,20 @@ function errMsg(e: unknown): string {
 }
 
 /**
- * 加载站点列表。
+ * 加载当前页站点列表。
  */
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const data = await listFreeTokenSites()
+    const data = await listFreeTokenSites(page.value, pageSize)
     sites.value = data.sites ?? []
+    total.value = data.total ?? sites.value.length
+    // 当前页超出总页数（如删除后总数变少）时回退到最后一页
+    const maxPage = Math.max(1, Math.ceil(total.value / pageSize))
+    if (page.value > maxPage) {
+      page.value = maxPage
+    }
   } catch (e) {
     loadError.value = `网关未响应，请确认 Vortex 服务已启动（${errMsg(e)}）`
   } finally {
@@ -526,7 +547,7 @@ async function submitSite() {
   }
   submitting.value = true
   try {
-    const created = await submitFreeTokenSite({
+    await submitFreeTokenSite({
       name: form.name.trim(),
       homeUrl: form.homeUrl.trim(),
       applyUrl: form.applyUrl.trim(),
@@ -540,9 +561,10 @@ async function submitSite() {
       note: form.note.trim(),
       submitter: form.submitter.trim(),
     })
-    sites.value = [...sites.value, created]
+    // 重新加载当前页，保证分页总数与列表状态一致
+    await load()
     dialogVisible.value = false
-    ElMessage.success('已加入本地清单')
+    ElMessage.success('已加入清单')
   } catch (e) {
     ElMessage.error(`提交失败：${errMsg(e)}`)
   } finally {
@@ -566,7 +588,12 @@ async function removeSite(s: FreeTokenSite) {
   }
   try {
     await deleteFreeTokenSite(s.id)
-    sites.value = sites.value.filter((x) => x.id !== s.id)
+    // 当前页删空且不在第一页时回退一页（page 变化自动触发重新加载），否则刷新当前页
+    if (sites.value.length <= 1 && page.value > 1) {
+      page.value -= 1
+    } else {
+      await load()
+    }
     ElMessage.success('已删除')
   } catch (e) {
     ElMessage.error(`删除失败：${errMsg(e)}`)
@@ -574,6 +601,9 @@ async function removeSite(s: FreeTokenSite) {
 }
 
 onMounted(load)
+
+// 翻页时重新加载当前页数据
+watch(page, load)
 
 // 视图选择持久化，避免每次进页面都要重选
 watch(view, (v) => localStorage.setItem('vortex-free-token-view', v))

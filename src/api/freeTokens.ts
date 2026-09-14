@@ -53,13 +53,23 @@ export interface SubmitSiteParams {
   submitter?: string // 提交者
 }
 
+/** 分页响应结构（远程与本地统一） */
+export interface FreeTokenPage {
+  sites: FreeTokenSite[] // 当前页站点列表
+  total: number // 总条数
+  page: number // 当前页码
+  pageSize: number // 每页条数
+}
+
 /**
- * 获取所有免费 Token 站点列表。
- * @returns 包含站点数组的对象
+ * 分页获取免费 Token 站点列表。
+ * @param page 页码，从 1 开始
+ * @param pageSize 每页条数
+ * @returns 分页数据（站点列表 + 总条数）
  */
-export async function listFreeTokenSites() {
-  const { data } = await api.get('/free-tokens')
-  return data as { sites: FreeTokenSite[] }
+export async function listFreeTokenSites(page = 1, pageSize = 12) {
+  const { data } = await api.get('/free-tokens', { params: { page, pageSize } })
+  return data as FreeTokenPage
 }
 
 /**

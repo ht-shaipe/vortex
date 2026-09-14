@@ -17,7 +17,7 @@ use crate::AppState;
 
 /// 从远程响应中兼容提取站点数组，支持多种信封：
 /// - `{ sites: [...] }`
-/// - `{ code, result: [...] }` 或 `{ code, result: { sites | list | records: [...] } }`（dsa / 分页风格）
+/// - `{ code, result: [...] }` 或 `{ code, result: { content | sites | list | records: [...] } }`（dsa / 分页风格）
 /// - `{ data: { list | records: [...] } }`
 /// - 裸数组 `[...]`
 ///
@@ -28,13 +28,13 @@ fn extract_sites(value: &serde_json::Value) -> Vec<serde_json::Value> {
     if let Some(arr) = value.get("sites").and_then(|v| v.as_array()) {
         return arr.clone();
     }
-    // 分页信封常见字段：result.list / result.records / data.list / data.records / rows / items
+    // 分页信封常见字段：result.content / result.list / result.records / data.list / data.records / rows / items
     for key in ["result", "data"] {
         if let Some(node) = value.get(key) {
             if let Some(arr) = node.as_array() {
                 return arr.clone();
             }
-            for sub in ["sites", "list", "records", "rows", "items"] {
+            for sub in ["content", "sites", "list", "records", "rows", "items"] {
                 if let Some(arr) = node.get(sub).and_then(|v| v.as_array()) {
                     return arr.clone();
                 }
@@ -86,42 +86,44 @@ fn hub_headers(config: &crate::config::AppConfig) -> HashMap<String, String> {
     headers
 }
 
-/// 通过分页接口聚合拉取远程全部站点。
+/// 通过远程分页接口拉取指定页的站点。
 ///
-/// 以 `pageSize = 50` 逐页 POST `{pageIndex, pageSize}`，直到返回条数不足一页
-/// 或达到安全页数上限（100 页）。
+/// 以 POST `{pageIndex, pageSize}` 请求单页数据，远程接口返回
+/// `{ code, result: { content, total, ... } }` 信封。
 ///
 /// - `state`：应用全局状态
-/// - 返回值：聚合后的站点数组；接口业务失败（如未授权）时返回错误
-async fn fetch_all_remote_sites(state: &web::Data<Arc<AppState>>) -> Result<Vec<serde_json::Value>, String> {
+/// - `page`：页码（从 1 开始）
+/// - `page_size`：每页条数
+/// - 返回值：`(站点数组, 总条数)`；接口业务失败（如未授权）时返回错误
+async fn fetch_remote_page(
+    state: &web::Data<Arc<AppState>>,
+    page: u32,
+    page_size: u32,
+) -> Result<(Vec<serde_json::Value>, i64), String> {
     let url = state.config.free_tokens_page_url.clone();
     let headers = hub_headers(&state.config);
-    let page_size = 50;
-    let max_pages = 100;
 
-    let mut all: Vec<serde_json::Value> = Vec::new();
-    for page_index in 1..=max_pages {
-        let payload = json!({ "pageIndex": page_index, "pageSize": page_size }).to_string();
-        let value = remote_proxy::send_proxy_request(
-            &state.http_client,
-            &url,
-            "POST",
-            &headers,
-            Some(&payload),
-            30,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        check_remote_code(&value).map_err(|e| e.to_string())?;
+    let payload = json!({ "pageIndex": page, "pageSize": page_size }).to_string();
+    let value = remote_proxy::send_proxy_request(
+        &state.http_client,
+        &url,
+        "POST",
+        &headers,
+        Some(&payload),
+        30,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    check_remote_code(&value).map_err(|e| e.to_string())?;
 
-        let items = extract_sites(&value);
-        let count = items.len();
-        all.extend(items);
-        if count < page_size {
-            break;
-        }
-    }
-    Ok(all)
+    let items = extract_sites(&value);
+    let total = value
+        .pointer("/result/total")
+        .or_else(|| value.pointer("/data/total"))
+        .or_else(|| value.get("total"))
+        .and_then(|t| t.as_i64())
+        .unwrap_or(items.len() as i64);
+    Ok((items, total))
 }
 
 /// 从远程创建响应中取出站点对象；取不到则用请求体构造一个本地兜底对象。
@@ -193,20 +195,39 @@ fn save_local_copy(pool: &crate::db::core::DbPool, req: &CreateFreeTokenSiteRequ
     }
 }
 
-/// 处理 GET 请求，列出免费 Token 站点。
+/// 列表查询参数（camelCase，与前端约定一致）
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListQuery {
+    /// 页码，从 1 开始
+    pub page: Option<u32>,
+    /// 每页条数
+    pub page_size: Option<u32>,
+}
+
+/// 处理 GET 请求，分页列出免费 Token 站点。
 ///
-/// 若配置了远程地址，优先通过分页接口聚合拉取远程站点列表；远程失败时回退到本地数据库。
+/// 若配置了远程地址，优先将分页参数透传到远程分页接口；远程失败时回退到本地数据库分页查询。
+/// 远程与本地统一返回 `{ "sites": [...], "total": n, "page": p, "pageSize": s }` 结构。
 ///
 /// - `state`：应用全局状态
-/// - 返回值：`{ "sites": [...] }` 格式 JSON 响应
-pub async fn list_sites(state: web::Data<Arc<AppState>>) -> HttpResponse {
+/// - `query`：分页查询参数（page / pageSize）
+/// - 返回值：统一分页结构 JSON 响应
+pub async fn list_sites(
+    state: web::Data<Arc<AppState>>,
+    query: web::Query<ListQuery>,
+) -> HttpResponse {
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(12).clamp(1, 100);
+
     let remote = &state.config.free_tokens_remote;
-    // 远程模式：优先从远程分页聚合拉取
+    // 远程模式：分页参数透传远程接口
     if !remote.is_empty() {
-        match fetch_all_remote_sites(&state).await {
-            Ok(sites) => {
-                // 远程成功：返回聚合后的站点列表（允许为空）
-                return HttpResponse::Ok().json(json!({ "sites": sites }));
+        match fetch_remote_page(&state, page, page_size).await {
+            Ok((sites, total)) => {
+                // 远程成功：返回当前页数据（允许为空）
+                return HttpResponse::Ok()
+                    .json(json!({ "sites": sites, "total": total, "page": page, "pageSize": page_size }));
             }
             Err(e) => {
                 // 远程失败：记录警告并回退本地
@@ -215,12 +236,12 @@ pub async fn list_sites(state: web::Data<Arc<AppState>>) -> HttpResponse {
         }
     }
 
-    // 本地模式或远程回退：从数据库查询
+    // 本地模式或远程回退：从数据库分页查询
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
         let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
-        db_free_tokens::list(&conn)
-            .map(|sites| json!({ "sites": sites }))
+        db_free_tokens::list_paged(&conn, page, page_size)
+            .map(|(sites, total)| json!({ "sites": sites, "total": total, "page": page, "pageSize": page_size }))
             .map_err(|e| e.to_string())
     })
     .await;

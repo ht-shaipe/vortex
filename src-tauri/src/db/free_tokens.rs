@@ -15,26 +15,34 @@ const SELECT_COLS: &str = "id, name, home_url, apply_url, api_supported, api_bas
 /// 用户提交的推荐排在内置条目之后
 const USER_SORT_ORDER: i32 = 9000;
 
-/// 查询所有免费 Token 站点列表。
+/// 分页查询免费 Token 站点列表。
 ///
-/// 按排序权重升序、名称升序排列。
+/// 按排序权重升序、名称升序排列；同时返回总条数供前端分页展示。
 ///
 /// # 参数
 /// - `conn`：数据库连接
+/// - `page`：页码（从 1 开始，小于 1 时按 1 处理）
+/// - `page_size`：每页条数
 ///
 /// # 返回
-/// 所有站点的列表
-pub fn list(conn: &rusqlite::Connection) -> Result<Vec<FreeTokenSite>> {
+/// `(当前页站点列表, 总条数)`
+pub fn list_paged(
+    conn: &rusqlite::Connection,
+    page: u32,
+    page_size: u32,
+) -> Result<(Vec<FreeTokenSite>, i64)> {
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM free_token_sites", [], |r| r.get(0))?;
+    let offset = ((page.max(1) - 1) as i64) * page_size as i64;
     let mut stmt = conn.prepare(&format!(
-        "SELECT {} FROM free_token_sites ORDER BY sort_order ASC, name ASC",
+        "SELECT {} FROM free_token_sites ORDER BY sort_order ASC, name ASC LIMIT ?1 OFFSET ?2",
         SELECT_COLS
     ))?;
-    let rows = stmt.query_map([], row_to_site)?;
+    let rows = stmt.query_map(params![page_size, offset], row_to_site)?;
     let mut result = Vec::new();
     for row in rows {
         result.push(row?);
     }
-    Ok(result)
+    Ok((result, total))
 }
 
 /// 按 ID 查询单个免费 Token 站点。
