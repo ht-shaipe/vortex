@@ -6,12 +6,15 @@ Vortex 使用 [Tauri 2 Updater 插件](https://v2.tauri.app/plugin/updater/) 实
 
 ```
 应用启动 → 自动检查 GitHub Releases → 发现新版本 → 提示用户 → 下载 + 签名验证 → 安装 + 重启
+     ↑
+     └── 运行期间每 6 小时自动复查一次（同一版本只提醒一次）
 ```
 
 1. 应用启动时自动调用 `check()` 检查更新
-2. 发现新版本后弹出通知，用户可前往「检查更新」页面查看详情
-3. 用户点击「下载并安装」后，下载更新包并验证 Ed25519 签名
-4. 验证通过后安装更新并自动重启应用
+2. 应用持续运行期间每 6 小时周期性复查（`useUpdater.ts` 的 `startPeriodicCheck`，正在检查/下载/待安装时跳过本轮）
+3. 发现新版本后弹出通知（同一版本仅提醒一次），用户可前往「关于」页查看详情
+4. 用户点击「下载并安装」后，下载更新包并验证 Ed25519 签名
+5. 验证通过后安装更新并自动重启应用
 
 ## 更新源
 
@@ -113,8 +116,8 @@ Tauri 支持多个 endpoints，会依次尝试：
 ## 文件结构
 
 ```
-src/composables/useUpdater.ts     # 更新检查 composable
-src/views/Updates.vue             # 更新页面 UI
+src/composables/useUpdater.ts     # 更新检查 composable（启动检查 + 周期复查）
+src/views/About.vue               # 「关于」页检查更新 UI
 src-tauri/tauri.conf.json         # updater 插件配置
 .github/workflows/release.yml     # 自动发布 workflow
 scripts/generate-updater-key.sh   # 密钥生成脚本

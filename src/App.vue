@@ -7,7 +7,7 @@
 /**
  * 根组件。
  * 在桌面环境下监听托盘菜单事件（启动/停止代理），
- * 并在应用启动时检查更新、开启通知轮询。
+ * 并在应用启动时检查更新、开启周期性更新复查与通知轮询。
  */
 import { onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -17,6 +17,8 @@ import { useNotifications } from '@/composables/useNotifications'
 
 // 托盘事件监听的取消函数
 let unlisten: (() => void) | undefined
+// 停止周期性更新检查的函数
+let _stopPeriodicUpdateCheck: (() => void) | undefined
 
 onMounted(async () => {
   // 仅在桌面环境（Tauri）下监听托盘事件
@@ -31,9 +33,11 @@ onMounted(async () => {
     }
   })
 
-  // 启动时静默检查是否有新版本
-  const { checkOnStartup } = useUpdater()
+  // 启动时静默检查是否有新版本，并在应用持续运行期间周期性复查（默认每 6 小时）
+  const { checkOnStartup, startPeriodicCheck, stopPeriodicCheck } = useUpdater()
   checkOnStartup()
+  startPeriodicCheck()
+  _stopPeriodicUpdateCheck = stopPeriodicCheck
 })
 
 onMounted(() => {
@@ -45,6 +49,8 @@ onMounted(() => {
 onUnmounted(() => {
   // 组件卸载时取消托盘事件监听
   unlisten?.()
+  // 停止周期性更新检查
+  _stopPeriodicUpdateCheck?.()
   // 停止通知轮询
   const { stopPolling } = useNotifications()
   stopPolling()

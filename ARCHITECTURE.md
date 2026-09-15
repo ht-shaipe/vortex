@@ -194,7 +194,7 @@ pub struct ProviderDef {
 | `provider_connections` | 提供商连接 | id, provider, name, api_key/access_token(加密), priority, is_active, test_status, backoff_level, rate_limited_until, consecutive_use_count |
 | `api_keys` | 网关 API 密钥 | id, name, key(唯一, `vx-{32位hex}`), allowed_models, allowed_connections, allowed_endpoints, no_log, auto_resolve, is_active, is_banned, rate_limits, usage_limits |
 | `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost |
-| `key_value` | 键值存储(设置) | namespace, key, value(JSON) — 目前仅 `settings/general` |
+| `key_value` | 键值存储(设置) | namespace, key, value(JSON) — `settings/general`（端口/UA/隐藏已映射模型等）与 `settings/security`（Token 鉴权、访问令牌、CORS）；首次启动自动写入安全默认值（Token 鉴权开启 + 自动生成访问令牌） |
 | `free_token_sites` | 免费额度站点目录 | id, name, home_url, apply_url, api_supported, api_base, api_format, free_quota, region(`cn`/`global`/`local`), requires_card, requires_verify, tags(JSON), note, provider_id, source(`builtin`/`user`), submitter, sort_order |
 | `model_aliases` | 模型别名（虚拟模型名映射） | id, alias, targets(JSON数组: provider, model, connection_id), created_at |
 
@@ -226,7 +226,7 @@ pub struct ProviderDef {
 |------|----------|------|
 | `POST /v1/chat/completions` | `chat::chat_completions` | 聊天补全，支持流式和非流式 |
 | `POST /v1/messages` | `messages::anthropic_messages` | Anthropic Messages 兼容（协议转换，支持流式） |
-| `GET /v1/models` | `models::list_models` | 聚合所有提供商的模型列表 |
+| `GET /v1/models` | `models::list_models` | 聚合已配置模型（`provider/model`）与已启用的虚拟别名；开启「隐藏已映射的真实模型」（默认开）且存在已启用虚拟映射时，真实模型全部不输出，仅暴露虚拟模型名 |
 | `POST /v1/embeddings` | `embeddings::create_embeddings` | 文本嵌入 |
 | `POST /v1/images/generations` | `images::create_images` | 图像生成 |
 
@@ -247,6 +247,7 @@ pub struct ProviderDef {
 | `GET/POST /api/free-tokens` | 免费 Token 站点列表 / 提交推荐（`name` 必填，其余字段可留空） |
 | `DELETE /api/free-tokens/{id}` | 删除用户提交的推荐；内置条目返回 400「内置站点不可删除」 |
 | `GET/POST /api/model-aliases` | 模型别名列表/创建（虚拟模型名 + 多目标故障转移） |
+| `POST /api/model-aliases/auto-generate` | 自动归纳：按模型家族（剥离日期/`-latest`/`-free`/`:free`/上下文长度等后缀）分组生成虚拟别名，单模型家族也生成同名别名；先删除旧 `auto` 别名再批量创建（跳过与 manual 同名的） |
 | `GET/PATCH/DELETE /api/model-aliases/{id}` | 单个模型别名操作 |
 | `GET /api/health` | 健康检查 (DB 连通性 + 版本) |
 
@@ -351,7 +352,7 @@ AppLayout
 |------------|------|
 | `useTheme.ts` | 主题管理（light / dark / system），持久化到 localStorage |
 | `useThemeColors.ts` | CSS 变量解析为具体色值供 ECharts / Canvas 使用 |
-| `useUpdater.ts` | 自动更新：检查 / 下载 / 安装 / 重启，启动时静默检查 |
+| `useUpdater.ts` | 自动更新：检查 / 下载 / 安装 / 重启，启动时静默检查 + 运行期间每 6 小时周期复查（同一版本仅通知一次） |
 | `useNotifications.ts` | 通知管理：每 5 分钟轮询远程通知，未读弹出桌面通知 |
 
 ### 主题

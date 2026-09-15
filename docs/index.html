@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
 <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
 <title>Vortex — 本地 AI 网关，把多家模型聚合成一个 OpenAI / Anthropic 兼容接口</title>
-<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、熔断重试、密钥加密、用量统计、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
+<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、模型自动归纳、熔断重试、密钥加密、默认开启 Token 鉴权、用量统计、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
 <meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
 <meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
 <meta property="og:description" content="把多家 AI 提供商聚合成 OpenAI / Anthropic 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
@@ -230,13 +230,19 @@
       <div class="card feat reveal">
         <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.6"/><path d="M21 3v6h-6"/></svg></span>
         <h3>自动更新</h3>
-        <p>启动时静默检查 GitHub Releases，发现新版本提示下载安装，一键更新到最新版。</p>
+        <p>启动时静默检查 GitHub Releases，运行期间每 6 小时自动复查；发现新版本提醒一次，一键下载安装。</p>
       </div>
 
-      <div class="card feat reveal" style="background:linear-gradient(180deg,var(--accent-bg),var(--surface));border-color:var(--accent-line)" data-page-node-id="VGSQI0NN0ThtwiSa8RvzeC">
-        <span class="feat-ico" data-page-node-id="E5uepS3OEu4aDE0OTiwcIR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="XA0VYXIucaP54oynpwZPH6"><path d="M4 17l6-6-6-6" data-page-node-id="vM4ek57CpCS4fheIp2mMFC"/><path d="M12 19h8" data-page-node-id="7HeTRhoU4mEsiuj8ZidIei"/></svg></span>
-        <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">数据全在自己机器上</h3>
-        <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">请求日志、密钥、配置都存本地 SQLite。这是一个跑在你本机的进程，不是托管服务 —— 没有中间人。</p>
+      <div class="card feat reveal">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></span>
+        <h3>模型自动归纳</h3>
+        <p>按家族把同族模型（含 <code>:free</code>、日期等变体后缀）自动归纳成虚拟名，单模型也不遗漏；对外可仅暴露精简的虚拟模型列表。</p>
+      </div>
+
+      <div class="card feat reveal">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <h3>访问令牌开箱即用</h3>
+        <p>首次启动默认开启 Token 鉴权并自动生成访问令牌，接入指南一键复制；要求 API Key 非空的客户端无需额外配置即可接入。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="featSubCard">
@@ -273,6 +279,12 @@
         <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9-9a9 9 0 0 0-9 9m9-9a9 9 0 0 1 9 9"/><path d="M8 8l-3 4 3 4M16 8l3 4-3 4"/></svg></span>
         <h3>配置同步与迁移</h3>
         <p>支持 cc-switch 配置迁移、本地配置导出与导入、WebDAV 云备份；换机或多设备协作不丢配置。</p>
+      </div>
+
+      <div class="card feat reveal" style="background:linear-gradient(180deg,var(--accent-bg),var(--surface));border-color:var(--accent-line)" data-page-node-id="VGSQI0NN0ThtwiSa8RvzeC">
+        <span class="feat-ico" data-page-node-id="E5uepS3OEu4aDE0OTiwcIR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="XA0VYXIucaP54oynpwZPH6"><path d="M4 17l6-6-6-6" data-page-node-id="vM4ek57CpCS4fheIp2mMFC"/><path d="M12 19h8" data-page-node-id="7HeTRhoU4mEsiuj8ZidIei"/></svg></span>
+        <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">数据全在自己机器上</h3>
+        <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">请求日志、密钥、配置都存本地 SQLite。这是一个跑在你本机的进程，不是托管服务 —— 没有中间人。</p>
       </div>
     </div>
   </div>
@@ -624,7 +636,14 @@ for await (const chunk of stream) {
       <details class="qa">
         <summary>什么是「模型映射」？</summary>
         <div class="qa-body">
-          在「模型映射」页可以创建虚拟模型名（如 <code>my-fast-model</code>），并绑定多个已接入的真实模型作为目标，按优先级排序。客户端直接用虚拟名发请求，网关依次尝试各目标：某个失败自动切换下一个，全部失败才报错 —— 相当于给「一组备用模型」一个永远稳定的入口。
+          在「模型映射」页可以创建虚拟模型名（如 <code>my-fast-model</code>），并绑定多个已接入的真实模型作为目标，按优先级排序。客户端直接用虚拟名发请求，网关依次尝试各目标：某个失败自动切换下一个，全部失败才报错 —— 相当于给「一组备用模型」一个永远稳定的入口。还可以按模型家族自动归纳生成虚拟名（单模型家族也会生成同名别名，<code>:free</code>、日期等变体后缀自动归并）；开启「隐藏已映射的真实模型」后，<code>/v1/models</code> 仅输出虚拟模型列表。
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>客户端要求填 API Key 怎么办？</summary>
+        <div class="qa-body">
+          Vortex 首次启动会默认开启 Token 鉴权并自动生成一个访问令牌，在「接入指南」页可以一键复制并代入示例代码。多数 Agent 客户端要求 API Key 字段非空才发请求，填入这个令牌即可。需要更换或关闭时，前往「设置 → 安全与访问」。
         </div>
       </details>
 
@@ -680,7 +699,7 @@ for await (const chunk of stream) {
       <details class="qa">
         <summary>有自动更新吗？</summary>
         <div class="qa-body">
-          有。应用启动时会静默检查 GitHub Releases 是否有新版本，发现后弹出通知提示下载安装。你也可以在「关于」页手动检查更新。更新包由 GitHub Actions 在推送 <code>v*</code> tag 时自动构建。
+          有。应用启动时会静默检查 GitHub Releases 是否有新版本，运行期间每 6 小时自动复查一次（同一版本只提醒一次），发现后弹出通知提示下载安装。你也可以在「关于」页手动检查更新。更新包由 GitHub Actions 在推送 <code>v*</code> tag 时自动构建。
         </div>
       </details>
 

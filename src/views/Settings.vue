@@ -60,7 +60,7 @@
           <div class="setting-row">
             <div>
               <div class="setting-label">隐藏已映射的真实模型</div>
-              <div class="setting-desc">已建立虚拟模型映射的远端模型不再输出给下游，仅暴露虚拟模型名</div>
+              <div class="setting-desc">开启且存在已启用的虚拟映射时，真实模型不再输出给下游，仅暴露虚拟模型名</div>
             </div>
             <el-switch v-model="form.hide_mapped_models" @change="saveField('hideMappedModels', form.hide_mapped_models)" />
           </div>

@@ -39,8 +39,8 @@
             <td><StatusBadge :tone="statusTone(r.status)" :label="statusLabel(r.status)" /></td>
             <td class="mono">{{ r.provider || '—' }}</td>
             <td class="mono">{{ r.model || '—' }}</td>
-            <td class="num">{{ fmtNum(r.tokensInput) }}</td>
-            <td class="num">{{ fmtNum(r.tokensOutput) }}</td>
+            <td class="num" :title="r.tokensInput != null ? r.tokensInput.toLocaleString() : ''">{{ fmtToken(r.tokensInput) }}</td>
+            <td class="num" :title="r.tokensOutput != null ? r.tokensOutput.toLocaleString() : ''">{{ fmtToken(r.tokensOutput) }}</td>
             <td class="num">{{ r.latencyMs != null ? fmtLatency(r.latencyMs) : '—' }}</td>
           </tr>
         </tbody>
@@ -70,6 +70,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import Pagination from '@/components/stats/Pagination.vue'
 import { getUsagePaged } from '@/api/usage'
+import { formatTokenK } from '@/lib/format'
 
 /** 单条日志记录的结构 */
 interface Row {
@@ -117,13 +118,12 @@ function fmtTime(iso?: string): string {
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 /**
- * 格式化数值，空值返回占位符。
- * @param n 待格式化的数值
+ * 格式化 Token 数量：紧凑展示（1k / 102k），空值返回占位符，精确值见 title。
+ * @param n Token 数量
  */
-function fmtNum(n?: number): string {
-  return n == null ? '—' : n.toLocaleString()
+function fmtToken(n?: number): string {
+  return n == null ? '—' : formatTokenK(n)
 }
-
 /**
  * 格式化耗时：小于 1000ms 用毫秒，否则折算为秒并保留一位小数。
  * @param ms 毫秒

@@ -18,7 +18,7 @@
           <tr>
             <th>时间</th>
             <th>端点</th>
-            <th>入站</th>
+            <th style="width: 56px">入站</th>
             <th style="width: 88px">状态</th>
             <th style="width: 132px">模型</th>
             <th class="right text-right">用时</th>
@@ -32,7 +32,7 @@
               {{ fmtDateTime(r.ts) }}
             </td>
             <td class="ellipsis max-w-160px overflow-hidden text-ellipsis whitespace-nowrap">{{ r.endpointName }}</td>
-            <td class="mono small text-sm text-ink-3">{{ inferPath(r.inboundFormat) }}</td>
+            <td class="mono small text-sm text-ink-3 whitespace-nowrap" :title="inferPath(r.inboundFormat)">{{ inferLabel(r.inboundFormat) }}</td>
             <td>
               <span class="pill" :class="statusTone(r.statusCode)">
                 <span class="dot" />
@@ -51,16 +51,16 @@
                 <template #content>
                   <div class="tok flex flex-col gap-4px text-sm min-w-150px">
                     <div v-if="r.model" class="tok-model text-ink-3">模型：{{ r.model }}</div>
-                    <div class="tok-row flex justify-between gap-16px"><span>输入</span><span>{{ formatTokenK(r.inputTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ formatTokenK(r.outputTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ formatTokenK(r.cacheCreationTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ formatTokenK(r.cacheReadTokens) }}</span></div>
-                    <div class="tok-row total flex justify-between gap-16px border-t border-line-2 border-solid border-0 pt-4px font-semibold"><span>合计</span><span>{{ formatTokenK(totalTokens(r)) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输入</span><span>{{ fmtInt(r.inputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ fmtInt(r.outputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ fmtInt(r.cacheCreationTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ fmtInt(r.cacheReadTokens) }}</span></div>
+                    <div class="tok-row total flex justify-between gap-16px border-t border-line-2 border-solid border-0 pt-4px font-semibold"><span>合计</span><span>{{ fmtInt(totalTokens(r)) }}</span></div>
                     <div v-if="r.errorBody" class="tok-err text-err max-w-260px break-all">错误：{{ r.errorBody }}</div>
                   </div>
                 </template>
                 <span class="tok-trigger tnum inline-flex items-center gap-4px text-ink-3 hover:text-ink cursor-default">
-                  {{ fmtInt(totalTokens(r)) }}
+                  {{ formatTokenK(totalTokens(r)) }}
                   <el-icon :size="12"><InfoFilled /></el-icon>
                 </span>
               </el-tooltip>
@@ -130,6 +130,10 @@ async function load(): Promise<void> {
     })
     items.value = res.items
     total.value = res.total
+  } catch (e) {
+    console.error('[RequestMonitor] load failed', e)
+    items.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
@@ -156,7 +160,7 @@ function statusTone(code: number | null): 'ok' | 'warn' | 'err' {
   return 'err'
 }
 
-/** 按入站协议推断路由（明细未落库真实路径时的兜底）。 */
+/** 按入站协议推断路由（明细未落库真实路径时的兜底，悬停提示用）。 */
 function inferPath(format: string): string {
   if (format === 'openai') return '/v1/chat/completions'
   if (format === 'responses') return '/v1/responses'
@@ -165,11 +169,20 @@ function inferPath(format: string): string {
   return '—'
 }
 
-/** 格式化时间戳为可读日期时间字符串。 */
+/** 按入站协议推断短标签（列宽紧凑，完整路径见悬停 title）。 */
+function inferLabel(format: string): string {
+  if (format === 'openai') return 'chat'
+  if (format === 'responses') return 'resp'
+  if (format === 'claude') return 'msg'
+  if (format === 'images') return 'img'
+  return '—'
+}
+
+/** 格式化时间戳为可读日期时间字符串（不含年份，完整年份见悬停 title）。 */
 function fmtDateTime(ts: number): string {
   const d = new Date(ts)
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 </script>
 

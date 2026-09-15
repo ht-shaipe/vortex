@@ -20,6 +20,15 @@ import '@/composables/useTheme'
 const app = createApp(App)
 const pinia = createPinia()
 
+// 全局错误处理器：捕获组件内未处理的错误
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[Vue Error]', info, err)
+}
+// 捕获未处理的 Promise 拒绝
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[Unhandled Rejection]', e.reason)
+})
+
 // 注册 Pinia 状态管理
 app.use(pinia)
 // 注册路由

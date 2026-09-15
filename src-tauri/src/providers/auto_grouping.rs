@@ -3,7 +3,8 @@
 //! 家族提取规则：迭代剥离模型名末尾的版本/变体后缀，剩余部分即为家族名。
 //! 可剥离的后缀包括：日期（`-2024-08-06`、`-20241022`、`-0613`）、
 //! `-latest`、`-preview`、`-free`、上下文长度（`-16k`、`-32k`、`-128k`、`-1m`）等。
-//! 同族 2+ 模型才生成别名，按"无后缀优先 > 有后缀"排序作为故障转移目标。
+//! 每个家族都生成别名（含单模型家族），按"无后缀优先 > 有后缀"排序作为故障转移目标，
+//! 保证所有真实模型都有对应的虚拟模型名。
 
 use crate::db::models::ModelAliasTarget;
 use std::collections::HashMap;
@@ -102,8 +103,8 @@ fn strip_one_suffix(s: &str) -> Option<String> {
             return Some(s[..s.len() - 5].to_string());
         }
     }
-    // 固定字符串后缀
-    for suffix in &["-latest", "-preview", "-free"] {
+    // 固定字符串后缀（:free 为 OpenRouter 等平台的免费变体标记）
+    for suffix in &["-latest", "-preview", "-free", ":free"] {
         if s.ends_with(suffix) {
             return Some(s[..s.len() - suffix.len()].to_string());
         }
@@ -139,7 +140,9 @@ fn has_version_suffix(model: &str) -> bool {
 
 /// 按家族分组模型，生成 (别名, 目标列表) 对。
 ///
-/// 仅返回同族 2+ 模型的分组。目标按"无版本后缀优先"排序。
+/// 每个家族都生成别名（含单模型家族），目标按"无版本后缀优先"排序。
+/// 单模型家族也生成同名别名，确保开启「隐藏已映射的真实模型」后
+/// 每个真实模型都有对应的虚拟模型名可供选用。
 pub fn group_by_family(
     models: &[(String, String, String)], // (provider_id, model_id, connection_id)
 ) -> Vec<(String, Vec<ModelAliasTarget>)> {
@@ -157,11 +160,6 @@ pub fn group_by_family(
     let mut result: Vec<(String, Vec<ModelAliasTarget>)> = Vec::new();
 
     for (family, mut members) in groups {
-        // 仅 2+ 模型才生成别名
-        if members.len() < 2 {
-            continue;
-        }
-
         // 排序：无版本后缀优先，其次按模型名字母序
         members.sort_by(|a, b| {
             let a_has = has_version_suffix(&a.3);
@@ -208,10 +206,11 @@ mod tests {
         assert_eq!(extract_family("o1-preview"), "o1");
         assert_eq!(extract_family("gpt-4-turbo-preview"), "gpt-4-turbo");
 
-        // -free 后缀
+        // -free / :free 后缀（:free 为 OpenRouter 风格）
         assert_eq!(extract_family("glm-4-flash-free"), "glm-4-flash");
         assert_eq!(extract_family("glm-4-flash"), "glm-4-flash");
         assert_eq!(extract_family("qwen-max-free"), "qwen-max");
+        assert_eq!(extract_family("glm-5.3-flash:free"), "glm-5.3-flash");
 
         // 上下文长度后缀
         assert_eq!(extract_family("gpt-3.5-turbo-16k"), "gpt-3.5-turbo");
@@ -256,8 +255,10 @@ mod tests {
         assert_eq!(gpt4o_mini.1.len(), 2);
         assert_eq!(gpt4o_mini.1[0].model, "gpt-4o-mini");
 
-        // deepseek-chat 只有 1 个，不生成别名
-        assert!(groups.iter().all(|(a, _)| a != "deepseek-chat"));
+        // deepseek-chat 单模型家族也生成别名（1 个目标）
+        let ds = groups.iter().find(|(a, _)| a == "deepseek-chat").unwrap();
+        assert_eq!(ds.1.len(), 1);
+        assert_eq!(ds.1[0].model, "deepseek-chat");
     }
 
     #[test]

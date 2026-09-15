@@ -220,28 +220,86 @@ async function checkOnStartup(): Promise<void> {
   try {
     const hasUpdate = await checkForUpdate(true)
     if (hasUpdate && updateInfo.value) {
-      const { ElNotification } = await import('element-plus')
-
-      const notification = ElNotification({
-        title: `发现新版本 v${updateInfo.value.version}`,
-        message: h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
-          h('p', { style: 'margin: 0; font-size: 12px; color: var(--ink-3);' }, '点击"立即更新"直接下载安装'),
-          h('button', {
-            class: 'btn primary sm',
-            style: 'align-self: flex-start; cursor: pointer;',
-            onClick: () => {
-              notification.close()
-              void startUpdateFromNotification()
-            },
-          }, '立即更新'),
-        ]),
-        type: 'info',
-        duration: 0,
-        position: 'bottom-right',
-      })
+      notifyUpdateAvailable()
     }
   } catch {
     // 静默失败，不打扰用户
+  }
+}
+
+// 周期检查定时器
+let _periodicTimer: ReturnType<typeof setInterval> | null = null
+// 已通知过的版本号：同一版本只弹一次通知，避免周期检查反复打扰
+let _notifiedVersion: string | null = null
+
+/**
+ * 弹出"发现新版本"通知，带"立即更新"按钮可直接下载安装。
+ */
+function notifyUpdateAvailable(): void {
+  if (!updateInfo.value) return
+  const version = updateInfo.value.version
+  // 同一版本已通知过则跳过
+  if (_notifiedVersion === version) return
+  _notifiedVersion = version
+
+  import('element-plus').then(({ ElNotification }) => {
+    const notification = ElNotification({
+      title: `发现新版本 v${version}`,
+      message: h('div', { style: 'display: flex; flex-direction: column; gap: 8px;' }, [
+        h('p', { style: 'margin: 0; font-size: 12px; color: var(--ink-3);' }, '点击"立即更新"直接下载安装'),
+        h('button', {
+          class: 'btn primary sm',
+          style: 'align-self: flex-start; cursor: pointer;',
+          onClick: () => {
+            notification.close()
+            void startUpdateFromNotification()
+          },
+        }, '立即更新'),
+      ]),
+      type: 'info',
+      duration: 0,
+      position: 'bottom-right',
+    })
+  })
+}
+
+/**
+ * 周期性静默检查更新（应用持续运行期间）。
+ * 正处于检查/下载/待安装流程时跳过本轮；发现新版本且未通知过时弹通知。
+ */
+async function checkPeriodically(): Promise<void> {
+  // 更新流程进行中（检查中/下载中/已就绪待重启）时跳过本轮
+  if (status.value === 'checking' || status.value === 'downloading' || status.value === 'ready') return
+  try {
+    const hasUpdate = await checkForUpdate(true)
+    if (hasUpdate && updateInfo.value) {
+      notifyUpdateAvailable()
+    }
+  } catch {
+    // 静默失败，不打扰用户
+  }
+}
+
+/**
+ * 启动周期性自动检查更新。
+ * 已在运行时重复调用无副作用。
+ * @param intervalMs - 检查间隔（毫秒），默认 6 小时
+ */
+function startPeriodicCheck(intervalMs: number = 6 * 60 * 60 * 1000): void {
+  if (runtime.kind !== 'desktop') return
+  if (_periodicTimer != null) return
+  _periodicTimer = setInterval(() => {
+    void checkPeriodically()
+  }, intervalMs)
+}
+
+/**
+ * 停止周期性自动检查更新。
+ */
+function stopPeriodicCheck(): void {
+  if (_periodicTimer != null) {
+    clearInterval(_periodicTimer)
+    _periodicTimer = null
   }
 }
 
@@ -260,5 +318,7 @@ export function useUpdater() {
     downloadAndInstall,
     relaunchApp,
     checkOnStartup,
+    startPeriodicCheck,
+    stopPeriodicCheck,
   }
 }

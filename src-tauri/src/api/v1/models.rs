@@ -21,7 +21,11 @@ use std::sync::Arc;
 ///
 /// 遍历提供商注册表中的每个提供商定义，读取其下所有**活跃**连接，
 /// 将连接上配置的模型（`models` 数组，为空时回退 `default_model`）
-/// 以 `{provider_id}/{model_id}` 格式合并为 OpenAI 格式响应，并按完整 ID 去重。
+/// 以 `{provider_id}/{model_id}` 格式合并为 OpenAI 格式响应，并按完整 ID 去重；
+/// 追加已启用的虚拟模型别名。
+///
+/// 当 `hideMappedModels` 开启（默认）且存在已启用的虚拟映射时，
+/// 真实模型全部不输出，仅暴露虚拟模型名；无虚拟映射时回退输出真实模型。
 ///
 /// - `state`：应用全局状态
 /// - 返回值：`{ "object": "list", "data": [...] }` 格式的 JSON 响应
@@ -38,8 +42,11 @@ pub async fn list_models(
     let mut models = vec![]; // 聚合所有已配置模型
     let mut seen = HashSet::new(); // 按完整模型 ID 去重（多连接同模型只出现一次）
 
-    // 先加载虚拟模型别名，提取所有已映射的真实模型
+    // 先加载虚拟模型别名
     let aliases = db_aliases::list(&conn).unwrap_or_default();
+    // 已启用的虚拟映射
+    let active_aliases: Vec<&crate::db::models::ModelAlias> =
+        aliases.iter().filter(|a| a.is_active).collect();
 
     // 读取通用设置：是否隐藏已映射的真实模型（默认 true）
     let hide_mapped = db_settings::get(&conn, "settings", "general")
@@ -49,55 +56,46 @@ pub async fn list_models(
         .map(|v| v.as_bool().unwrap_or(true))
         .unwrap_or(true);
 
-    let mapped_targets: HashSet<String> = if hide_mapped {
-        aliases
-            .iter()
-            .filter(|a| a.is_active)
-            .flat_map(|a| a.targets.iter())
-            .map(|t| format!("{}/{}", t.provider, t.model))
-            .collect()
-    } else {
-        HashSet::new()
-    };
+    // 存在已启用的虚拟映射且开启隐藏时，真实模型全部不输出，仅暴露虚拟模型名；
+    // 无虚拟映射时回退输出真实模型，保证端点不为空、客户端仍可选用
+    let hide_all_real = hide_mapped && !active_aliases.is_empty();
 
-    // 遍历注册表中的每个提供商定义
-    for def in state.provider_registry.list() {
-        // 查询该提供商的连接列表（解密后的凭证在此场景无需使用）
-        let connections = db_providers::list_by_provider(&conn, &def.id, &state.encryption_key).unwrap_or_default();
+    if !hide_all_real {
+        // 遍历注册表中的每个提供商定义
+        for def in state.provider_registry.list() {
+            // 查询该提供商的连接列表（解密后的凭证在此场景无需使用）
+            let connections = db_providers::list_by_provider(&conn, &def.id, &state.encryption_key).unwrap_or_default();
 
-        // 仅聚合活跃连接上配置的模型
-        for c in connections.iter().filter(|c| c.is_active) {
-            // 连接配置的模型列表；为空时回退 default_model
-            let ids: Vec<String> = match &c.models {
-                Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
-                _ => c.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
-            };
+            // 仅聚合活跃连接上配置的模型
+            for c in connections.iter().filter(|c| c.is_active) {
+                // 连接配置的模型列表；为空时回退 default_model
+                let ids: Vec<String> = match &c.models {
+                    Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                    _ => c.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+                };
 
-            for id in ids {
-                if id.is_empty() {
-                    continue;
+                for id in ids {
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let full = format!("{}/{}", def.id, id);
+                    if !seen.insert(full.clone()) {
+                        continue;
+                    }
+                    models.push(json!({
+                        "id": full,
+                        "object": "model",
+                        "created": created,
+                        "owned_by": def.id,
+                        "permission": [],
+                    }));
                 }
-                let full = format!("{}/{}", def.id, id);
-                // 跳过已建立虚拟映射的真实模型（受 hideMappedModels 设置控制）
-                if mapped_targets.contains(&full) {
-                    continue;
-                }
-                if !seen.insert(full.clone()) {
-                    continue;
-                }
-                models.push(json!({
-                    "id": full,
-                    "object": "model",
-                    "created": created,
-                    "owned_by": def.id,
-                    "permission": [],
-                }));
             }
         }
     }
 
     // 追加虚拟模型别名（对外输出的虚拟模型名）
-    for alias in aliases.iter().filter(|a| a.is_active) {
+    for alias in active_aliases {
         models.push(json!({
             "id": alias.alias,
             "object": "model",

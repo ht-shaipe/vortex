@@ -212,18 +212,24 @@ async function loadHourly(): Promise<void> {
     hourlyRows.value = []
     return
   }
-  hourlyRows.value = await statsApi.getRequestLogsHourly({
-    startMs: w.startMs,
-    endMs: w.endExclusiveMs - 1,
-  })
+  try {
+    hourlyRows.value = await statsApi.getRequestLogsHourly({
+      startMs: w.startMs,
+      endMs: w.endExclusiveMs - 1,
+    })
+  } catch (e) {
+    console.error('[EndpointStats] loadHourly failed', e)
+    hourlyRows.value = []
+  }
 }
 
 /** 刷新：失效缓存并重新加载基础与小时数据。 */
 function reload(): void {
+  console.log('[EndpointStats] reload start')
   invalidateStatsCache()
   refreshKey.value += 1
-  void loadBase()
-  void loadHourly()
+  void loadBase().then(() => console.log('[EndpointStats] loadBase done'))
+  void loadHourly().then(() => console.log('[EndpointStats] loadHourly done'))
 }
 
 watch(trendWin, () => void loadHourly(), { immediate: true })

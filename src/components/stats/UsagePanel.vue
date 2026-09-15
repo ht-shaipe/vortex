@@ -189,15 +189,23 @@ const groups = computed<DateGroup[]>(() => {
 
 /** 加载筛选数据：汇总统计与按日期·模型明细。 */
 async function loadFiltered(): Promise<void> {
-  const f = { appType: appType.value, ...filter.value }
-  const [s, dm] = await Promise.all([usageApi.getSummary(f), usageApi.getByDayModel(f)])
-  summary.value = s
-  dayModelRows.value = dm
+  try {
+    const f = { appType: appType.value, ...filter.value }
+    const [s, dm] = await Promise.all([usageApi.getSummary(f), usageApi.getByDayModel(f)])
+    summary.value = s
+    dayModelRows.value = dm
+  } catch (e) {
+    console.error('[UsagePanel] loadFiltered failed', e)
+  }
 }
 
 /** 全量按天数据：热力图取近一年，趋势图按 range 前端切片（一次查询喂两张图）。 */
 async function loadByDay(): Promise<void> {
-  byDayRows.value = await usageApi.getByDay({ appType: appType.value })
+  try {
+    byDayRows.value = await usageApi.getByDay({ appType: appType.value })
+  } catch (e) {
+    console.error('[UsagePanel] loadByDay failed', e)
+  }
 }
 
 /** 加载按小时数据（仅小时粒度趋势时拉取）。 */
@@ -207,26 +215,38 @@ async function loadByHour(): Promise<void> {
     byHourRows.value = []
     return
   }
-  byHourRows.value = await usageApi.getByHour({
-    appType: appType.value,
-    startTs: w.startMs,
-    endTs: w.endExclusiveMs - 1,
-  })
+  try {
+    byHourRows.value = await usageApi.getByHour({
+      appType: appType.value,
+      startTs: w.startMs,
+      endTs: w.endExclusiveMs - 1,
+    })
+  } catch (e) {
+    console.error('[UsagePanel] loadByHour failed', e)
+    byHourRows.value = []
+  }
 }
 
 /** 加载来源类型列表。 */
 async function loadAppTypes(): Promise<void> {
-  appTypes.value = await usageApi.listAppTypes()
+  try {
+    appTypes.value = await usageApi.listAppTypes()
+  } catch (e) {
+    console.error('[UsagePanel] loadAppTypes failed', e)
+  }
 }
 
 /** 手动刷新：失效缓存后重新拉取所有数据。 */
 async function sync(): Promise<void> {
+  console.log('[UsagePanel] sync start')
   syncing.value = true
   try {
     invalidateStatsCache()
     await usageApi.sync()
     await Promise.all([loadAppTypes(), loadFiltered(), loadByDay(), loadByHour()])
+    console.log('[UsagePanel] sync done')
   } catch (e) {
+    console.error('[UsagePanel] sync failed', e)
     ElMessage.error(`刷新失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {
     syncing.value = false
