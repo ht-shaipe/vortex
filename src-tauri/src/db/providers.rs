@@ -180,6 +180,9 @@ pub fn create(conn: &rusqlite::Connection, req: &crate::db::models::CreateProvid
     if let Some(custom_id) = req.custom_provider_id.as_deref() {
         obj.insert("customId".to_string(), serde_json::Value::String(custom_id.to_string()));
     }
+    if let Some(chat_path) = req.chat_path.as_deref() {
+        obj.insert("chatPath".to_string(), serde_json::Value::String(chat_path.to_string()));
+    }
     if let Some(models) = req.models.as_ref() {
         obj.insert(
             "models".to_string(),

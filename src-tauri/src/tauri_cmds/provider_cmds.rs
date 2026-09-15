@@ -106,6 +106,7 @@ pub async fn add_provider(
         models: None,
         display_name: None,
         api_protocol: None,
+        chat_path: None,
         custom_provider_id: None,
         provider_specific_data: None,
     };

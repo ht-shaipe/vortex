@@ -9,7 +9,13 @@
  * 后端补齐后，只需替换本文件里 `throwTodo(...)` 的实现，组件层无需改动。
  */
 import { listKeys } from './keys'
-import { listProviders, createProvider, updateProvider, type ProviderConnection } from './providers'
+import {
+  listProviders,
+  createProvider,
+  updateProvider,
+  getApiKey,
+  type ProviderConnection,
+} from './providers'
 import { getSettings } from './settings'
 
 /* ============ 通用 ============ */
@@ -156,6 +162,63 @@ function downloadJson(filename: string, data: unknown): void {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * 判断字符串是否像脱敏掩码（如 `***xxxx`、`******`）。
+ * 列表接口返回的 apiKey 是掩码，这类值不能写回数据库。
+ */
+function looksMasked(v?: string): boolean {
+  if (!v) return false
+  return v.includes('***') || /^\*+$/.test(v)
+}
+
+/**
+ * 由备份条目构造 provider 创建/更新载荷。
+ *
+ * 导出文件里的连接是列表接口返回的「平铺 + 密钥脱敏」形态。导入时若只还原
+ * name/apiKey/authType/priority/defaultModel，会丢掉自定义提供方赖以工作的
+ * baseUrl / chatPath / apiProtocol / customId / models，导致导入后连接回退到
+ * 默认端点，测试或调用必然报错。这里把可还原字段一并带上。
+ *
+ * 另：chatPath 不在 `CreateProviderRequest` 的顶层字段里，创建路径**只能**靠
+ * `providerSpecificData` 携带（后端 create 会整体合并该 JSON）。因此这里必须
+ * 原样回传 providerSpecificData，否则 chatPath/customId 会在创建时丢失。
+ *
+ * 仅当字段有值时才写入，避免用备份里的缺省值覆盖本机已有配置。
+ */
+function buildEndpointPayload(
+  ep: ProviderConnection,
+  realApiKey: string | undefined,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    provider: ep.provider,
+    name: ep.name,
+  }
+  if (ep.authType) payload.authType = ep.authType
+  if (ep.priority !== undefined) payload.priority = ep.priority
+  if (ep.defaultModel != null) payload.defaultModel = ep.defaultModel
+  if (realApiKey !== undefined) payload.apiKey = realApiKey
+
+  // 自定义提供方关键字段：baseUrl / chatPath / 协议 / 自定义 ID / 模型列表
+  if (ep.baseUrl) payload.baseUrl = ep.baseUrl
+  if (ep.chatPath) payload.chatPath = ep.chatPath
+  if (ep.apiProtocol) payload.apiProtocol = ep.apiProtocol
+  if (ep.customProviderId) payload.customProviderId = ep.customProviderId
+  if (Array.isArray(ep.models) && ep.models.length > 0) payload.models = ep.models
+  if (ep.displayName) payload.displayName = ep.displayName
+
+  // 其余可还原的普通字段
+  if (ep.groupName) payload.groupName = ep.groupName
+  if (ep.email) payload.email = ep.email
+  if (ep.projectId) payload.projectId = ep.projectId
+  if (ep.maxConcurrent != null) payload.maxConcurrent = ep.maxConcurrent
+
+  // 原样回传扩展数据（内含 chatPath / customId / baseUrl / models 等）
+  if (ep.providerSpecificData && Object.keys(ep.providerSpecificData).length > 0) {
+    payload.providerSpecificData = ep.providerSpecificData
+  }
+  return payload
+}
+
 /** backupApi：本地配置导出 / 导入接口 */
 export const backupApi = {
   /** 导出端点（连接）+ 密钥名 + 设置到 JSON，浏览器下载。 */
@@ -163,11 +226,27 @@ export const backupApi = {
     const [providersRes, keysRes] = await Promise.all([listProviders(), listKeys()])
     const settings = await getSettings().catch(() => null)
 
+    // 列表接口返回的 apiKey 已是脱敏掩码，导出前用真实密钥接口逐个还原明文，
+    // 否则导入时会把 `***xxxx` 这类掩码写回数据库导致连接失效。
+    const conns = await Promise.all(
+      (providersRes.connections ?? []).map(async (c: ProviderConnection) => {
+        if (c.hasApiKey && c.id) {
+          try {
+            const { apiKey } = await getApiKey(c.id)
+            if (apiKey) return { ...c, apiKey }
+          } catch {
+            /* 取真实密钥失败则保留原掩码值，不阻断导出 */
+          }
+        }
+        return c
+      }),
+    )
+
     const bundle: VortexBackup = {
       version: 1,
       app: 'vortex',
       exportedAt: new Date().toISOString(),
-      endpoints: providersRes.connections ?? [],
+      endpoints: conns,
       keys: (keysRes.keys ?? []).map((k) => ({ id: k.id, name: k.name, isActive: k.isActive })),
       settings,
     }
@@ -203,30 +282,22 @@ export const backupApi = {
         summary.endpointsSkipped += 1
         continue
       }
+      // 历史备份里 apiKey 可能是脱敏掩码，写回会污染数据库，跳过该字段
+      const realApiKey = looksMasked(ep.apiKey) ? undefined : ep.apiKey
+      // 还原全部配置字段（baseUrl / chatPath / apiProtocol / customId / models 等），
+      // 否则自定义提供方导入后会退化为默认端点，测试/调用报错。
+      const payload = buildEndpointPayload(ep, realApiKey)
       const hit = existing.find((c) => c.provider === ep.provider && c.name === ep.name)
       if (hit) {
         if (strategy === 'overwrite') {
-          await updateProvider(hit.id, {
-            name: ep.name,
-            apiKey: ep.apiKey,
-            authType: ep.authType,
-            priority: ep.priority,
-            defaultModel: ep.defaultModel,
-          })
+          await updateProvider(hit.id, payload)
           summary.endpointsUpdated += 1
         } else {
           summary.endpointsSkipped += 1
         }
         continue
       }
-      await createProvider({
-        provider: ep.provider,
-        name: ep.name,
-        apiKey: ep.apiKey,
-        authType: ep.authType,
-        priority: ep.priority,
-        defaultModel: ep.defaultModel,
-      })
+      await createProvider(payload as Parameters<typeof createProvider>[0])
       summary.endpointsAdded += 1
     }
 

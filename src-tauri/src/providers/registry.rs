@@ -21,7 +21,8 @@ impl ProviderRegistry {
     /// 内置提供商包括：OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、
     /// Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、
     /// Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、
-    /// Qwen、MiniMax、Z.AI 以及自定义 OpenAI 兼容端点。
+    /// Qwen、MiniMax、Z.AI、火山方舟 Code Plan、火山方舟 Agent Plan、商汤日日新
+    /// 以及自定义 OpenAI 兼容端点。
     pub fn new() -> Self {
         let mut providers = HashMap::new();
 
@@ -90,38 +91,38 @@ impl ProviderRegistry {
                 base_url: "https://openrouter.ai/api".into(), chat_path: "/v1/chat/completions".into(),
                 models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
-            ProviderDef {
-                id: "cohere".into(), alias: "ch".into(), name: "Cohere".into(),
-                icon: "cohere".into(), color: "#39594D".into(),
-                service_kinds: vec!["llm".into(), "embedding".into(), "rerank".into()],
-                no_auth: false, has_free: true, free_note: Some("Free trial tier".into()), auth_hint: Some("API key from dashboard.cohere.com".into()),
-                base_url: "https://api.cohere.ai".into(), chat_path: "/v2/chat".into(),
-                models_path: "/v2/models".into(), api_format: "cohere".into(), auth_type: "apikey".into(),
-            },
-            ProviderDef {
-                id: "together".into(), alias: "tg".into(), name: "Together AI".into(),
-                icon: "together".into(), color: "#00D1FF".into(),
-                service_kinds: vec!["llm".into(), "image".into()],
-                no_auth: false, has_free: true, free_note: Some("$5 free credits".into()), auth_hint: Some("API key from api.together.xyz".into()),
-                base_url: "https://api.together.xyz".into(), chat_path: "/v1/chat/completions".into(),
-                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
-            },
-            ProviderDef {
-                id: "fireworks".into(), alias: "fw".into(), name: "Fireworks AI".into(),
-                icon: "fireworks".into(), color: "#FF6B35".into(),
-                service_kinds: vec!["llm".into(), "image".into()],
-                no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from app.fireworks.ai".into()),
-                base_url: "https://api.fireworks.ai/inference".into(), chat_path: "/v1/chat/completions".into(),
-                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
-            },
-            ProviderDef {
-                id: "cerebras".into(), alias: "cb".into(), name: "Cerebras".into(),
-                icon: "cerebras".into(), color: "#7C3AED".into(),
-                service_kinds: vec!["llm".into()],
-                no_auth: false, has_free: true, free_note: Some("1M tokens/day free".into()), auth_hint: Some("API key from cloud.cerebras.ai".into()),
-                base_url: "https://api.cerebras.ai".into(), chat_path: "/v1/chat/completions".into(),
-                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
-            },
+            // ProviderDef {
+            //     id: "cohere".into(), alias: "ch".into(), name: "Cohere".into(),
+            //     icon: "cohere".into(), color: "#39594D".into(),
+            //     service_kinds: vec!["llm".into(), "embedding".into(), "rerank".into()],
+            //     no_auth: false, has_free: true, free_note: Some("Free trial tier".into()), auth_hint: Some("API key from dashboard.cohere.com".into()),
+            //     base_url: "https://api.cohere.ai".into(), chat_path: "/v2/chat".into(),
+            //     models_path: "/v2/models".into(), api_format: "cohere".into(), auth_type: "apikey".into(),
+            // },
+            // ProviderDef {
+            //     id: "together".into(), alias: "tg".into(), name: "Together AI".into(),
+            //     icon: "together".into(), color: "#00D1FF".into(),
+            //     service_kinds: vec!["llm".into(), "image".into()],
+            //     no_auth: false, has_free: true, free_note: Some("$5 free credits".into()), auth_hint: Some("API key from api.together.xyz".into()),
+            //     base_url: "https://api.together.xyz".into(), chat_path: "/v1/chat/completions".into(),
+            //     models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            // },
+            // ProviderDef {
+            //     id: "fireworks".into(), alias: "fw".into(), name: "Fireworks AI".into(),
+            //     icon: "fireworks".into(), color: "#FF6B35".into(),
+            //     service_kinds: vec!["llm".into(), "image".into()],
+            //     no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from app.fireworks.ai".into()),
+            //     base_url: "https://api.fireworks.ai/inference".into(), chat_path: "/v1/chat/completions".into(),
+            //     models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            // },
+            // ProviderDef {
+            //     id: "cerebras".into(), alias: "cb".into(), name: "Cerebras".into(),
+            //     icon: "cerebras".into(), color: "#7C3AED".into(),
+            //     service_kinds: vec!["llm".into()],
+            //     no_auth: false, has_free: true, free_note: Some("1M tokens/day free".into()), auth_hint: Some("API key from cloud.cerebras.ai".into()),
+            //     base_url: "https://api.cerebras.ai".into(), chat_path: "/v1/chat/completions".into(),
+            //     models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            // },
             ProviderDef {
                 id: "nvidia".into(), alias: "nv".into(), name: "NVIDIA NIM".into(),
                 icon: "nvidia".into(), color: "#76B900".into(),
@@ -163,22 +164,22 @@ impl ProviderRegistry {
                 base_url: "https://api-inference.huggingface.co".into(), chat_path: "/v1/chat/completions".into(),
                 models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
-            ProviderDef {
-                id: "pollinations".into(), alias: "pl".into(), name: "Pollinations".into(),
-                icon: "pollinations".into(), color: "#00B894".into(),
-                service_kinds: vec!["llm".into()],
-                no_auth: true, has_free: true, free_note: Some("Free, no key needed".into()), auth_hint: None,
-                base_url: "https://text.pollinations.ai".into(), chat_path: "/openai".into(),
-                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "noauth".into(),
-            },
-            ProviderDef {
-                id: "perplexity".into(), alias: "pp".into(), name: "Perplexity".into(),
-                icon: "perplexity".into(), color: "#20B8CD".into(),
-                service_kinds: vec!["llm".into(), "webSearch".into()],
-                no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from perplexity.ai".into()),
-                base_url: "https://api.perplexity.ai".into(), chat_path: "/chat/completions".into(),
-                models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
-            },
+            // ProviderDef {
+            //     id: "pollinations".into(), alias: "pl".into(), name: "Pollinations".into(),
+            //     icon: "pollinations".into(), color: "#00B894".into(),
+            //     service_kinds: vec!["llm".into()],
+            //     no_auth: true, has_free: true, free_note: Some("Free, no key needed".into()), auth_hint: None,
+            //     base_url: "https://text.pollinations.ai".into(), chat_path: "/openai".into(),
+            //     models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "noauth".into(),
+            // },
+            // ProviderDef {
+            //     id: "perplexity".into(), alias: "pp".into(), name: "Perplexity".into(),
+            //     icon: "perplexity".into(), color: "#20B8CD".into(),
+            //     service_kinds: vec!["llm".into(), "webSearch".into()],
+            //     no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from perplexity.ai".into()),
+            //     base_url: "https://api.perplexity.ai".into(), chat_path: "/chat/completions".into(),
+            //     models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            // },
             ProviderDef {
                 id: "qwen".into(), alias: "qw".into(), name: "Qwen (通义千问)".into(),
                 icon: "qwen".into(), color: "#6157FF".into(),
@@ -204,6 +205,32 @@ impl ProviderRegistry {
                 base_url: "https://api.z.ai/api/coding/paas/v4".into(),
                 chat_path: "/chat/completions".into(),
                 models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            },
+            ProviderDef {
+                id: "volcengine-code".into(), alias: "vc".into(), name: "火山方舟 Code Plan".into(),
+                icon: "doubao".into(), color: "#1664FF".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from console.volcengine.com/ark".into()),
+                base_url: "https://ark.cn-beijing.volces.com/api/coding/paas/v4".into(),
+                chat_path: "/chat/completions".into(),
+                models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            },
+            ProviderDef {
+                id: "volcengine-agent".into(), alias: "va".into(), name: "火山方舟 Agent Plan".into(),
+                icon: "doubao".into(), color: "#1664FF".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from console.volcengine.com/ark".into()),
+                base_url: "https://ark.cn-beijing.volces.com/api/plan/paas/v4".into(),
+                chat_path: "/chat/completions".into(),
+                models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
+            },
+            ProviderDef {
+                id: "sensenova".into(), alias: "sn".into(), name: "商汤日日新 (SenseNova)".into(),
+                icon: "sensenova".into(), color: "#4E6EF2".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from token.sensenova.cn".into()),
+                base_url: "https://token.sensenova.cn".into(), chat_path: "/v1/chat/completions".into(),
+                models_path: "/v1/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
             ProviderDef {
                 id: "custom-openai".into(), alias: "cx".into(), name: "Custom OpenAI-Compatible".into(),

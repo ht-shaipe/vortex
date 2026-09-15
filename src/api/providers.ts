@@ -108,6 +108,11 @@ export async function createProvider(params: {
   /** 接口路径后缀覆盖（自定义提供方），如 /chat/completions */
   chatPath?: string
   customProviderId?: string
+  /**
+   * 提供方专属扩展数据（JSON）。配置导入时原样回传，确保 baseUrl / chatPath /
+   * apiProtocol / customId / models 等自定义提供方赖以工作的字段不丢失。
+   */
+  providerSpecificData?: Record<string, unknown>
 }) {
   const { data } = await api.post('/providers', params)
   return data as ProviderConnection

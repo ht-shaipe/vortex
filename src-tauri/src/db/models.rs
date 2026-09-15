@@ -138,6 +138,9 @@ pub struct CreateProviderRequest {
     pub display_name: Option<String>,
     /// API 协议（openai / anthropic / gemini / cloudflare / cohere）。仅自定义提供方使用。
     pub api_protocol: Option<String>,
+    /// 接口路径后缀覆盖（自定义提供方）。写入 `provider_specific_data.chatPath`，
+    /// 用于覆盖默认的 `/v1/chat/completions`（如 z.ai Coding Plan 实际为 `/chat/completions`）。
+    pub chat_path: Option<String>,
     /// 用户填的 Provider ID（如 `acme-gateway`）。仅自定义提供方使用，写入 `provider_specific_data.customId`。
     pub custom_provider_id: Option<String>,
     /// 提供方特定数据（JSON）

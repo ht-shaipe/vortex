@@ -15,19 +15,19 @@
     <p v-if="loading && !overview" class="hint m-0 text-body text-ink-4">加载中…</p>
 
     <template v-else>
-      <div class="kpi-row grid grid-cols-4 gap-[var(--gap-md)] [@media(max-width:900px)]:!grid-cols-2">
+      <div class="kpi-row grid grid-cols-2 gap-[var(--gap-md)]">
         <StatCard label="请求" :value="stats?.requests ?? 0">
           <template v-if="showTrend" #hint>
             <TrendBadge :pct="overview!.trend.requestsPct" />
           </template>
         </StatCard>
         <StatCard label="错误" :value="stats?.errors ?? 0" />
-        <StatCard label="输入 Token" :value="stats?.inputTokens ?? 0">
+        <StatCard label="输入 Token" :value="formatTokenCompact(stats?.inputTokens ?? 0)">
           <template v-if="showTrend" #hint>
             <TrendBadge :pct="overview!.trend.inputTokensPct" />
           </template>
         </StatCard>
-        <StatCard label="输出 Token" :value="stats?.outputTokens ?? 0">
+        <StatCard label="输出 Token" :value="formatTokenCompact(stats?.outputTokens ?? 0)">
           <template v-if="showTrend" #hint>
             <TrendBadge :pct="overview!.trend.outputTokensPct" />
           </template>
@@ -78,6 +78,7 @@ import {
   type RangeValue,
 } from '@/lib/range'
 import { mergeByDate, sliceHourlyTrend, sliceTrend, type DayTotals } from '@/lib/usageChart'
+import { formatTokenCompact } from '@/lib/format'
 import {
   invalidateStatsCache,
   statsApi,

@@ -415,14 +415,13 @@ async fn test_connection(
 
     // 火山方舟 Plan 端点（/api/plan、/api/coding）不提供 /models 路由（固定 404），
     // 改用一次最小的对话请求（max_tokens=1）做连通性与鉴权测试
-    let is_volces_plan = def.id == "custom-openai"
-        && reqwest::Url::parse(&url)
-            .ok()
-            .map(|u| {
-                u.host_str().unwrap_or("").ends_with("volces.com")
-                    && (u.path().contains("/api/plan/") || u.path().contains("/api/coding/"))
-            })
-            .unwrap_or(false);
+    let is_volces_plan = reqwest::Url::parse(&url)
+        .ok()
+        .map(|u| {
+            u.host_str().unwrap_or("").ends_with("volces.com")
+                && (u.path().contains("/api/plan/") || u.path().contains("/api/coding/"))
+        })
+        .unwrap_or(false);
     if is_volces_plan {
         let base_trimmed = base_url.trim_end_matches('/');
         let chat_url = format!("{}/chat/completions", base_trimmed);

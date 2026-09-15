@@ -23,6 +23,7 @@ for (const [path, url] of Object.entries(files)) {
 
 /**
  * provider id 精确匹配表（内置注册表的 id → 厂商图标名）。
+ * 图标名对应 src/images/llm/ 下的 SVG 文件名（不含扩展名）。
  * 注意 custom-openai 等自定义类型刻意不在表内，避免误挂 OpenAI 图标。
  */
 const EXACT_ID: Record<string, string> = {
@@ -30,10 +31,21 @@ const EXACT_ID: Record<string, string> = {
   anthropic: 'claude',
   gemini: 'gemini',
   deepseek: 'deepseek',
+  groq: 'groq',
+  xai: 'grok',
+  mistral: 'mistral',
+  openrouter: 'openrouter',
+  nvidia: 'nvidia',
+  cloudflare: 'cloudflare',
+  ollama: 'ollama',
+  siliconflow: 'siliconflow',
+  huggingface: 'huggingface',
   qwen: 'qwen',
   minimax: 'minimax',
-  nvidia: 'nvidia',
-  zai: 'zp',
+  zai: 'zai',
+  'volcengine-code': 'doubao',
+  'volcengine-agent': 'doubao',
+  sensenova: 'sensenova',
 }
 
 /**
@@ -47,14 +59,23 @@ const KEYWORDS: { logo: string; keys: string[] }[] = [
   { logo: 'kimi', keys: ['kimi', 'moonshot', '月之暗面'] },
   { logo: 'gpt', keys: ['chatgpt', 'gpt'] },
   { logo: 'gemini', keys: ['gemini'] },
-  { logo: 'zp', keys: ['zhipu', '智谱', 'chatglm', 'glm', 'bigmodel'] },
+  { logo: 'bigmodel', keys: ['zhipu', '智谱', 'chatglm', 'glm', 'bigmodel'] },
+  { logo: 'zai', keys: ['z.ai', 'zai'] },
   { logo: 'minimax', keys: ['minimax', 'abab', '海螺'] },
-  { logo: 'doubao', keys: ['doubao', '豆包'] },
+  { logo: 'doubao', keys: ['doubao', '豆包', 'volcengine', '火山'] },
   { logo: 'hunyuan', keys: ['hunyuan', '混元'] },
   { logo: 'wxyy', keys: ['文心', 'wenxin', 'ernie', '百度', 'baidu'] },
   { logo: 'xinhuo', keys: ['星火', 'xinghuo', 'xfyun', '讯飞', 'spark'] },
   { logo: 'nvidia', keys: ['nvidia', '英伟达'] },
   { logo: 'amd', keys: ['amd', '超威'] },
+  { logo: 'groq', keys: ['groq'] },
+  { logo: 'grok', keys: ['grok', 'xai'] },
+  { logo: 'mistral', keys: ['mistral'] },
+  { logo: 'openrouter', keys: ['openrouter'] },
+  { logo: 'cloudflare', keys: ['cloudflare'] },
+  { logo: 'ollama', keys: ['ollama'] },
+  { logo: 'siliconflow', keys: ['siliconflow', '硅基'] },
+  { logo: 'huggingface', keys: ['huggingface', 'hf'] },
 ]
 
 /** 泛化名称（如默认连接名 "Custom OpenAI-Compatible"）不参与关键词匹配，防止误识别 */

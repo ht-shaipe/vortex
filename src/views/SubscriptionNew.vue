@@ -24,7 +24,6 @@
             >
               <span style="float: left">{{ p.name }}</span>
               <span class="opt-id text-11px text-ink-4 ml-8px font-mono">{{ p.id }}</span>
-              <span v-if="p.hasFree" class="provider-free float-right text-10px text-ok bg-ok-bg py-1px px-5px rounded-3px">免费</span>
             </el-option>
           </el-select>
           <div v-if="selectedDef" class="field-hint text-11.5px text-ink-4">{{ providerHint }}</div>

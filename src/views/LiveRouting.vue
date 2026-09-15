@@ -6,32 +6,75 @@
       <div class="page-col live-col p-24px">
         <!-- 拓扑简图：对外协议 → Vortex → 上游提供商 -->
         <div class="card p-[var(--pad-card)] mb-[var(--gap-lg)]">
-          <div class="flex items-start justify-center gap-44px pt-18px pb-14px">
+          <div ref="topoEl" class="topology relative flex items-center justify-center gap-44px py-14px">
+            <!-- 连接线 SVG 覆盖层（曲线） -->
+            <svg
+              v-show="links.length > 0"
+              class="topo-links absolute inset-0 pointer-events-none"
+              :width="topoSize.w"
+              :height="topoSize.h"
+              :viewBox="`0 0 ${topoSize.w} ${topoSize.h}`"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path
+                v-for="l in links"
+                :key="l.key"
+                :d="l.d"
+                fill="none"
+                stroke="var(--line-2)"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+
             <!-- 左列：对外协议 -->
-            <div class="flex flex-col gap-8px min-w-190px w-190px pt-4px">
-              <div class="text-xs text-ink-4 uppercase tracking-[0.04em] pl-2px leading-none">对外协议</div>
-              <div class="flex items-center gap-10px py-9px px-12px rounded-md border border-solid border-line bg-surface-2 text-body transition-[background-color,border-color,transform] duration-150 hover:bg-surface-3 hover:border-line-2 hover:-translate-y-1px" v-for="p in protocols" :key="p.name">
-                <span class="grid place-items-center w-32px h-22px rounded-5px text-10.5px font-extrabold shrink-0 tracking-[0.02em]" :class="[p.cls, p.cls === 'oai' ? 'bg-[oklch(0.90_0.05_150)] text-[oklch(0.36_0.12_150)]' : 'bg-[oklch(0.88_0.08_280)] text-[oklch(0.38_0.15_280)]']">{{ p.tag }}</span>
-                <span class="text-ink-2 font-medium">{{ p.name }}</span>
+            <div class="flex flex-col gap-8px min-w-190px w-190px pt-4px items-center">
+              <div class="text-xs text-ink-4 uppercase tracking-[0.04em] leading-none">对外协议</div>
+              <div class="relative flex flex-col gap-8px w-full">
+                <div
+                  ref="protocolEls"
+                  class="relative z-1 flex items-center gap-10px py-9px px-12px rounded-md border border-solid border-line bg-surface-2 text-body transition-[background-color,border-color,transform] duration-150 hover:bg-surface-3 hover:border-line-2 hover:-translate-y-1px"
+                  v-for="p in protocols"
+                  :key="p.name"
+                >
+                  <span class="grid place-items-center w-32px h-22px rounded-5px text-10.5px font-extrabold shrink-0 tracking-[0.02em]" :class="[p.cls, p.cls === 'oai' ? 'bg-[oklch(0.90_0.05_150)] text-[oklch(0.36_0.12_150)]' : 'bg-[oklch(0.88_0.08_280)] text-[oklch(0.38_0.15_280)]']">{{ p.tag }}</span>
+                  <span class="text-ink-2 font-medium">{{ p.name }}</span>
+                </div>
               </div>
             </div>
+
             <!-- 中列：Vortex 网关中心节点 -->
-            <div class="flex flex-col items-center gap-8px">
+            <div ref="vortexEl" class="relative z-1 flex flex-col items-center gap-8px">
               <div class="w-2px h-42px bg-gradient-to-b from-line-2 to-line rounded-1px relative after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:w-5px after:h-5px after:rounded-full after:bg-line-2" />
               <div class="w-84px h-84px rounded-22px grid place-items-center text-15px font-bold bg-accent-bg text-accent-ink border border-solid border-accent-line shadow-sm tracking-[0.01em]">Vortex</div>
               <div class="w-2px h-42px bg-gradient-to-b from-line-2 to-line rounded-1px relative after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:-translate-x-1/2 after:-translate-y-1/2 after:w-5px after:h-5px after:rounded-full after:bg-line-2" />
             </div>
+
             <!-- 右列：上游提供商列表 -->
-            <div class="flex flex-col gap-8px min-w-190px w-190px pt-4px">
-              <div class="text-xs text-ink-4 uppercase tracking-[0.04em] pl-2px leading-none">上游提供商</div>
-              <template v-if="upstreams.length > 0">
-                <div class="flex items-center gap-9px py-8px px-11px rounded-md bg-surface-2 border border-solid border-line transition-[background-color,border-color,transform] duration-150 hover:bg-surface-3 hover:border-line-2 hover:-translate-y-1px" v-for="p in upstreams" :key="p.id">
-                  <ProviderLogo :name="p.provider" :hint="`${p.name} ${p.baseUrl || ''}`" :size="18" />
-                  <span class="text-body text-ink-2 font-medium flex-1 min-w-0 max-w-100px whitespace-nowrap overflow-hidden text-ellipsis" :title="p.name">{{ p.name }}</span>
-                  <span class="ml-auto text-10px font-mono text-ink-4 bg-surface-3 py-2px px-6px rounded-4px shrink-0 min-w-34px max-w-72px text-center whitespace-nowrap overflow-hidden text-ellipsis" :title="p.model || '默认模型'">{{ p.model || '默认' }}</span>
-                </div>
-              </template>
-              <div v-else class="text-sm text-ink-4 p-10px text-center border border-dashed border-line rounded-md">暂无活跃连接，请先在订阅页添加</div>
+            <div class="flex flex-col gap-8px min-w-200px w-210px pt-4px items-center">
+              <div class="text-xs text-ink-4 uppercase tracking-[0.04em] leading-none">上游提供商</div>
+              <div class="relative flex flex-col gap-8px w-full">
+                <template v-if="upstreams.length > 0">
+                  <div
+                    ref="upstreamEls"
+                    class="relative z-1 flex items-center gap-10px py-9px px-12px rounded-md bg-surface-2 border border-solid border-line transition-[background-color,border-color,transform] duration-150 hover:bg-surface-3 hover:border-line-2 hover:-translate-y-1px"
+                    v-for="p in upstreams"
+                    :key="p.id"
+                  >
+                    <ProviderLogo :name="p.provider" :hint="`${p.name} ${p.baseUrl || ''}`" :size="18" class="shrink-0" />
+                    <span
+                      class="text-body text-ink-2 font-medium flex-1 min-w-0 truncate"
+                      :title="p.name"
+                    >{{ p.name }}</span>
+                    <span
+                      class="shrink-0 ml-2px max-w-96px text-right text-10.5px font-mono leading-tight text-ink-3 bg-surface-3 border border-solid border-line rounded-4px py-2px px-6px whitespace-nowrap overflow-hidden text-ellipsis"
+                      :title="p.model || '默认模型'"
+                    >{{ p.model || '默认' }}</span>
+                  </div>
+                </template>
+                <div v-else class="relative z-1 text-sm text-ink-4 p-10px text-center border border-dashed border-line rounded-md">暂无活跃连接，请先在订阅页添加</div>
+              </div>
             </div>
           </div>
         </div>
@@ -79,7 +122,7 @@
  * 职责：展示网关当前的运行状态、对外协议与上游提供商的拓扑简图、
  * 客户端接入地址以及网关对外暴露的 API 端点清单。
  */
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, nextTick, ref, watch } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
@@ -122,25 +165,82 @@ const apis = [
   { method: 'GET', path: '/api/health', desc: '健康检查', group: 'mgmt' },
 ]
 
-/**
- * 组件挂载时加载上游提供商连接并探测网关健康状态。
- */
-onMounted(async () => {
-  // 拉取活跃的上游连接
-  try {
-    const data = await listProviders()
-    upstreams.value = (data.connections ?? [])
-      .filter((c) => c.isActive)
-      .map((c) => ({
-        id: c.id,
-        provider: c.provider,
-        name: c.name,
-        model: c.defaultModel,
-        baseUrl: c.baseUrl,
-      }))
-  } catch {
-    /* ignore */
+// ===== 拓扑连接线（SVG 贝塞尔曲线）=====
+const topoEl = ref<HTMLElement | null>(null)
+const vortexEl = ref<HTMLElement | null>(null)
+const protocolEls = ref<HTMLElement[]>([])
+const upstreamEls = ref<HTMLElement[]>([])
+const links = ref<{ key: string; d: string }[]>([])
+const topoSize = ref({ w: 0, h: 0 })
+
+/** 计算元素边缘中心相对容器的坐标。 */
+function edgeCenter(el: HTMLElement, container: DOMRect, side: 'left' | 'right') {
+  const r = el.getBoundingClientRect()
+  return {
+    x: side === 'right' ? r.right - container.left : r.left - container.left,
+    y: r.top - container.top + r.height / 2,
   }
+}
+
+/** 重算所有连接曲线的 path。 */
+function drawLinks(): void {
+  const container = topoEl.value
+  const vortex = vortexEl.value
+  if (!container || !vortex) return
+  const cr = container.getBoundingClientRect()
+  if (cr.width === 0 || cr.height === 0) return
+  topoSize.value = { w: Math.round(cr.width), h: Math.round(cr.height) }
+
+  const vLeft = edgeCenter(vortex, cr, 'left')
+  const vRight = edgeCenter(vortex, cr, 'right')
+
+  const out: { key: string; d: string }[] = []
+  const push = (el: HTMLElement, target: { x: number; y: number }, side: 'left' | 'right', key: string) => {
+    const s = edgeCenter(el, cr, side)
+    const dx = (target.x - s.x) * 0.5
+    // 三次贝塞尔：水平进出、中间平滑过渡的 S 形曲线
+    out.push({ key, d: `M ${s.x} ${s.y} C ${s.x + dx} ${s.y}, ${target.x - dx} ${target.y}, ${target.x} ${target.y}` })
+  }
+  protocolEls.value.forEach((el, i) => push(el, vLeft, 'right', `p${i}`))
+  upstreamEls.value.forEach((el, i) => push(el, vRight, 'left', `u${i}`))
+  links.value = out
+}
+
+function scheduleDraw(): void {
+  // 等布局稳定后再测量
+  nextTick(() => requestAnimationFrame(drawLinks))
+}
+
+// 窗口尺寸变化时重算
+function onResize(): void {
+  drawLinks()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  scheduleDraw()
+  // upstreams 异步加载完成后重绘
+  listProviders()
+    .then((data) => {
+      upstreams.value = (data.connections ?? [])
+        .filter((c) => c.isActive)
+        .map((c) => ({
+          id: c.id,
+          provider: c.provider,
+          name: c.name,
+          model: c.defaultModel,
+          baseUrl: c.baseUrl,
+        }))
+      scheduleDraw()
+    })
+    .catch(() => {
+      /* ignore */
+    })
+})
+
+watch(upstreams, () => scheduleDraw())
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
 })
 </script>
-
