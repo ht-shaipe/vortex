@@ -406,6 +406,9 @@ pub struct ModelAlias {
     /// 是否启用
     #[serde(default)]
     pub is_active: bool,
+    /// 来源：`auto`（自动归纳）或 `manual`（手动创建）
+    #[serde(default)]
+    pub source: String,
     /// 创建时间（RFC3339）
     pub created_at: String,
     /// 更新时间（RFC3339）

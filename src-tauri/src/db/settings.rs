@@ -120,13 +120,54 @@ fn merge_objects(a: &serde_json::Value, b: &serde_json::Value) -> serde_json::Va
     out
 }
 
+/// 确保安全设置存在合理默认值：首次启动时默认开启 Token 鉴权并自动生成访问令牌。
+///
+/// 规则：
+/// - `settings/security` 不存在（首次启动）：写入 `tokenAuth=true`、自动生成的
+///   `token`、`cors=false`、`corsOrigins="*"`。多数 Agent 客户端要求 API Key
+///   字段非空才会发起请求，因此默认开启鉴权并提供令牌，便于直接接入。
+/// - 已存在且 `tokenAuth=true` 但 `token` 为空：补生成一个令牌。
+/// - 已存在且用户已显式关闭鉴权：不覆盖用户选择。
+///
+/// # 参数
+/// - `conn`：数据库连接
+///
+/// # 返回
+/// 成功返回 `Ok(())`
+pub fn ensure_security_defaults(conn: &rusqlite::Connection) -> Result<()> {
+    match get(conn, "settings", "security")? {
+        None => {
+            let seeded = serde_json::json!({
+                "tokenAuth": true,
+                "token": generate_token(),
+                "cors": false,
+                "corsOrigins": "*",
+            });
+            set(conn, "settings", "security", &seeded)
+        }
+        Some(v) => {
+            let auth_on = v.get("tokenAuth").and_then(|t| t.as_bool()).unwrap_or(false);
+            let token_empty = v
+                .get("token")
+                .and_then(|t| t.as_str())
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true);
+            if auth_on && token_empty {
+                let merged = merge_objects(&v, &serde_json::json!({ "token": generate_token() }));
+                set(conn, "settings", "security", &merged)
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
 /// 生成 32 字符（16 字节）十六进制 token，格式与 `d5b6663a339244e4be08a7d28e766e05` 一致。
 /// 不引入额外依赖：混合时间戳纳秒 / 进程 ID / DefaultHasher 输出作为熵源。
 /// 用于管理 API 的鉴权口令，强度足够非公开网络环境的局域网代理场景。
 ///
 /// # 返回
 /// 32 字符小写十六进制字符串
-#[allow(dead_code)]
 pub fn generate_token() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     use std::collections::hash_map::DefaultHasher;

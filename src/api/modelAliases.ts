@@ -14,6 +14,7 @@ export interface ModelAlias {
   alias: string
   targets: ModelAliasTarget[]
   is_active: boolean
+  source: string
   created_at: string
   updated_at: string
 }
@@ -51,4 +52,10 @@ export async function updateAlias(id: string, req: UpdateModelAlias): Promise<Mo
 /** 删除模型别名。 */
 export async function deleteAlias(id: string): Promise<void> {
   await api.delete(`/model-aliases/${id}`)
+}
+
+/** 自动归纳：按模型家族分组生成虚拟别名。 */
+export async function autoGenerate(): Promise<{ total: number }> {
+  const { data } = await api.post('/model-aliases/auto-generate')
+  return data
 }

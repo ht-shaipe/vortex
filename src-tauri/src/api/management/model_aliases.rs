@@ -77,3 +77,24 @@ pub async fn delete_alias(
         Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
+
+/// 自动归纳：读取所有活跃连接的模型，按家族分组生成虚拟别名。
+///
+/// 流程：删除所有 source='auto' 的旧别名 → 遍历活跃连接收集模型 →
+/// 按家族分组 → 批量创建新别名（跳过与 manual 同名的）。
+pub async fn auto_generate(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
+    let pool = state.db_pool.clone();
+    let enc_key = state.encryption_key.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let conn = crate::db::core::get_conn(&pool).map_err(|e| e.to_string())?;
+        let groups = crate::providers::auto_grouping::run_auto_grouping(&conn, &enc_key)
+            .map_err(|e| e.to_string())?;
+        Ok(json!({ "total": groups.len() }))
+    })
+    .await;
+    match result {
+        Ok(Ok(v)) => HttpResponse::Ok().json(v),
+        Ok(Err(e)) => HttpResponse::InternalServerError().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
+    }
+}

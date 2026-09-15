@@ -28,6 +28,15 @@
           <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">Anthropic</span>
           <CopyableBlock :text="anthropicBaseUrl" variant="inline">{{ anthropicBaseUrl }}</CopyableBlock>
         </div>
+        <!-- 访问令牌：客户端接入时填入 API Key 字段 -->
+        <div class="url-row flex items-center gap-12px mb-8px">
+          <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">访问令牌</span>
+          <CopyableBlock :text="token" variant="inline">
+            <span v-if="token" class="font-mono">{{ token }}</span>
+            <span v-else class="text-ink-4">未生成，可在「设置 · 安全与访问」中开启并生成</span>
+          </CopyableBlock>
+        </div>
+        <p class="para text-13px text-ink-2 leading-[1.7] m-0 mb-12px">多数客户端（Claude Code、Cursor 等）要求 API Key 字段非空才会发起请求，接入时将上方访问令牌填入客户端的 API Key 字段即可；令牌可在「设置 · 安全与访问」中重新生成。</p>
         <p class="para text-13px text-ink-2 leading-[1.7] m-0 mb-12px">在管理界面「订阅」页添加提供商连接与 API 密钥后即可使用。</p>
       </div>
     </div>
@@ -86,17 +95,24 @@
 <script setup lang="ts">
 /**
  * 使用指南页面。
- * 职责：向用户展示如何将客户端接入 Vortex 网关，包括启动网关、配置客户端
- * base_url、指定模型格式三个步骤，并按 OpenAI / Anthropic 协议切换示例代码。
+ * 职责：向用户展示如何将客户端接入 Vortex 网关，包括启动网关（base_url 与访问令牌）、
+ * 配置客户端、指定模型格式三个步骤，并按 OpenAI / Anthropic 协议切换示例代码。
  */
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
+import { getSettings } from '@/api/settings'
 
 // OpenAI 兼容协议的本地接入地址
 const openaiBaseUrl = 'http://localhost:10168/v1'
 // Anthropic 兼容协议的本地接入地址
 const anthropicBaseUrl = 'http://localhost:10168/anthropic/v1'
+
+// 访问令牌（从安全设置读取，客户端接入时填入 API Key 字段）
+const token = ref('')
+
+// 代码示例中使用的 API Key：优先真实令牌，未读取到前用占位符
+const apiKey = computed(() => token.value || 'your-vortex-api-key')
 
 // 协议切换标签定义
 const tabs = [
@@ -106,48 +122,59 @@ const tabs = [
 // 当前选中的协议标签
 const active = ref('openai')
 
+// 加载安全设置中的访问令牌
+onMounted(async () => {
+  try {
+    const data = await getSettings()
+    const s = (data.security ?? {}) as Record<string, unknown>
+    if (s.token != null) token.value = String(s.token)
+  } catch {
+    /* 后端未就绪时保持占位符 */
+  }
+})
+
 // OpenAI Python SDK 用法示例
-const openaiSdkSnippet = `from openai import OpenAI
+const openaiSdkSnippet = computed(() => `from openai import OpenAI
 
 client = OpenAI(
     base_url="${openaiBaseUrl}",
-    api_key="your-vortex-api-key",
+    api_key="${apiKey.value}",
 )
 
 resp = client.chat.completions.create(
     model="openai/gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}],
-)`
+)`)
 
 // OpenAI cURL 用法示例
-const openaiCurlSnippet = `curl ${openaiBaseUrl}/chat/completions \\
+const openaiCurlSnippet = computed(() => `curl ${openaiBaseUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer your-vortex-api-key" \\
-  -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`
+  -H "Authorization: Bearer ${apiKey.value}" \\
+  -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`)
 
 // Anthropic Python SDK 用法示例
-const anthropicSdkSnippet = `from anthropic import Anthropic
+const anthropicSdkSnippet = computed(() => `from anthropic import Anthropic
 
 client = Anthropic(
     base_url="${anthropicBaseUrl}",
-    api_key="your-vortex-api-key",
+    api_key="${apiKey.value}",
 )
 
 resp = client.messages.create(
     model="anthropic/claude-sonnet-4-20250514",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Hello!"}],
-)`
+)`)
 
 // Anthropic cURL 用法示例
-const anthropicCurlSnippet = `curl ${anthropicBaseUrl}/messages \\
+const anthropicCurlSnippet = computed(() => `curl ${anthropicBaseUrl}/messages \\
   -H "Content-Type: application/json" \\
-  -H "x-api-key: your-vortex-api-key" \\
+  -H "x-api-key: ${apiKey.value}" \\
   -H "anthropic-version: 2023-06-01" \\
-  -d '{"model":"anthropic/claude-sonnet-4-20250514","max_tokens":1024,"messages":[{"role":"user","content":"Hi"}]}'`
+  -d '{"model":"anthropic/claude-sonnet-4-20250514","max_tokens":1024,"messages":[{"role":"user","content":"Hi"}]}'`)
 
 // Claude Code 环境变量配置示例
-const claudeSnippet = `# 设置环境变量
+const claudeSnippet = computed(() => `# 设置环境变量
 export ANTHROPIC_BASE_URL=${anthropicBaseUrl}
-export ANTHROPIC_API_KEY=your-vortex-api-key`
+export ANTHROPIC_API_KEY=${apiKey.value}`)
 </script>

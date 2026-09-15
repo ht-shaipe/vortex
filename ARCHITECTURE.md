@@ -44,7 +44,7 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │  └───────────────────────────────────────────┘  │
                           │                                                 │
                           │  ┌───────────────────────────────────────────┐  │
-                           │  │        Vue 3 管理界面 (11 个页面)         │  │
+                           │  │        Vue 3 管理界面 (14 个页面)         │  │
                            │  │接入指南 | 实时路由 | 订阅 | 模型映射       │  │
                            │  │免费 Token | 请求日志 | 统计 | 同步        │  │
                            │  │对话 | 设置 | 关于                        │  │
@@ -70,7 +70,8 @@ pub struct AppState {
     pub provider_registry: ProviderRegistry,     // 多家内置提供商定义
     pub proxy_engine: RwLock<ProxyEngine>,       // 代理引擎
     pub resilience_manager: ResilienceManager,   // 熔断器管理
-    pub http_client: reqwest::Client,            // HTTP 客户端 (native-tls + HTTP/2, 连接超时10s)
+    pub http_client: reqwest::Client,            // 管理链路 HTTP 客户端 (native-tls + HTTP/2, 连接超时10s)
+    pub upstream_ssl: openssl::ssl::SslConnector, // 上游链路 TLS 连接器 (openssl)，按线程创建 awc::Client
     pub encryption_key: Vec<u8>,                 // AES-256-GCM 密钥
     pub proxy_handle: Mutex<Option<ServerHandle>>, // 网关服务器句柄，支持运行时启停
     pub proxy_port: u16,                         // 网关监听端口
@@ -108,7 +109,7 @@ pub struct AppState {
 | `AnthropicExecutor` | `x-api-key: {key}` + `anthropic-version` | Anthropic Messages 格式 | 转换为 OpenAI 格式 |
 | `GeminiExecutor` | `?key={key}` query 参数 | Gemini generateContent 格式 | 转换为 OpenAI 格式 |
 
-`ExecutorFactory` 根据 `ProviderDef.api_format` 字段选择对应的执行器。Cohere（`cohere`）和 Cloudflare（`cloudflare`）格式当前回退到 `OpenAIExecutor`。
+`ExecutorFactory` 根据 `ProviderDef.api_format` 字段选择对应的执行器。Cloudflare（`cloudflare`）格式当前回退到 `OpenAIExecutor`。
 
 ### 4. SSE 流式处理 (`proxy/sse.rs`)
 
@@ -160,7 +161,7 @@ pub struct ProviderDef {
     pub base_url: String,     // API 基础 URL
     pub chat_path: String,    // 聊天端点路径
     pub models_path: String,  // 模型列表端点
-    pub api_format: String,   // "openai" | "anthropic" | "gemini" | "cohere" | "cloudflare"
+    pub api_format: String,   // "openai" | "anthropic" | "gemini" | "cloudflare"
     pub auth_type: String,    // "apikey" | "noauth"
 }
 ```
@@ -291,7 +292,7 @@ AppLayout
 ├── WindowChrome (32px, data-tauri-drag-region 拖拽条)
 ├── Sidebar (204px, 可折叠)
 │   ├── 品牌标识
-│   ├── 导航菜单 (主区 8 项 + 底部 2 项 + 折叠按钮)
+│   ├── 导航菜单 (主区 9 项 + 底部 2 项 + 折叠按钮)
 │   └── 订阅项带连接数徽章
 └── <main class="main"> (部分路由 flush 满高布局)
     ├── Header (56px)

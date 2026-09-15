@@ -607,9 +607,19 @@ async function fetchModels() {
   }
   fetchingModels.value = true
   try {
+    // 未重新输入密钥时，回源获取已保存的解密密钥，避免不带鉴权请求上游导致 401
+    let apiKey = form.apiKey || undefined
+    if (!apiKey && conn.value.hasApiKey) {
+      try {
+        const { apiKey: savedKey } = await getApiKey(conn.value.id)
+        apiKey = savedKey || undefined
+      } catch {
+        // 获取已存密钥失败时按无密钥继续，由上游返回具体错误
+      }
+    }
     const res = await previewModels({
       provider: conn.value.provider,
-      apiKey: form.apiKey || undefined,
+      apiKey,
       baseUrl: raw || undefined,
       apiProtocol: form.apiProtocol || undefined,
     })

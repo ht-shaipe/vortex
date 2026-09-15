@@ -2,6 +2,10 @@
   <div>
     <PageHeader title="模型映射" sub="配置虚拟模型名，按优先级故障转移到已接入的真实模型">
       <template #actions>
+        <button type="button" class="btn" :disabled="autoGenerating" @click="autoGroup">
+          <el-icon :size="14" class="spin" v-if="autoGenerating"><Loading /></el-icon>
+          <el-icon :size="14" v-else><MagicStick /></el-icon> 自动归纳
+        </button>
         <button type="button" class="btn accent" @click="openCreate">
           <el-icon :size="14"><Plus /></el-icon> 新建映射
         </button>
@@ -24,6 +28,7 @@
           <div class="flex items-center gap-10px">
             <span class="alias-name font-mono text-15px font-semibold">{{ a.alias }}</span>
             <span class="pill" :class="a.is_active ? 'pill--ok' : ''">{{ a.is_active ? '启用' : '停用' }}</span>
+            <span class="pill" :class="a.source === 'auto' ? 'pill--accent' : ''">{{ a.source === 'auto' ? '自动' : '手动' }}</span>
             <span class="text-12px text-ink-4">{{ a.targets.length }} 个目标</span>
           </div>
           <div class="flex items-center gap-8px">
@@ -109,9 +114,9 @@
  */
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown, MagicStick } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
-import { listAliases, createAlias, updateAlias, deleteAlias, type ModelAlias, type ModelAliasTarget } from '@/api/modelAliases'
+import { listAliases, createAlias, updateAlias, deleteAlias, autoGenerate, type ModelAlias, type ModelAliasTarget } from '@/api/modelAliases'
 import { listProviders } from '@/api/providers'
 
 /** 可选模型项：一个连接下的一个具体模型。 */
@@ -134,6 +139,7 @@ const dialogOpen = ref(false)
 const editing = ref<string | null>(null)
 const modelOptions = ref<ModelOption[]>([])
 const connNameMap = ref<Record<string, string>>({})
+const autoGenerating = ref(false)
 
 const form = reactive({
   alias: '',
@@ -282,6 +288,20 @@ async function remove(a: ModelAlias) {
     await load()
   } catch {
     /* cancelled */
+  }
+}
+
+/** 自动归纳：按模型家族分组生成虚拟别名。 */
+async function autoGroup() {
+  autoGenerating.value = true
+  try {
+    const res = await autoGenerate()
+    ElMessage.success(`已归纳 ${res.total} 个虚拟模型名`)
+    await load()
+  } catch {
+    ElMessage.error('自动归纳失败')
+  } finally {
+    autoGenerating.value = false
   }
 }
 

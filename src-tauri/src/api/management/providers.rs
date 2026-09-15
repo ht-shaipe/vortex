@@ -147,9 +147,10 @@ pub async fn create_provider(
 
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
         let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
-        db_providers::create(&conn, &req, &encryption_key)
-            .map(|p| mask_connection(&p))
-            .map_err(|e| e.to_string())
+        let p = db_providers::create(&conn, &req, &encryption_key).map_err(|e| e.to_string())?;
+        // 保存成功后自动归纳（best-effort，失败不影响创建结果）
+        let _ = crate::providers::auto_grouping::run_auto_grouping(&conn, &encryption_key);
+        Ok(mask_connection(&p))
     })
     .await;
 
@@ -198,9 +199,13 @@ pub async fn update_provider(
 
     let result = tokio::task::spawn_blocking(move || -> Result<Option<serde_json::Value>, String> {
         let conn = db_core::get_conn(&pool).map_err(|e| e.to_string())?;
-        db_providers::update(&conn, &id, &body, &encryption_key)
-            .map(|opt| opt.map(|p| mask_connection(&p)))
-            .map_err(|e| e.to_string())
+        let opt = db_providers::update(&conn, &id, &body, &encryption_key)
+            .map_err(|e| e.to_string())?;
+        // 更新成功后自动归纳（best-effort，失败不影响更新结果）
+        if opt.is_some() {
+            let _ = crate::providers::auto_grouping::run_auto_grouping(&conn, &encryption_key);
+        }
+        Ok(opt.map(|p| mask_connection(&p)))
     })
     .await;
 
@@ -667,6 +672,7 @@ pub async fn preview_models(
     };
 
     // 使用上游链路客户端（awc + openssl）
+    log::info!("[preview-models] provider={} url={} auth={}", body.provider, models_url, auth_kind);
     let client = crate::create_upstream_client(&state.upstream_ssl_connector);
     let mut req = client.get(&models_url);
     if let Some(ref key) = body.api_key {

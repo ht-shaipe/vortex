@@ -79,7 +79,7 @@
               <div class="setting-label">Token 鉴权</div>
               <div class="setting-desc">开启后，请求必须在 <span class="font-mono text-12px">Authorization</span> 头携带正确 token</div>
             </div>
-            <el-switch v-model="form.security.tokenAuth" @change="(v: boolean) => saveSecurity('tokenAuth', v)" />
+            <el-switch v-model="form.security.tokenAuth" @change="(v: boolean) => onTokenAuthChange(v)" />
           </div>
 
           <!-- 访问令牌：展示、复制与重新生成 -->
@@ -316,6 +316,27 @@ async function copyToken() {
   } catch {
     ElMessage.error('复制失败，请手动选择复制')
   }
+}
+
+/**
+ * Token 鉴权开关变化回调。开启且尚无令牌时自动生成一个，
+ * 避免出现「已开启鉴权但无令牌」的空窗状态。
+ * @param v 开关状态
+ */
+async function onTokenAuthChange(v: boolean) {
+  if (v && !form.security.token) {
+    // 开启且无令牌：生成并连同开关状态一并保存
+    const next = generateToken()
+    form.security.token = next
+    try {
+      await updateSettings({ security: { tokenAuth: true, token: next } })
+      ElMessage.success('已开启 Token 鉴权并自动生成访问令牌')
+    } catch {
+      ElMessage.error('保存失败')
+    }
+    return
+  }
+  await saveSecurity('tokenAuth', v)
 }
 
 /**

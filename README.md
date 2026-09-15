@@ -10,11 +10,12 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 
 ## 特性
 
-- **多家内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、Cohere、Together AI、Fireworks AI、Cerebras、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Pollinations、Perplexity、Qwen、MiniMax、Z.AI (GLM)，以及自定义 OpenAI 兼容端点
+- **多家内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Qwen、MiniMax、Z.AI (GLM)、火山方舟、商汤日日新，以及自定义 OpenAI 兼容端点
 - **OpenAI / Anthropic 双协议入口** — `/v1/chat/completions` 与 `/v1/messages` 两套端点，无需修改客户端代码，直接替换 `base_url` 即可
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 熔断器 + 指数退避重试，保障上游故障时的可用性
 - **模型映射 + 故障转移** — 自定义虚拟模型名映射到多个真实模型目标，按优先级自动故障转移，免费额度组成"永动机"
+- **模型自动归纳** — 按模型家族自动将同族模型（如 gpt-4o、gpt-4o-2024-08-06）归纳为虚拟名，对外仅暴露精简列表，减少使用者选择负担
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本
 - **免费 Token 目录** — 内置 43 个可申请免费额度的 AI 平台（国内 / 海外 / 本地部署），标注是否支持 API、是否需绑卡与实名，支持自行提交推荐并保存到本地
@@ -130,20 +131,17 @@ curl http://localhost:10168/v1/chat/completions \
 | xAI (Grok) | `xa` | openai | llm | - |
 | Mistral | `ml` | openai | llm, embedding | - |
 | OpenRouter | `or` | openai | llm, image | ✓ |
-| Cohere | `ch` | cohere | llm, embedding, rerank | ✓ |
-| Together AI | `tg` | openai | llm, image | ✓ |
-| Fireworks AI | `fw` | openai | llm, image | - |
-| Cerebras | `cb` | openai | llm | ✓ |
 | NVIDIA NIM | `nv` | openai | llm, embedding | ✓ |
 | Cloudflare AI | `cf` | cloudflare | llm, embedding, image | ✓ |
 | Ollama (Local) | `ol` | openai | llm, embedding | ✓ (无认证) |
 | SiliconFlow | `sf` | openai | llm, image | ✓ |
 | HuggingFace | `hf` | openai | llm, embedding | ✓ |
-| Pollinations | `pl` | openai | llm | ✓ (无认证) |
-| Perplexity | `pp` | openai | llm, webSearch | - |
 | Qwen (通义千问) | `qw` | openai | llm, embedding | ✓ |
 | MiniMax | `mm` | openai | llm | - |
-| Z.AI (GLM) | `zi` | openai | llm | ✓ |
+| Z.AI (GLM) | `zi` | openai | llm | - |
+| 火山方舟 Code Plan | `vc` | openai | llm | - |
+| 火山方舟 Agent Plan | `va` | openai | llm | - |
+| 商汤日日新 | `sn` | openai | llm | - |
 | Custom | `cx` | openai | llm, embedding | - |
 
 ## 配置
@@ -219,7 +217,8 @@ curl http://localhost:10168/v1/chat/completions \
 - Tauri 2 — 桌面应用框架
 - Actix-Web 4 — HTTP 服务器
 - rusqlite + r2d2 — SQLite 数据库（WAL 模式，连接池）
-- reqwest — HTTP 客户端（native-tls + HTTP/2）
+- reqwest — HTTP 客户端（管理链路，native-tls + HTTP/2）
+- awc + openssl — 上游链路 HTTP 客户端（OpenSSL 3 指纹兼容）
 - aes-gcm — API 密钥加密
 - tokio — 异步运行时
 - tauri-plugin-updater — 自动更新

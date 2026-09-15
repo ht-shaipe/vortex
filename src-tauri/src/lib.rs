@@ -97,6 +97,8 @@ pub fn create_upstream_client(connector: &openssl::ssl::SslConnector) -> awc::Cl
     awc::Client::builder()
         .connector(awc_connector)
         .timeout(std::time::Duration::from_secs(300))
+        .add_default_header(("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"))
+        .add_default_header(("Accept", "application/json"))
         .finish()
 }
 
@@ -117,10 +119,16 @@ pub fn create_upstream_client(connector: &openssl::ssl::SslConnector) -> awc::Cl
 ///
 /// 返回包装在 `Arc` 中的 [`AppState`]，以便多线程共享；若初始化失败则返回 [`error::AppError`]。
 pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> {
-    // 初始化数据库连接池
+    // 初始化 SQLite 数据库连接池
     let db_pool = db::core::init_pool(&cfg.data_dir, cfg.encryption_key.clone())?;
     // 运行数据库迁移
     db::core::run_migrations(&db_pool)?;
+    // 首次启动时为安全设置写入默认值（默认开启 Token 鉴权并自动生成访问令牌）
+    {
+        let conn = db::core::get_conn(&db_pool)?;
+        db::settings::ensure_security_defaults(&conn)?;
+    }
+
 
     // 创建提供商注册表
     let provider_registry = providers::ProviderRegistry::new();
@@ -235,6 +243,7 @@ pub fn start_api_server(
                             .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
                             .route("/model-aliases", web::get().to(api::management::model_aliases::list_aliases))
                             .route("/model-aliases", web::post().to(api::management::model_aliases::create_alias))
+                            .route("/model-aliases/auto-generate", web::post().to(api::management::model_aliases::auto_generate))
                             .route("/model-aliases/{id}", web::patch().to(api::management::model_aliases::update_alias))
                             .route("/model-aliases/{id}", web::delete().to(api::management::model_aliases::delete_alias))
                             .route("/health", web::get().to(api::management::health::health_check))
