@@ -17,10 +17,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
       with:
-        node-version: 20
+        bun-version: latest
 
     - name: Install Linux deps
       run: |
@@ -28,31 +28,20 @@ jobs:
         sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
     - name: Install frontend deps
-      shell: bash
       run: |
-        npm ci
-        # 兜底 npm#4828：原生绑定缺失时按平台补装
-        # rolldown
-        if ! node -e "import('rolldown').then(()=>{},()=>process.exit(1))"; then
-          echo "rolldown native binding missing, installing fallback"
-          case "${{ runner.os }}" in
-            Linux)   npm install --no-save @rolldown/binding-linux-x64-gnu @rolldown/binding-wasm32-wasi ;;
-            macOS)   npm install --no-save @rolldown/binding-darwin-arm64 @rolldown/binding-wasm32-wasi ;;
-            Windows) npm install --no-save @rolldown/binding-win32-x64-msvc @rolldown/binding-wasm32-wasi ;;
-          esac
-        fi
-        # oxc-parser
-        if ! node -e "import('oxc-parser').then(()=>{},()=>process.exit(1))"; then
-          echo "oxc-parser native binding missing, installing fallback"
-          case "${{ runner.os }}" in
-            Linux)   npm install --no-save @oxc-parser/binding-linux-x64-gnu @oxc-parser/binding-wasm32-wasi ;;
-            macOS)   npm install --no-save @oxc-parser/binding-darwin-arm64 @oxc-parser/binding-wasm32-wasi ;;
-            Windows) npm install --no-save @oxc-parser/binding-win32-x64-msvc @oxc-parser/binding-wasm32-wasi ;;
-          esac
-        fi
+        # lockfile 通常只在 macOS 生成，Linux/Windows 原生绑定缺失
+        # 删除 lockfile 后全新安装，确保当前平台 optional deps 被解析
+        rm -f bun.lock package-lock.json
+        bun install
+        # 兜底：显式安装 rolldown / oxc-parser 当前平台原生绑定
+        case "$(uname -s)" in
+          Linux)  bun install @rolldown/binding-linux-x64-gnu @oxc-parser/binding-linux-x64-gnu ;;
+          Darwin) bun install @rolldown/binding-darwin-arm64  @oxc-parser/binding-darwin-arm64  ;;
+          *)      bun install @rolldown/binding-win32-x64-msvc @oxc-parser/binding-win32-x64-msvc ;;
+        esac
 
     - name: Build frontend
-      run: npm run build
+      run: bun run build
 
     - name: Build
       working-directory: src-tauri

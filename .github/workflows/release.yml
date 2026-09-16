@@ -35,6 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -54,29 +59,22 @@ jobs:
       - name: Install frontend deps
         shell: bash
         run: |
-          npm ci
-          # 兜底 npm#4828：原生绑定缺失时按平台补装
-          # rolldown
-          if ! node -e "import('rolldown').then(()=>{},()=>process.exit(1))"; then
-            echo "rolldown native binding missing, installing fallback"
-            case "${{ runner.os }}" in
-              Linux)   npm install --no-save @rolldown/binding-linux-x64-gnu @rolldown/binding-wasm32-wasi ;;
-              macOS)   npm install --no-save @rolldown/binding-darwin-arm64 @rolldown/binding-wasm32-wasi ;;
-              Windows) npm install --no-save @rolldown/binding-win32-x64-msvc @rolldown/binding-wasm32-wasi ;;
-            esac
+          # lockfile 只在开发者平台生成，CI 其他平台原生绑定缺失
+          rm -f bun.lock package-lock.json
+          cp package.json package.json.bak          # 备份，防止 bun install <pkg> 污染
+          bun install
+          # 兜底：显式安装 rolldown / oxc-parser 当前平台原生绑定
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            bun install @rolldown/binding-linux-x64-gnu @oxc-parser/binding-linux-x64-gnu
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            bun install @rolldown/binding-darwin-arm64 @oxc-parser/binding-darwin-arm64
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            bun install @rolldown/binding-win32-x64-msvc @oxc-parser/binding-win32-x64-msvc
           fi
-          # oxc-parser
-          if ! node -e "import('oxc-parser').then(()=>{},()=>process.exit(1))"; then
-            echo "oxc-parser native binding missing, installing fallback"
-            case "${{ runner.os }}" in
-              Linux)   npm install --no-save @oxc-parser/binding-linux-x64-gnu @oxc-parser/binding-wasm32-wasi ;;
-              macOS)   npm install --no-save @oxc-parser/binding-darwin-arm64 @oxc-parser/binding-wasm32-wasi ;;
-              Windows) npm install --no-save @oxc-parser/binding-win32-x64-msvc @oxc-parser/binding-wasm32-wasi ;;
-            esac
-          fi
+          mv package.json.bak package.json          # 还原，CI 不提交意外改动
 
       - name: Build frontend
-        run: npm run build
+        run: bun run build
 
       - name: Determine version
         id: ver
@@ -103,19 +101,146 @@ jobs:
           node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2));"
           echo "tauri.conf.json version synced to $APP_VERSION"
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Pre-create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          # 幂等操作：release 已存在则跳过，不存在则创建
+          gh release view "$TAG" >/dev/null 2>&1 || \
+          gh release create "$TAG" \
+            --title "Vortex v${{ steps.ver.outputs.version }}" \
+            --notes "See the assets below to download and install this version." \
+            --draft=false
+          echo "Release $TAG ready"
+
+      - name: Build Tauri app
+        shell: bash
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v${{ steps.ver.outputs.version }}
-          releaseName: 'Vortex v${{ steps.ver.outputs.version }}'
-          releaseBody: 'See the assets below to download and install this version.'
-          releaseDraft: false
-          releasePrerelease: false
-          args: --target ${{ matrix.target }}
+        run: |
+          cd src-tauri
+          bunx tauri build --target ${{ matrix.target }}
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
+
+          echo "=== Collecting artifacts for $TARGET ==="
+          FILES=()
+
+          # macOS: .app.tar.gz + .sig, .dmg
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            for f in "$BUNDLE_DIR"/macos/*.tar.gz "$BUNDLE_DIR"/macos/*.tar.gz.sig "$BUNDLE_DIR"/dmg/*.dmg; do
+              [ -f "$f" ] && FILES+=("$f")
+            done
+          fi
+          # Linux: .tar.gz + .sig (updater), .deb, .appimage, .rpm
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            for f in "$BUNDLE_DIR"/appimage/*.tar.gz "$BUNDLE_DIR"/appimage/*.tar.gz.sig \
+                     "$BUNDLE_DIR"/deb/*.deb "$BUNDLE_DIR"/appimage/*.AppImage "$BUNDLE_DIR"/rpm/*.rpm; do
+              [ -f "$f" ] && FILES+=("$f")
+            done
+          fi
+          # Windows: .tar.gz + .sig (updater), .msi, .exe (nsis)
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            for f in "$BUNDLE_DIR"/msi/*.tar.gz "$BUNDLE_DIR"/msi/*.tar.gz.sig \
+                     "$BUNDLE_DIR"/msi/*.msi "$BUNDLE_DIR"/nsis/*.exe; do
+              [ -f "$f" ] && FILES+=("$f")
+            done
+          fi
+
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::No bundle artifacts found in $BUNDLE_DIR"
+            find "$BUNDLE_DIR" -type f 2>/dev/null || echo "(bundle dir empty)"
+            exit 1
+          fi
+
+          echo "Uploading ${#FILES[@]} file(s) to $TAG:"
+          printf '  %s\n' "${FILES[@]}"
+          gh release upload "$TAG" "${FILES[@]}" --clobber --repo "${{ github.repository }}"
+          echo "✓ Upload complete"
+
+      - name: Generate & upload latest.json (updater manifest)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          REPO="${{ github.repository }}"
+          BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
+
+          # 1. target → Tauri updater platform key
+          case "$TARGET" in
+            x86_64-unknown-linux-gnu)   PLATFORM_KEY="linux-x86_64" ;;
+            aarch64-apple-darwin)       PLATFORM_KEY="darwin-aarch64" ;;
+            x86_64-apple-darwin)        PLATFORM_KEY="darwin-x86_64" ;;
+            x86_64-pc-windows-msvc)     PLATFORM_KEY="windows-x86_64" ;;
+            *) echo "::error::Unknown target $TARGET"; exit 1 ;;
+          esac
+
+          # 2. 找到 .sig 文件（Tauri CLI 在 createUpdaterArtifacts=true 时生成）
+          SIG_FILE=$(find "$BUNDLE_DIR" -name "*.sig" -type f | head -1)
+          if [ -z "$SIG_FILE" ]; then
+            echo "::error::No .sig file found in $BUNDLE_DIR"
+            find "$BUNDLE_DIR" -type f
+            exit 1
+          fi
+          SIGNATURE=$(cat "$SIG_FILE")
+
+          # 3. 对应的下载 URL（.tar.gz 去掉 .sig 后缀）
+          SIG_BASENAME=$(basename "$SIG_FILE")            # e.g. Vortex.app.tar.gz.sig
+          ARCHIVE_NAME="${SIG_BASENAME%.sig}"              # e.g. Vortex.app.tar.gz
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
+
+          echo "Platform:  $PLATFORM_KEY"
+          echo "Signature: ${SIGNATURE:0:20}..."
+          echo "URL:       $DOWNLOAD_URL"
+
+          # 4. 下载已有 latest.json（如果其他平台已上传过），合并当前平台
+          EXISTING="{}"
+          if gh release view "$TAG" --repo "$REPO" | grep -q "latest.json"; then
+            TMP=$(mktemp)
+            gh release download "$TAG" --repo "$REPO" --pattern "latest.json" --output "$TMP" 2>/dev/null && \
+              EXISTING=$(cat "$TMP") || true
+            rm -f "$TMP"
+          fi
+
+          # 5. 用 Node.js 合并并写入（export 使 Node.js 能读取）
+          export PLATFORM_KEY SIGNATURE DOWNLOAD_URL VERSION EXISTING
+          node -e "
+            const existing = JSON.parse(process.env.EXISTING || '{}');
+            const entry = {
+              signature: process.env.SIGNATURE,
+              url: process.env.DOWNLOAD_URL
+            };
+            if (!existing.platforms) existing.platforms = {};
+            existing.platforms[process.env.PLATFORM_KEY] = entry;
+            existing.version    = process.env.VERSION;
+            existing.pub_date   = new Date().toISOString();
+            existing.notes      = existing.notes || 'See the assets below to download and install this version.';
+            console.log(JSON.stringify(existing, null, 2));
+          " > latest.json
+
+          echo "--- latest.json ---"
+          cat latest.json
+          echo "--------------------"
+
+          # 6. 上传（带重试，处理多平台并发写入冲突）
+          for i in 1 2 3; do
+            gh release upload "$TAG" latest.json --clobber --repo "$REPO" && break
+            echo "Upload attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "✓ latest.json uploaded for $PLATFORM_KEY"
 
       - name: Inject usage notes into macOS DMG
         if: runner.os == 'macOS'
