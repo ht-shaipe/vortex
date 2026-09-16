@@ -54,7 +54,7 @@
           <col style="width: 96px" />
           <col style="width: 240px" />
           <col style="width: 220px" />
-          <col style="width: 56px" />
+
           <col style="width: 92px" />
           <col style="width: 118px" />
         </colgroup>
@@ -63,7 +63,7 @@
             <th>状态</th>
             <th>提供商</th>
             <th>模型</th>
-            <th class="num">优先级</th>
+
             <th class="num">更新于</th>
             <th></th>
           </tr>
@@ -141,8 +141,7 @@
               </div>
             </td>
 
-            <!-- 优先级 -->
-            <td class="num">{{ conn.priority }}</td>
+
             <!-- 更新时间 -->
             <td class="num">{{ fmtTime(conn.updatedAt || conn.createdAt) }}</td>
 
@@ -164,7 +163,7 @@
 
           <!-- 搜索无结果 -->
           <tr v-if="filtered.length === 0">
-            <td colspan="6" class="text-center text-ink-4 py-24px text-12.5px">
+            <td colspan="5" class="text-center text-ink-4 py-24px text-12.5px">
               没有匹配「{{ keyword }}」的连接
             </td>
           </tr>

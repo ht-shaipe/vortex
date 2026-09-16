@@ -37,12 +37,10 @@ pub struct AppState {
     pub proxy_engine: parking_lot::RwLock<proxy::engine::ProxyEngine>,
     /// 路由弹性管理器，负责故障转移、负载均衡等路由策略。
     pub resilience_manager: routing::resilience::ResilienceManager,
-    /// 管理链路 HTTP 客户端（reqwest + native-tls），用于连接 hub.htui.cc 等管理服务。
-    pub http_client: reqwest::Client,
-    /// 上游链路 TLS 连接器（openssl），用于构建 awc::Client。
+    /// TLS 连接器（openssl），用于构建 awc::Client（上游链路与管理链路共用）。
     /// awc::Client 本身不是 Send+Sync（内部使用 Rc），因此只存储 SslConnector，
     /// 在需要时按线程创建 awc::Client。
-    pub upstream_ssl_connector: openssl::ssl::SslConnector,
+    pub ssl_connector: openssl::ssl::SslConnector,
     /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
     pub encryption_key: Vec<u8>,
     /// 代理服务器的句柄，存储在互斥锁中以便启停控制。
@@ -51,26 +49,11 @@ pub struct AppState {
     pub proxy_port: u16,
 }
 
-/// 创建共享 HTTP 客户端。
-///
-/// 在调用处的 tokio runtime 上下文中创建 `reqwest::Client`，
-/// 确保 HTTP/2 executor 和连接池后台任务绑定到正确的 runtime。
-/// - actix HTTP API 路径：在 actix runtime 线程中调用
-/// - Tauri IPC 路径：在 `spawn_blocking` 的临时 runtime 中调用
-pub fn create_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .pool_max_idle_per_host(4)
-        .pool_idle_timeout(std::time::Duration::from_secs(60))
-        .build()
-        .expect("failed to build HTTP client")
-}
-
-/// 创建上游链路 SSL 连接器（openssl）。
+/// 创建 TLS 连接器（openssl）。
 ///
 /// 返回的 `SslConnector` 是 `Send + Sync`，可安全存入 `AppState`。
-/// 在需要发起上游请求时，调用 [`create_upstream_client`] 构建 `awc::Client`。
-pub fn create_upstream_ssl_connector() -> openssl::ssl::SslConnector {
+/// 在需要发起 HTTP 请求时，调用 [`create_awc_client`] 构建 `awc::Client`。
+pub fn create_ssl_connector() -> openssl::ssl::SslConnector {
     let mut ssl_builder =
         openssl::ssl::SslConnector::builder(openssl::ssl::SslMethod::tls())
             .expect("failed to build SSL connector");
@@ -85,11 +68,12 @@ pub fn create_upstream_ssl_connector() -> openssl::ssl::SslConnector {
     ssl_builder.build()
 }
 
-/// 从 SSL 连接器创建上游链路 HTTP 客户端（awc + openssl）。
+/// 从 TLS 连接器创建 HTTP 客户端（awc + openssl）。
 ///
 /// 必须在 actix runtime 上下文中调用（awc 依赖 actix arbiter 驱动内部任务）。
 /// 每次调用创建新客户端，不共享连接池——对桌面应用低并发场景可接受。
-pub fn create_upstream_client(connector: &openssl::ssl::SslConnector) -> awc::Client {
+/// 上游链路（AI 提供商）与管理链路（hub.htui.cc）共用此客户端。
+pub fn create_awc_client(connector: &openssl::ssl::SslConnector) -> awc::Client {
     let awc_connector = awc::Connector::new()
         .timeout(std::time::Duration::from_secs(10))
         .openssl(connector.clone());
@@ -136,17 +120,13 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
     let proxy_engine = proxy::engine::ProxyEngine::new();
     // 创建弹性路由管理器
     let resilience_manager = routing::resilience::ResilienceManager::new();
-    // 不设全局总超时：reqwest 的总超时会掐断长时间运行的流式响应。
-    // 超时保护改为多级：
-    //   - 连接超时 10s（此处）
+    // 不设全局总超时：超时保护改为多级：
+    //   - 连接超时 10s（create_awc_client 内）
     //   - 流式首字节 60s / 非流式整体 300s（executor.rs 按请求应用）
     //   - 流式逐块 120s（sse.rs 按次计时）
     // http2_prior_knowledge() 不用 — 用 ALPN 协商让服务端选择 h2 或 http/1.1。
     // 部分上游（如 z.ai）要求 HTTP/2，ALPN 中无 h2 时 TLS 握手被服务端直接关闭（eof）。
-    // 注意：Client 需在 tokio runtime 上下文中创建，否则 HTTP/2 executor 无法正确绑定。
-    // 此处创建的 client 供 actix HTTP API 路径使用；IPC 路径在 spawn_blocking 内另行创建。
-    let http_client = create_http_client();
-    let upstream_ssl_connector = create_upstream_ssl_connector();
+    let ssl_connector = create_ssl_connector();
 
     // 派生加密密钥字节序列
     let encryption_key = cfg.encryption_key_bytes();
@@ -161,8 +141,7 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
         provider_registry,
         proxy_engine: parking_lot::RwLock::new(proxy_engine),
         resilience_manager,
-        http_client,
-        upstream_ssl_connector,
+        ssl_connector,
         encryption_key,
         proxy_handle: parking_lot::Mutex::new(None),
         proxy_port,

@@ -299,7 +299,7 @@ pub async fn test_provider(
 
     // 2. HTTP 连接测试（async）
     let def = state.provider_registry.get(&provider.provider);
-    let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let upstream_client = crate::create_awc_client(&state.ssl_connector);
     let test_result = test_connection(&provider, def, &upstream_client).await;
 
     // 3. DB 写入测试结果
@@ -404,7 +404,7 @@ async fn test_connection(
     };
 
     // 防御性：地址里仍残留占位/示例域名（仅防御旧数据）时短路。
-    if let Ok(parsed) = reqwest::Url::parse(&url) {
+    if let Ok(parsed) = url::Url::parse(&url) {
         let host = parsed.host_str().unwrap_or("");
         let placeholder = host.eq_ignore_ascii_case("your-api-endpoint.com")
             || host.eq_ignore_ascii_case("example.com")
@@ -420,7 +420,7 @@ async fn test_connection(
 
     // 火山方舟 Plan 端点（/api/plan、/api/coding）不提供 /models 路由（固定 404），
     // 改用一次最小的对话请求（max_tokens=1）做连通性与鉴权测试
-    let is_volces_plan = reqwest::Url::parse(&url)
+    let is_volces_plan = url::Url::parse(&url)
         .ok()
         .map(|u| {
             u.host_str().unwrap_or("").ends_with("volces.com")
@@ -615,7 +615,7 @@ pub async fn preview_models(
     };
 
     // 校验目标地址
-    let parsed = match reqwest::Url::parse(&models_url) {
+    let parsed = match url::Url::parse(&models_url) {
         Ok(u) => u,
         Err(_) => return HttpResponse::BadRequest().json(json!({
             "error": "API 地址格式不正确，需以 http:// 或 https:// 开头"
@@ -673,7 +673,7 @@ pub async fn preview_models(
 
     // 使用上游链路客户端（awc + openssl）
     log::info!("[preview-models] provider={} url={} auth={}", body.provider, models_url, auth_kind);
-    let client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let client = crate::create_awc_client(&state.ssl_connector);
     let mut req = client.get(&models_url);
     if let Some(ref key) = body.api_key {
         if !key.trim().is_empty() {

@@ -50,6 +50,7 @@ export interface EndpointStat {
   outputTokens: number // 输出 Token 数
   cacheCreationTokens: number // 缓存创建 Token 数
   cacheReadTokens: number // 缓存读取 Token 数
+  estimatedCount: number // 估算请求数（上游未返回用量）
 }
 
 /** 某时间段的汇总统计（含按端点拆分） */
@@ -60,6 +61,7 @@ export interface PeriodStats {
   outputTokens: number // 总输出 Token 数
   cacheCreationTokens: number // 总缓存创建 Token 数
   cacheReadTokens: number // 总缓存读取 Token 数
+  estimatedCount: number // 估算请求数（上游未返回用量）
   endpoints: EndpointStat[] // 按端点拆分的明细
 }
 
@@ -89,6 +91,7 @@ export interface DailyStat {
   outputTokens: number
   cacheCreationTokens: number
   cacheReadTokens: number
+  estimatedCount: number
 }
 
 /** 端点 × 日聚合行分页结果 */
@@ -105,6 +108,7 @@ export interface HourlyStat {
   outputTokens: number
   cacheCreationTokens: number
   cacheReadTokens: number
+  estimatedCount: number
 }
 
 /** 逐条请求明细。 */
@@ -268,6 +272,7 @@ function emptyPeriod(): PeriodStats {
     outputTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
+    estimatedCount: 0,
     endpoints: [],
   }
 }
@@ -280,6 +285,7 @@ function accumulate(target: Omit<PeriodStats, 'endpoints'>, e: NormEntry): void 
   target.outputTokens += e.raw.tokens_output ?? 0
   target.cacheCreationTokens += e.raw.tokens_cache_creation ?? 0
   target.cacheReadTokens += e.raw.tokens_cache_read ?? 0
+  if (e.raw.usage_estimated === true || e.raw.usage_estimated === 1) target.estimatedCount += 1
 }
 
 /** 半开区间 [startMs, endMs) 内的行聚合成 PeriodStats（含按端点拆分）。 */
@@ -299,6 +305,7 @@ function aggregatePeriod(rows: NormEntry[], startMs: number, endMs: number): Per
         outputTokens: 0,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
+        estimatedCount: 0,
       }
       byEndpoint.set(e.endpointName, ep)
     }
@@ -365,6 +372,7 @@ export const statsApi = {
           outputTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
+          estimatedCount: 0,
         }
         map.set(key, cur)
       }
@@ -394,6 +402,7 @@ export const statsApi = {
           outputTokens: 0,
           cacheCreationTokens: 0,
           cacheReadTokens: 0,
+          estimatedCount: 0,
         }
         map.set(key, cur)
       }
@@ -402,6 +411,7 @@ export const statsApi = {
       cur.outputTokens += e.raw.tokens_output ?? 0
       cur.cacheCreationTokens += e.raw.tokens_cache_creation ?? 0
       cur.cacheReadTokens += e.raw.tokens_cache_read ?? 0
+      if (e.raw.usage_estimated === true || e.raw.usage_estimated === 1) cur.estimatedCount += 1
     }
     return [...map.values()].sort((a, b) => (a.date < b.date ? -1 : 1))
   },

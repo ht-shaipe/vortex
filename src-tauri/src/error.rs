@@ -22,9 +22,9 @@ pub enum AppError {
     /// 序列化/反序列化错误，源自 serde_json。
     #[error("Serialization error: {0}")]
     Json(#[from] serde_json::Error),
-    /// HTTP 客户端错误，源自 reqwest。
+    /// HTTP 客户端错误，源自 awc。
     #[error("HTTP client error: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[from] awc::error::SendRequestError),
     /// 加密/解密错误，以字符串描述具体原因。
     #[error("Encryption error: {0}")]
     Encryption(String),

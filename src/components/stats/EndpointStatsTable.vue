@@ -18,8 +18,12 @@
           <td class="text-right num">{{ fmtInt(r.requests) }}</td>
           <td class="text-right num" :class="{ 'text-err': r.errors > 0 }">{{ fmtInt(r.errors) }}</td>
           <td class="text-right num" :class="{ 'text-err': r.requests > 0 && r.errors >= r.requests }">{{ successRate(r) }}</td>
-          <td class="text-right num">{{ formatTokenCompact(r.inputTokens) }}</td>
-          <td class="text-right num">{{ formatTokenCompact(r.outputTokens) }}</td>
+          <td class="text-right num">
+            <span :title="r.estimatedCount > 0 ? `${r.estimatedCount}/${r.requests} 条估算` : undefined">{{ formatTokenCompact(r.inputTokens) }}</span>
+          </td>
+          <td class="text-right num">
+            <span :title="r.estimatedCount > 0 ? `${r.estimatedCount}/${r.requests} 条估算` : undefined" :class="{ 'text-ink-3': r.estimatedCount > 0 }">{{ formatTokenCompact(r.outputTokens) }}</span>
+          </td>
         </tr>
       </tbody>
     </table>

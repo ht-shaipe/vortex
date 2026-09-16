@@ -37,7 +37,25 @@ const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 pub struct StreamUsage {
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// 缓存创建 Token 数（Anthropic prompt caching）
+    pub cache_creation: i64,
+    /// 缓存读取 Token 数（Anthropic prompt caching）
+    pub cache_read: i64,
+    /// 推理 Token 数（OpenAI o1 系列 reasoning_tokens）
+    pub reasoning: i64,
     /// token 数是否为估算值（上游未在流中返回 usage 时按内容估算）
+    pub estimated: bool,
+}
+
+/// 非流式响应提取的用量
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UsageExtract {
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_creation: i64,
+    pub cache_read: i64,
+    pub reasoning: i64,
+    pub cost: f64,
     pub estimated: bool,
 }
 
@@ -269,6 +287,8 @@ struct OpenAiPassthrough {
     input_tokens: i64,
     /// 输出 token 数（来自 usage 收尾块）
     output_tokens: i64,
+    /// 推理 token 数（来自 usage.completion_tokens_details.reasoning_tokens）
+    reasoning_tokens: i64,
     /// 累计的输出文本内容（content / reasoning_content），用于无 usage 时估算
     content_text: String,
 }
@@ -283,6 +303,7 @@ impl OpenAiPassthrough {
             saw_done: false,
             input_tokens: 0,
             output_tokens: 0,
+            reasoning_tokens: 0,
             content_text: String::new(),
         }
     }
@@ -345,6 +366,14 @@ impl SseParser for OpenAiPassthrough {
                 if let Some(t) = usage.get("completion_tokens").and_then(|t| t.as_i64()) {
                     self.output_tokens = t;
                 }
+                // OpenAI o1 系列：completion_tokens_details.reasoning_tokens
+                if let Some(t) = usage
+                    .get("completion_tokens_details")
+                    .and_then(|d| d.get("reasoning_tokens"))
+                    .and_then(|t| t.as_i64())
+                {
+                    self.reasoning_tokens = t;
+                }
             }
         }
         out
@@ -386,12 +415,15 @@ impl SseParser for OpenAiPassthrough {
                 input_tokens: 0,
                 output_tokens: estimate_tokens_from_text(&self.content_text),
                 estimated: true,
+                ..Default::default()
             };
         }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            reasoning: self.reasoning_tokens,
             estimated: false,
+            ..Default::default()
         }
     }
 }
@@ -421,6 +453,10 @@ struct AnthropicToOpenai {
     input_tokens: i64,
     /// 输出 token 计数
     output_tokens: i64,
+    /// 缓存创建 token 数（Anthropic prompt caching，来自 message_start）
+    cache_creation: i64,
+    /// 缓存读取 token 数（Anthropic prompt caching，来自 message_start）
+    cache_read: i64,
     /// 累计的输出文本内容（text / thinking），用于无 usage 时估算
     content_text: String,
     /// 内容块索引 → 是否为 tool_use 块
@@ -441,6 +477,8 @@ impl AnthropicToOpenai {
             finish_reason: None,
             input_tokens: 0,
             output_tokens: 0,
+            cache_creation: 0,
+            cache_read: 0,
             content_text: String::new(),
             block_is_tool: Vec::new(),
             tool_index: Vec::new(),
@@ -490,8 +528,16 @@ impl AnthropicToOpenai {
                             .and_then(|m| m.as_str())
                             .unwrap_or("anthropic")
                             .to_string();
-                        if let Some(u) = msg.get("usage").and_then(|u| u.get("input_tokens")).and_then(|t| t.as_i64()) {
-                            self.input_tokens = u;
+                        if let Some(usage) = msg.get("usage") {
+                            if let Some(t) = usage.get("input_tokens").and_then(|t| t.as_i64()) {
+                                self.input_tokens = t;
+                            }
+                            if let Some(t) = usage.get("cache_creation_input_tokens").and_then(|t| t.as_i64()) {
+                                self.cache_creation = t;
+                            }
+                            if let Some(t) = usage.get("cache_read_input_tokens").and_then(|t| t.as_i64()) {
+                                self.cache_read = t;
+                            }
                         }
                     }
                     // 发送首个 assistant 角色 chunk
@@ -659,13 +705,19 @@ impl SseParser for AnthropicToOpenai {
             return StreamUsage {
                 input_tokens: self.input_tokens,
                 output_tokens: estimate_tokens_from_text(&self.content_text),
+                cache_creation: self.cache_creation,
+                cache_read: self.cache_read,
                 estimated: true,
+                ..Default::default()
             };
         }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            cache_creation: self.cache_creation,
+            cache_read: self.cache_read,
             estimated: false,
+            ..Default::default()
         }
     }
 }
@@ -849,12 +901,14 @@ impl SseParser for GeminiToOpenai {
                 input_tokens: 0,
                 output_tokens: estimate_tokens_from_text(&self.content_text),
                 estimated: true,
+                ..Default::default()
             };
         }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
             estimated: false,
+            ..Default::default()
         }
     }
 }

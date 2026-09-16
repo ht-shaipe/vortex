@@ -88,6 +88,11 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
         1.0
     };
 
+    // 估算请求数（上游未返回用量，按内容估算）
+    let estimated_count: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM usage_history {} WHERE usage_estimated = 1", where_clause), [], |row| row.get(0)
+    ).unwrap_or(0);
+
     // 按提供方分组统计请求数
     let mut by_provider = serde_json::Map::new();
     let sql = format!("SELECT provider, COUNT(*) as cnt FROM usage_history {} GROUP BY provider", where_clause);
@@ -143,6 +148,7 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
         total_cost,
         avg_latency_ms: avg_latency,
         success_rate,
+        estimated_count,
         by_provider: serde_json::Value::Object(by_provider),
         by_model: serde_json::Value::Object(by_model),
         by_day: serde_json::Value::Object(by_day),

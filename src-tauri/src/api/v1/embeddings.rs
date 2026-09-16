@@ -78,7 +78,7 @@ pub async fn create_embeddings(
         }
     };
 
-    let client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let client = crate::create_awc_client(&state.ssl_connector);
     // 确定基础 URL：优先使用连接中的自定义 baseUrl
     let base_url = connection.provider_specific_data.get("baseUrl")
         .and_then(|v| v.as_str())

@@ -31,13 +31,23 @@ jobs:
       shell: bash
       run: |
         npm ci
-        # 兜底 npm#4828：rolldown 原生绑定缺失时按平台补装
+        # 兜底 npm#4828：原生绑定缺失时按平台补装
+        # rolldown
         if ! node -e "import('rolldown').then(()=>{},()=>process.exit(1))"; then
           echo "rolldown native binding missing, installing fallback"
           case "${{ runner.os }}" in
             Linux)   npm install --no-save @rolldown/binding-linux-x64-gnu @rolldown/binding-wasm32-wasi ;;
             macOS)   npm install --no-save @rolldown/binding-darwin-arm64 @rolldown/binding-wasm32-wasi ;;
             Windows) npm install --no-save @rolldown/binding-win32-x64-msvc @rolldown/binding-wasm32-wasi ;;
+          esac
+        fi
+        # oxc-parser
+        if ! node -e "import('oxc-parser').then(()=>{},()=>process.exit(1))"; then
+          echo "oxc-parser native binding missing, installing fallback"
+          case "${{ runner.os }}" in
+            Linux)   npm install --no-save @oxc-parser/binding-linux-x64-gnu @oxc-parser/binding-wasm32-wasi ;;
+            macOS)   npm install --no-save @oxc-parser/binding-darwin-arm64 @oxc-parser/binding-wasm32-wasi ;;
+            Windows) npm install --no-save @oxc-parser/binding-win32-x64-msvc @oxc-parser/binding-wasm32-wasi ;;
           esac
         fi
 

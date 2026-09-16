@@ -9,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
 use crate::proxy::retry::RetryPolicy;
-use crate::proxy::sse::{self, SseStream, StreamUsage, UsageCallback};
+use crate::proxy::sse::{self, SseStream, StreamUsage, UsageCallback, UsageExtract};
 use crate::AppState;
 use std::sync::Arc;
 use std::time::Instant;
@@ -374,9 +374,9 @@ impl ProxyEngine {
                     api_key_name: None,
                     tokens_input: input_tokens,
                     tokens_output: usage.output_tokens,
-                    tokens_cache_read: 0,
-                    tokens_cache_creation: 0,
-                    tokens_reasoning: 0,
+                    tokens_cache_read: usage.cache_read,
+                    tokens_cache_creation: usage.cache_creation,
+                    tokens_reasoning: usage.reasoning,
                     service_tier: "standard".to_string(),
                     status: "success".to_string(),
                     success: true,
@@ -393,13 +393,12 @@ impl ProxyEngine {
             match executor.execute(client, request, def, connection, model, Some(usage_cb)).await {
                 Ok(ExecutorOutput::Json(body)) => {
                     // 非流式成功：提取用量、记录成功、写入用量条目
-                    let (tokens_in, tokens_out, cost, usage_estimated) =
-                        extract_usage_from_response(&body, def.api_format.as_str());
+                    let extracted = extract_usage_from_response(&body, def.api_format.as_str());
                     // 估算兜底：上游未返回输入 token 时用请求体估算值补齐
-                    let tokens_in = if usage_estimated && tokens_in == 0 {
+                    let tokens_in = if extracted.estimated && extracted.input_tokens == 0 {
                         estimate_request_tokens(&request.messages)
                     } else {
-                        tokens_in
+                        extracted.input_tokens
                     };
                     let latency = start.elapsed().as_millis() as i64;
                     let _ = db_providers::reset_backoff(conn, &connection.id);
@@ -414,18 +413,18 @@ impl ProxyEngine {
                         api_key_id: request.api_key.clone(),
                         api_key_name: None,
                         tokens_input: tokens_in,
-                        tokens_output: tokens_out,
-                        tokens_cache_read: 0,
-                        tokens_cache_creation: 0,
-                        tokens_reasoning: 0,
+                        tokens_output: extracted.output_tokens,
+                        tokens_cache_read: extracted.cache_read,
+                        tokens_cache_creation: extracted.cache_creation,
+                        tokens_reasoning: extracted.reasoning,
                         service_tier: "standard".to_string(),
                         status: "success".to_string(),
                         success: true,
                         error_code: None,
                         latency_ms: Some(latency),
                         ttft_ms: None,
-                        cost,
-                        usage_estimated,
+                        cost: extracted.cost,
+                        usage_estimated: extracted.estimated,
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = db_usage::record(conn, &entry);
@@ -514,11 +513,10 @@ impl ProxyEngine {
 /// - `api_format`：API 格式标识
 ///
 /// # 返回
-/// `(输入 token 数, 输出 token 数, 费用, 是否估算)`，费用目前固定返回 0.0
-fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i64, i64, f64, bool) {
+/// `UsageExtract` 结构体，包含输入/输出/缓存/推理 token 数、费用与是否估算标志
+fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> UsageExtract {
     let usage = body.get("usage");
-    // 优先按原始格式提取，回退到 OpenAI 格式（translator 可能已转换）
-    let (tokens_in, tokens_out) = match api_format {
+    let (tokens_in, tokens_out, cache_creation, cache_read, reasoning) = match api_format {
         "anthropic" => {
             let input = usage
                 .and_then(|u| u.get("input_tokens"))
@@ -530,7 +528,15 @@ fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i
                 .or_else(|| usage.and_then(|u| u.get("completion_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            (input, output)
+            let cc = usage
+                .and_then(|u| u.get("cache_creation_input_tokens"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let cr = usage
+                .and_then(|u| u.get("cache_read_input_tokens"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            (input, output, cc, cr, 0)
         }
         "gemini" => {
             let meta = body.get("usageMetadata");
@@ -544,7 +550,7 @@ fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i
                 .or_else(|| usage.and_then(|u| u.get("completion_tokens")))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            (input, output)
+            (input, output, 0, 0, 0)
         }
         _ => {
             let input = usage
@@ -555,13 +561,26 @@ fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i
                 .and_then(|u| u.get("completion_tokens"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0);
-            (input, output)
+            let reasoning = usage
+                .and_then(|u| u.get("completion_tokens_details"))
+                .and_then(|d| d.get("reasoning_tokens"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            (input, output, 0, 0, reasoning)
         }
     };
 
     // 上游返回了真实用量
     if tokens_in > 0 || tokens_out > 0 {
-        return (tokens_in, tokens_out, 0.0, false);
+        return UsageExtract {
+            input_tokens: tokens_in,
+            output_tokens: tokens_out,
+            cache_creation,
+            cache_read,
+            reasoning,
+            cost: 0.0,
+            estimated: false,
+        };
     }
 
     // 上游未返回用量：按响应文本内容估算输出 token（输入由调用方按请求体回填）
@@ -573,11 +592,24 @@ fn extract_usage_from_response(body: &serde_json::Value, api_format: &str) -> (i
         .and_then(|c| c.as_str())
         .unwrap_or("");
     if !text.is_empty() {
-        return (0, sse::estimate_tokens_from_text(text), 0.0, true);
+        return UsageExtract {
+            input_tokens: 0,
+            output_tokens: sse::estimate_tokens_from_text(text),
+            estimated: true,
+            ..Default::default()
+        };
     }
 
     // 费用暂未实现，固定返回 0.0
-    (tokens_in, tokens_out, 0.0, false)
+    UsageExtract {
+        input_tokens: tokens_in,
+        output_tokens: tokens_out,
+        cache_creation,
+        cache_read,
+        reasoning,
+        cost: 0.0,
+        estimated: false,
+    }
 }
 
 /// 按请求体估算输入 token 数。

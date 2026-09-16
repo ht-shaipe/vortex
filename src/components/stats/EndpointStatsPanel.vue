@@ -141,6 +141,7 @@ function aggregateRange(rows: DailyStat[], startDate: string, endDate: string): 
     outputTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
+    estimatedCount: 0,
     endpoints: [],
   }
   const byEndpoint = new Map<string, EndpointStat>()
@@ -152,6 +153,7 @@ function aggregateRange(rows: DailyStat[], startDate: string, endDate: string): 
     totals.outputTokens += r.outputTokens
     totals.cacheCreationTokens += r.cacheCreationTokens
     totals.cacheReadTokens += r.cacheReadTokens
+    totals.estimatedCount += r.estimatedCount ?? 0
     let ep = byEndpoint.get(r.endpointName)
     if (!ep) {
       ep = {
@@ -162,6 +164,7 @@ function aggregateRange(rows: DailyStat[], startDate: string, endDate: string): 
         outputTokens: 0,
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
+        estimatedCount: 0,
       }
       byEndpoint.set(r.endpointName, ep)
     }
@@ -171,6 +174,7 @@ function aggregateRange(rows: DailyStat[], startDate: string, endDate: string): 
     ep.outputTokens += r.outputTokens
     ep.cacheCreationTokens += r.cacheCreationTokens
     ep.cacheReadTokens += r.cacheReadTokens
+    ep.estimatedCount += r.estimatedCount ?? 0
   }
   totals.endpoints = [...byEndpoint.values()].sort((a, b) => b.requests - a.requests)
   return totals

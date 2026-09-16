@@ -13,9 +13,6 @@ use log::{info, warn};
 /// 允许被代理的域名白名单（子域同样放行）。可按需追加。
 const ALLOWED_DOMAINS: &[&str] = &["hub.htui.cc"];
 
-/// 伪装的 User-Agent 字符串，模拟主流浏览器请求
-const UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /// 从 URL 中提取主机名（去除协议前缀和路径）
 fn host_of(url: &str) -> Option<String> {
@@ -35,7 +32,7 @@ pub fn is_url_allowed(url: &str) -> bool {
     }
 }
 
-/// 转发一次出站请求，复用调用方传入的 `reqwest::Client`。
+/// 转发一次出站请求，复用调用方传入的 `awc::Client`。
 ///
 /// - `url`：目标地址，必须落在 `ALLOWED_DOMAINS` 内，否则返回 `BadRequest`
 /// - `method`：GET / POST / PUT / DELETE / PATCH（其它按 POST 处理）
@@ -45,7 +42,7 @@ pub fn is_url_allowed(url: &str) -> bool {
 ///
 /// 成功时返回解析后的远程 JSON；远程状态码 >= 400 或解析失败则返回 `AppError`。
 pub async fn send_proxy_request(
-    client: &reqwest::Client,
+    client: &awc::Client,
     url: &str,
     method: &str,
     headers: &HashMap<String, String>,
@@ -59,33 +56,40 @@ pub async fn send_proxy_request(
     info!("[PROXY] {} {}", method.to_uppercase(), url);
 
     let req_method = match method.to_uppercase().as_str() {
-        "GET" => reqwest::Method::GET,
-        "PUT" => reqwest::Method::PUT,
-        "DELETE" => reqwest::Method::DELETE,
-        "PATCH" => reqwest::Method::PATCH,
-        _ => reqwest::Method::POST,
+        "GET" => awc::http::Method::GET,
+        "PUT" => awc::http::Method::PUT,
+        "DELETE" => awc::http::Method::DELETE,
+        "PATCH" => awc::http::Method::PATCH,
+        _ => awc::http::Method::POST,
     };
 
-    let mut rb = client
-        .request(req_method, url)
-        .timeout(Duration::from_secs(timeout_secs))
-        .header(reqwest::header::USER_AGENT, UA);
-
+    let mut req = client.request(req_method, url);
     for (k, v) in headers {
-        rb = rb.header(k.as_str(), v.as_str());
+        req = req.insert_header((k.as_str(), v.as_str()));
     }
 
-    if let Some(b) = body {
+    let send_fut = if let Some(b) = body {
         let ct = headers
             .get("Content-Type")
             .map(|s| s.as_str())
             .unwrap_or("application/json");
-        rb = rb.header(reqwest::header::CONTENT_TYPE, ct).body(b.to_owned());
-    }
+        req.insert_header((awc::http::header::CONTENT_TYPE, ct))
+            .send_body(b.to_owned())
+    } else {
+        req.send()
+    };
 
-    let resp = rb.send().await.map_err(AppError::Http)?;
+    let mut resp = actix_web::rt::time::timeout(Duration::from_secs(timeout_secs), send_fut)
+        .await
+        .map_err(|_| AppError::BadRequest(format!("远程请求超时（{}s）", timeout_secs)))?
+        .map_err(AppError::Http)?;
+
     let status = resp.status();
-    let text = resp.text().await.map_err(AppError::Http)?;
+    let bytes = resp
+        .body()
+        .await
+        .map_err(|e| AppError::Internal(format!("读取响应失败: {e}")))?;
+    let text = String::from_utf8_lossy(&bytes);
 
     if status.as_u16() >= 400 {
         warn!("[PROXY] 远程返回错误 {}: {}", status, text);

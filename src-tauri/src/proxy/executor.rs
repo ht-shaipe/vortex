@@ -4,7 +4,7 @@
 //!
 //! - 连接超时 10s（HTTP 客户端全局配置）
 //! - 流式首字节 60s（发出请求到收到响应头，`tokio::time::timeout` 包裹）
-//! - 非流式整体 300s（reqwest 请求级超时，含读取响应体）
+//! - 非流式整体 300s（awc 请求级超时，含读取响应体）
 //! - 流式逐块 120s（在 sse.rs 中按次计时，不限制总时长）
 //!
 //! 请求不会因全局总超时被中途杀掉，长流式生成不受影响。
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 /// 格式化完整错误链（遍历 `std::error::Error::source()`）。
 ///
-/// reqwest/hyper 的顶层错误（如 "error sending request for url"）往往不包含
+/// awc 的顶层错误（如 "error sending request for url"）往往不包含
 /// 根因（DNS 解析失败、TLS 握手失败、连接拒绝等），需要沿 source 链逐层展开。
 fn format_error_chain(e: &dyn std::error::Error) -> String {
     let mut parts = vec![e.to_string()];

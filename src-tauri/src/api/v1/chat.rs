@@ -34,7 +34,7 @@ pub async fn chat_completions(
 
     // 获取代理引擎读锁，处理请求
     let engine = state.proxy_engine.read();
-    let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let upstream_client = crate::create_awc_client(&state.ssl_connector);
     match engine.handle_request(&state, &upstream_client, request).await {
         // 非流式响应：包装为 JSON HTTP 响应
         Ok(crate::proxy::engine::ProxyOutput::Response(body)) => HttpResponse::Ok().json(body),

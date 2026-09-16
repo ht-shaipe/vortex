@@ -261,6 +261,8 @@ pub struct UsageStats {
     pub avg_latency_ms: f64,
     /// 成功率（0.0 ~ 1.0）
     pub success_rate: f64,
+    /// 估算请求数（上游未返回用量，按内容估算）
+    pub estimated_count: i64,
     /// 按提供方分组的请求数（JSON 对象）
     pub by_provider: serde_json::Value,
     /// 按模型分组的请求数（JSON 对象）

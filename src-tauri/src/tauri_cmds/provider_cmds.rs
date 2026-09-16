@@ -166,7 +166,7 @@ pub async fn test_provider(
                             // 拼接模型列表端点完整 URL
                             let url = format!("{}{}", base_url, d.models_path);
 
-                            let client = crate::create_upstream_client(&app_state.upstream_ssl_connector);
+                            let client = crate::create_awc_client(&app_state.ssl_connector);
                             // 构造 GET 请求
                             let mut req = client.get(&url);
 

@@ -56,7 +56,7 @@ pub async fn anthropic_messages(
 
     // 获取代理引擎读锁，处理请求
     let engine = state.proxy_engine.read();
-    let upstream_client = crate::create_upstream_client(&state.upstream_ssl_connector);
+    let upstream_client = crate::create_awc_client(&state.ssl_connector);
     match engine.handle_request(&state, &upstream_client, request).await {
         Ok(ProxyOutput::Response(body)) => {
             // 非流式：上游 OpenAI JSON → Anthropic Messages 响应

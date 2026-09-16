@@ -124,7 +124,7 @@ pub async fn chat_completions_stream(
     tauri::async_runtime::spawn_blocking(move || {
         let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
         rt.block_on(async {
-                let upstream_client = crate::create_upstream_client(&app_state.upstream_ssl_connector);
+                let upstream_client = crate::create_awc_client(&app_state.ssl_connector);
                 let output = engine.handle_request(&app_state, &upstream_client, request).await;
                 match output {
                     Ok(ProxyOutput::Stream(mut sse)) => {
