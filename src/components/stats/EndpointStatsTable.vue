@@ -7,10 +7,9 @@
           <th>端点</th>
           <th class="text-right">请求</th>
           <th class="text-right">错误</th>
+          <th class="text-right">成功率</th>
           <th class="text-right">输入 Token</th>
           <th class="text-right">输出 Token</th>
-          <th class="text-right">缓存创建</th>
-          <th class="text-right">缓存读取</th>
         </tr>
       </thead>
       <tbody>
@@ -18,10 +17,9 @@
           <td>{{ r.endpointName }}</td>
           <td class="text-right num">{{ fmtInt(r.requests) }}</td>
           <td class="text-right num" :class="{ 'text-err': r.errors > 0 }">{{ fmtInt(r.errors) }}</td>
-          <td class="text-right num">{{ fmtInt(r.inputTokens) }}</td>
-          <td class="text-right num">{{ fmtInt(r.outputTokens) }}</td>
-          <td class="text-right num">{{ fmtInt(r.cacheCreationTokens) }}</td>
-          <td class="text-right num">{{ fmtInt(r.cacheReadTokens) }}</td>
+          <td class="text-right num" :class="{ 'text-err': r.requests > 0 && r.errors >= r.requests }">{{ successRate(r) }}</td>
+          <td class="text-right num">{{ formatTokenCompact(r.inputTokens) }}</td>
+          <td class="text-right num">{{ formatTokenCompact(r.outputTokens) }}</td>
         </tr>
       </tbody>
     </table>
@@ -33,10 +31,16 @@
  * EndpointStatsTable.vue — 端点统计表格
  * 职责：以表格展示各端点的请求、错误、Token 用量等统计明细。
  */
-import { fmtInt } from '@/lib/format'
+import { fmtInt, formatTokenCompact } from '@/lib/format'
 import type { EndpointStat } from '@/api/stats'
 
 // Props 定义：rows 为端点统计行列表
 defineProps<{ rows: EndpointStat[] }>()
+
+// 成功率 = (请求数 - 错误数) / 请求数；无请求时显示占位符
+function successRate(r: EndpointStat): string {
+  if (!r.requests) return '—'
+  return `${(((r.requests - r.errors) / r.requests) * 100).toFixed(1)}%`
+}
 </script>
 

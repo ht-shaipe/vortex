@@ -106,15 +106,11 @@ jobs:
           DMG=$(ls "$DMG_DIR"/*.dmg | head -n 1)
           if [ -z "$DMG" ]; then echo "No DMG found, skipping"; exit 0; fi
           echo "DMG found: $DMG"
-          # 原始 DMG 是只读压缩格式，先转成读写镜像再挂载写入
-          RW_DMG="$(mktemp -u).dmg"
-          hdiutil convert "$DMG" -format UDRW -o "$RW_DMG" -ov -quiet
           MNT=$(mktemp -d)
-          hdiutil attach "$RW_DMG" -mountpoint "$MNT" -nobrowse -noautoopen -readwrite
+          hdiutil attach "$DMG" -mountpoint "$MNT" -nobrowse -noautoopen
           cp "src-tauri/dmg/使用说明.txt" "$MNT/"
-          hdiutil detach "$MNT" -quiet
-          # 转回压缩格式覆盖原始 DMG
-          hdiutil convert "$RW_DMG" -format UDZO -o "$DMG" -ov -quiet
-          rm -f "$RW_DMG"
+          hdiutil detach "$MNT"
+          hdiutil convert "$DMG" -format UDZO -o "${DMG%.dmg}-notes.dmg" -ov
+          mv "${DMG%.dmg}-notes.dmg" "$DMG"
           gh release upload "v${{ steps.ver.outputs.version }}" "$DMG" --clobber --repo "${{ github.repository }}"
           echo "✓ 使用说明已注入 DMG 并覆盖上传"

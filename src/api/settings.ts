@@ -7,11 +7,11 @@ import api from './client'
 
 /**
  * 获取当前全局设置。
- * @returns 包含通用设置键值对的对象
+ * @returns 包含通用设置与安全设置键值对的对象
  */
 export async function getSettings() {
   const { data } = await api.get('/settings')
-  return data as { general: Record<string, unknown> }
+  return data as { general: Record<string, unknown>; security: Record<string, unknown> }
 }
 
 /**

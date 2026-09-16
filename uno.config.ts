@@ -82,7 +82,7 @@ export default defineConfig({
     'card-body': 'p-[var(--pad-card)]',
 
     // ============ 状态徽章 pill ============
-    'pill': 'inline-flex items-center gap-6px px-8px py-2px rounded-full text-11px font-medium leading-[1.6] whitespace-nowrap [&_.dot]:w-6px [&_.dot]:h-6px [&_.dot]:rounded-full [&_.dot]:shrink-0 [&.ok]:bg-ok-bg [&.ok]:text-ok [&.ok_.dot]:bg-ok [&.warn]:bg-warn-bg [&.warn]:text-warn [&.warn_.dot]:bg-warn [&.err]:bg-err-bg [&.err]:text-err [&.err_.dot]:bg-err [&.neutral]:bg-surface-3 [&.neutral]:text-ink-3 [&.neutral_.dot]:bg-ink-4 [&.tag]:bg-surface-3 [&.tag]:text-ink-3 [&.tag]:font-mono [&.tag]:text-[10.5px] [&.mono]:font-mono [&.mono]:text-[10.5px]',
+    'pill': 'inline-flex items-center gap-6px px-8px py-2px rounded-full text-11px font-medium leading-[1.6] whitespace-nowrap [&_.dot]:w-6px [&_.dot]:h-6px [&_.dot]:rounded-full [&_.dot]:shrink-0 [&.ok]:bg-ok-bg [&.ok]:text-ok [&.ok_.dot]:bg-ok [&.warn]:bg-warn-bg [&.warn]:text-warn [&.warn_.dot]:bg-warn [&.err]:bg-err-bg [&.err]:text-err [&.err_.dot]:bg-err [&.info]:bg-accent-bg [&.info]:text-accent-ink [&.info_.dot]:bg-accent [&.neutral]:bg-surface-3 [&.neutral]:text-ink-3 [&.neutral_.dot]:bg-ink-4 [&.tag]:bg-surface-3 [&.tag]:text-ink-3 [&.tag]:font-mono [&.tag]:text-[10.5px] [&.mono]:font-mono [&.mono]:text-[10.5px]',
     'dot': 'w-6px h-6px rounded-full shrink-0',
 
     // ============ 表格 ============

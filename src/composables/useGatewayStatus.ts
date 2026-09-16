@@ -21,7 +21,7 @@ export function useGatewayStatus() {
     _refCount++
     if (_refCount === 1) {
       checkHealth()
-      _timer = setInterval(checkHealth, 10000)
+      _timer = setInterval(checkHealth, 30000)
       if (runtime.kind === 'desktop') {
         const { listen } = await import('@tauri-apps/api/event')
         _unlistenTray = await listen<string>('tray-action', (e) => {

@@ -38,9 +38,9 @@
       <p class="heat-tip-date">{{ tooltip.cell.date }}</p>
       <div v-if="activeTotals" class="heat-tip-grid">
         <span>请求数</span><span class="tnum">{{ fmtInt(activeTotals.requests) }}</span>
-        <span>输入 Token</span><span class="tnum">{{ fmtInt(activeTotals.inputTokens) }}</span>
-        <span>输出 Token</span><span class="tnum">{{ fmtInt(activeTotals.outputTokens) }}</span>
-        <span>缓存 Token</span><span class="tnum">{{ fmtInt(activeTotals.cacheTokens) }}</span>
+        <span>输入 Token</span><span class="tnum">{{ formatTokenCompact(activeTotals.inputTokens) }}</span>
+        <span>输出 Token</span><span class="tnum">{{ formatTokenCompact(activeTotals.outputTokens) }}</span>
+        <span>缓存 Token</span><span class="tnum">{{ formatTokenCompact(activeTotals.cacheTokens) }}</span>
       </div>
       <p v-else class="heat-tip-empty">无调用记录</p>
     </div>
@@ -54,7 +54,7 @@
  */
 import { computed, ref } from 'vue'
 import { startOfTodayMs } from '@/lib/range'
-import { fmtInt } from '@/lib/format'
+import { fmtInt, formatTokenCompact } from '@/lib/format'
 import { buildHeatmapCells, heatLevel, type DayTotals, type HeatmapCell } from '@/lib/usageChart'
 import { useThemeColors } from '@/composables/useThemeColors'
 

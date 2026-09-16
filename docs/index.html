@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
 <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
 <title>Vortex — 本地 AI 网关，把多家模型聚合成一个 OpenAI / Anthropic 兼容接口</title>
-<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、模型自动归纳、熔断重试、密钥加密、默认开启 Token 鉴权、用量统计、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
+<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、模型自动归纳、两级熔断重试、上游错误透传、密钥加密、默认开启 Token 鉴权、用量统计与估算、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
 <meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
 <meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
 <meta property="og:description" content="把多家 AI 提供商聚合成 OpenAI / Anthropic 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
@@ -194,7 +194,7 @@
       <div class="card feat reveal" data-page-node-id="irf1RNRZ3cz8xix26wbJy0">
         <span class="feat-ico" data-page-node-id="mD8sy1FABM6JuiHQ4Qjyb0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6nIjHtvUIr6AxLZFRdyvqS"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" data-page-node-id="SujP4OFgJRXsg9UZtergNK"/><path d="M9.5 12l1.8 1.8 3.4-3.6" data-page-node-id="LvkHTlNt8dwovGthzGVvSz"/></svg></span>
         <h3 data-page-node-id="iyJhFMrlGUiSXB4zsexi2X">熔断 + 指数退避重试</h3>
-        <p data-page-node-id="Ochrki34508dHD3nzDR1GW">上游抖动时不把你的请求打光。失败端点自动熔断，恢复后自动放量，保障整体可用性。</p>
+        <p data-page-node-id="Ochrki34508dHD3nzDR1GW">连接与模型两级熔断：失败端点自动熔断、恢复后自动放量，单个模型下线也能秒级隔离，不影响同连接的其他模型。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="oNUGS0yFXv5AxIoAieLS1i">
@@ -206,7 +206,7 @@
       <div class="card feat reveal" data-page-node-id="PbJJZnOweSdlQ8xBDPWIj0">
         <span class="feat-ico" data-page-node-id="36Mc7zYLItQYtil9aJ5ahm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="2NJnA2ePYiHOWVQHKKLuYq"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" data-page-node-id="7dQrdVURboyKVVuK0rwuxB"/></svg></span>
         <h3 data-page-node-id="62V0PyEU12Hw2BQkPJhTuD">用量统计到每一 token</h3>
-        <p data-page-node-id="XOvrfaDCGB58aDjXeakR0v">按提供商、模型、时间维度记录请求数、Token 用量与成本，热力图与趋势图一眼看清花费去向。</p>
+        <p data-page-node-id="XOvrfaDCGB58aDjXeakR0v">按提供商、模型、时间维度记录请求数、Token 用量与成本；上游不回传统计量时自动估算并以 <code>≈</code> 标记，账目不断档。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="nijqZnQ2nfLGsREBfeueS7">

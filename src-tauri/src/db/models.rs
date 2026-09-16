@@ -238,6 +238,8 @@ pub struct UsageEntry {
     pub ttft_ms: Option<i64>,
     /// 费用
     pub cost: f64,
+    /// token 数是否为估算值（上游未返回用量时按内容估算）
+    pub usage_estimated: bool,
     /// 时间戳（RFC3339）
     pub timestamp: String,
 }

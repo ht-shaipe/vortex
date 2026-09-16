@@ -37,6 +37,39 @@ const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 pub struct StreamUsage {
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// token 数是否为估算值（上游未在流中返回 usage 时按内容估算）
+    pub estimated: bool,
+}
+
+/// 按文本内容粗略估算 token 数。
+///
+/// 估算规则：CJK 字符（中日韩）约 1 字 1 token，其余字符约 4 字符 1 token，
+/// 向上取整且至少为 1。仅在上游未返回 usage 时作为兜底使用。
+///
+/// # 参数
+/// - `text`：累计的文本内容
+///
+/// # 返回
+/// 估算的 token 数
+pub fn estimate_tokens_from_text(text: &str) -> i64 {
+    let mut cjk = 0i64;
+    let mut other = 0i64;
+    for ch in text.chars() {
+        // CJK 统一表意文字、扩展A、兼容表意文字、谚文、假名
+        let is_cjk = matches!(ch as u32,
+            0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0xF900..=0xFAFF
+            | 0x3040..=0x30FF | 0xAC00..=0xD7AF);
+        if is_cjk {
+            cjk += 1;
+        } else if !ch.is_whitespace() {
+            other += 1;
+        }
+    }
+    if cjk == 0 && other == 0 {
+        return 0;
+    }
+    // 其他字符按 4 字符 1 token 折算，与 CJK 相加后向上取整
+    (cjk + (other + 3) / 4).max(1)
 }
 
 /// 流结束时的用量落库回调
@@ -236,6 +269,8 @@ struct OpenAiPassthrough {
     input_tokens: i64,
     /// 输出 token 数（来自 usage 收尾块）
     output_tokens: i64,
+    /// 累计的输出文本内容（content / reasoning_content），用于无 usage 时估算
+    content_text: String,
 }
 
 impl OpenAiPassthrough {
@@ -248,6 +283,7 @@ impl OpenAiPassthrough {
             saw_done: false,
             input_tokens: 0,
             output_tokens: 0,
+            content_text: String::new(),
         }
     }
 }
@@ -288,13 +324,17 @@ impl SseParser for OpenAiPassthrough {
                     self.saw_finish = true;
                     let _ = fr;
                 }
-                if choice
-                    .get("delta")
-                    .and_then(|d| d.get("content"))
-                    .and_then(|c| c.as_str())
-                    .is_some_and(|c| !c.is_empty())
-                {
-                    self.saw_content = true;
+                if let Some(delta) = choice.get("delta") {
+                    // 累计输出文本（content 与 reasoning_content 都计入）
+                    if let Some(c) = delta.get("content").and_then(|c| c.as_str()) {
+                        if !c.is_empty() {
+                            self.saw_content = true;
+                            self.content_text.push_str(c);
+                        }
+                    }
+                    if let Some(c) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                        self.content_text.push_str(c);
+                    }
                 }
             }
             // 捕获收尾 usage 块（需上游开启 stream_options.include_usage）
@@ -340,9 +380,18 @@ impl SseParser for OpenAiPassthrough {
     }
 
     fn usage(&self) -> StreamUsage {
+        // 上游未返回 usage 收尾块：按累计输出内容估算（估算值由引擎回填输入）
+        if self.input_tokens == 0 && self.output_tokens == 0 && !self.content_text.is_empty() {
+            return StreamUsage {
+                input_tokens: 0,
+                output_tokens: estimate_tokens_from_text(&self.content_text),
+                estimated: true,
+            };
+        }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            estimated: false,
         }
     }
 }
@@ -372,6 +421,8 @@ struct AnthropicToOpenai {
     input_tokens: i64,
     /// 输出 token 计数
     output_tokens: i64,
+    /// 累计的输出文本内容（text / thinking），用于无 usage 时估算
+    content_text: String,
     /// 内容块索引 → 是否为 tool_use 块
     block_is_tool: Vec<bool>,
     /// tool_use 块索引 → OpenAI tool_calls 中的 index
@@ -390,6 +441,7 @@ impl AnthropicToOpenai {
             finish_reason: None,
             input_tokens: 0,
             output_tokens: 0,
+            content_text: String::new(),
             block_is_tool: Vec::new(),
             tool_index: Vec::new(),
         }
@@ -484,6 +536,7 @@ impl AnthropicToOpenai {
                             let text = delta.get("text").and_then(|t| t.as_str()).unwrap_or("");
                             if !text.is_empty() {
                                 self.saw_content = true;
+                                self.content_text.push_str(text);
                                 out.push_str(&self.chunk(json!({"content": text}), None));
                             }
                         }
@@ -491,6 +544,7 @@ impl AnthropicToOpenai {
                             // 思考增量 → reasoning_content
                             let thinking = delta.get("thinking").and_then(|t| t.as_str()).unwrap_or("");
                             if !thinking.is_empty() {
+                                self.content_text.push_str(thinking);
                                 out.push_str(&self.chunk(json!({"reasoning_content": thinking}), None));
                             }
                         }
@@ -600,9 +654,18 @@ impl SseParser for AnthropicToOpenai {
     }
 
     fn usage(&self) -> StreamUsage {
+        // 上游未回传 output_tokens（message_delta 缺失 usage）：按累计输出内容估算
+        if self.output_tokens == 0 && !self.content_text.is_empty() {
+            return StreamUsage {
+                input_tokens: self.input_tokens,
+                output_tokens: estimate_tokens_from_text(&self.content_text),
+                estimated: true,
+            };
+        }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            estimated: false,
         }
     }
 }
@@ -631,6 +694,8 @@ struct GeminiToOpenai {
     input_tokens: i64,
     /// 输出 token 数（来自 usageMetadata.candidatesTokenCount）
     output_tokens: i64,
+    /// 累计的输出文本内容，用于无 usageMetadata 时估算
+    content_text: String,
 }
 
 impl GeminiToOpenai {
@@ -648,6 +713,7 @@ impl GeminiToOpenai {
             saw_finish: false,
             input_tokens: 0,
             output_tokens: 0,
+            content_text: String::new(),
         }
     }
 
@@ -742,6 +808,7 @@ impl SseParser for GeminiToOpenai {
                         if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                             if !text.is_empty() {
                                 self.saw_content = true;
+                                self.content_text.push_str(text);
                                 out.push_str(&self.chunk(json!({"content": text}), None));
                             }
                         }
@@ -776,9 +843,54 @@ impl SseParser for GeminiToOpenai {
     }
 
     fn usage(&self) -> StreamUsage {
+        // 上游未回传 usageMetadata：按累计输出内容估算
+        if self.input_tokens == 0 && self.output_tokens == 0 && !self.content_text.is_empty() {
+            return StreamUsage {
+                input_tokens: 0,
+                output_tokens: estimate_tokens_from_text(&self.content_text),
+                estimated: true,
+            };
+        }
         StreamUsage {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
+            estimated: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 纯 CJK 文本：1 字 1 token
+    #[test]
+    fn estimate_tokens_cjk() {
+        assert_eq!(estimate_tokens_from_text("你好世界"), 4);
+        // 5 个 CJK 字符 → 5 token
+        assert_eq!(estimate_tokens_from_text("你好世界呀"), 5);
+    }
+
+    /// 纯英文文本：约 4 字符 1 token
+    #[test]
+    fn estimate_tokens_ascii() {
+        // 8 个非空白字符 → 2 token
+        assert_eq!(estimate_tokens_from_text("abcdefgh"), 2);
+        // 5 个字符 → 向上取整 2 token
+        assert_eq!(estimate_tokens_from_text("abcde"), 2);
+    }
+
+    /// 混合文本：CJK 与英文分别计数后求和
+    #[test]
+    fn estimate_tokens_mixed() {
+        // 2 个 CJK（2 token）+ 4 个英文字符（1 token）= 3 token
+        assert_eq!(estimate_tokens_from_text("你好abcd"), 3);
+    }
+
+    /// 空文本与纯空白：返回 0
+    #[test]
+    fn estimate_tokens_empty() {
+        assert_eq!(estimate_tokens_from_text(""), 0);
+        assert_eq!(estimate_tokens_from_text("   \n\t"), 0);
     }
 }

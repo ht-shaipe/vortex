@@ -386,7 +386,7 @@
         </div>
 
         <!-- 底部操作：测试、删除、保存 -->
-        <div class="actions sticky bottom-0 flex items-center gap-[var(--gap-sm)] mt-[var(--gap-md)] pt-14px pb-6px bg-[linear-gradient(to_top,var(--bg)_55%,transparent)]">
+        <div class="actions sticky bottom-0 z-10 flex items-center gap-[var(--gap-sm)] mt-[var(--gap-md)] pt-14px pb-6px bg-[linear-gradient(to_top,var(--bg)_55%,transparent)]">
           <button type="button" class="btn" :disabled="testing" @click="test">{{ testing ? '测试中…' : '测试连接' }}</button>
           <button type="button" class="btn danger" @click="remove">删除</button>
           <span class="spacer flex-1" />

@@ -137,6 +137,15 @@ pub struct AppState {
 - **Open**: 拒绝所有请求，等待 60 秒后转 HalfOpen
 - **HalfOpen**: 允许有限请求，需 3 次连续成功才恢复 Closed
 
+熔断器按名称独立计数，网关内有两级：
+
+| 级别 | 熔断器名称 | 失败阈值 | 说明 |
+|------|-----------|---------|------|
+| 连接级 | `{provider}:{connection}` | 5 | 整个连接故障（密钥失效、网络不通） |
+| 模型级 | `{provider}:{connection}:{model}` | 3 | 单模型确定性故障（下线、无权限）更快隔离 |
+
+两者均冷却 60 秒后转 HalfOpen 探测。对下游的错误映射：熔断打开时返回 503 与友好提示（熔断器名称仅保留在应用日志与请求日志 error_code 中）；上游 4xx/5xx 不可重试错误以 `AppError::Upstream` 原样透传状态码与响应体。
+
 #### 重试策略 (`proxy/retry.rs`)
 
 - 最大重试次数: 2
@@ -193,7 +202,7 @@ pub struct ProviderDef {
 |------|------|----------|
 | `provider_connections` | 提供商连接 | id, provider, name, api_key/access_token(加密), priority, is_active, test_status, backoff_level, rate_limited_until, consecutive_use_count |
 | `api_keys` | 网关 API 密钥 | id, name, key(唯一, `vx-{32位hex}`), allowed_models, allowed_connections, allowed_endpoints, no_log, auto_resolve, is_active, is_banned, rate_limits, usage_limits |
-| `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost |
+| `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost, usage_estimated |
 | `key_value` | 键值存储(设置) | namespace, key, value(JSON) — `settings/general`（端口/UA/隐藏已映射模型等）与 `settings/security`（Token 鉴权、访问令牌、CORS）；首次启动自动写入安全默认值（Token 鉴权开启 + 自动生成访问令牌） |
 | `free_token_sites` | 免费额度站点目录 | id, name, home_url, apply_url, api_supported, api_base, api_format, free_quota, region(`cn`/`global`/`local`), requires_card, requires_verify, tags(JSON), note, provider_id, source(`builtin`/`user`), submitter, sort_order |
 | `model_aliases` | 模型别名（虚拟模型名映射） | id, alias, targets(JSON数组: provider, model, connection_id), created_at |
@@ -208,6 +217,8 @@ pub struct ProviderDef {
 | 004 | `004_provider_latency.sql` | provider_connections 添加 last_latency_ms 列 |
 | 005 | `005_usage_index.sql` | usage_history 添加 timestamp 降序索引 |
 | 006 | `006_model_aliases.sql` | model_aliases 建表（虚拟模型名 + 多目标故障转移） |
+| 007 | `007_model_alias_source.sql` | model_aliases 添加 source 列，区分自动归纳（auto）与手动创建（manual），重新归纳时仅替换 auto 记录 |
+| 008 | `008_usage_estimated.sql` | usage_history 添加 usage_estimated 列，标记 Token 用量为估算值（上游未返回 usage 时按文本长度估算） |
 
 > 迁移按版本号一次性应用并记录在 `_vortex_migrations` 中；已应用的版本不会重跑，新增内容一律追加新版本文件。
 

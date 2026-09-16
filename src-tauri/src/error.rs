@@ -40,6 +40,13 @@ pub enum AppError {
     /// 上游 AI 提供商返回的错误。
     #[error("Provider error: {0}")]
     Provider(String),
+    /// 上游返回的非 2xx 响应，透传给下游以便排查。
+    ///
+    /// 携带上游状态码与原始响应体。下游客户端将收到与上游一致的状态码，
+    /// 响应体优先原样透传（上游本身就是 OpenAI/Anthropic 风格错误 JSON）；
+    /// 非 JSON 响应体则包装为 OpenAI 风格错误。
+    #[error("Upstream returned {status}: {body}")]
+    Upstream { status: u16, body: String },
     /// 熔断器处于打开态，请求被快速失败拦截。
     ///
     /// 携带熔断器名称（`provider_id:connection_id`）。此前调用方依赖错误文案中的
@@ -75,6 +82,11 @@ impl actix_web::ResponseError for AppError {
             AppError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
             AppError::BadRequest(_) => actix_web::http::StatusCode::BAD_REQUEST,
             AppError::Unauthorized(_) => actix_web::http::StatusCode::UNAUTHORIZED,
+            // 上游错误透传上游状态码（无法解析时回退 502）
+            AppError::Upstream { status, .. } => {
+                actix_web::http::StatusCode::from_u16(*status)
+                    .unwrap_or(actix_web::http::StatusCode::BAD_GATEWAY)
+            }
             _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -92,6 +104,7 @@ impl actix_web::ResponseError for AppError {
                 AppError::BadRequest(_) => "BAD_REQUEST",
                 AppError::Unauthorized(_) => "UNAUTHORIZED",
                 AppError::Provider(_) => "PROVIDER_ERROR",
+                AppError::Upstream { .. } => "UPSTREAM_ERROR",
                 AppError::Routing(_) => "ROUTING_ERROR",
                 AppError::CircuitOpen(_) => "CIRCUIT_OPEN",
                 _ => "INTERNAL_ERROR",

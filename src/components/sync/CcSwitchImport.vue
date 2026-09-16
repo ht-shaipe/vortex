@@ -43,7 +43,7 @@
                   class="filter-btn h-24px px-8px border border-solid border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms hover:opacity-100 hover:bg-surface-3 hover:text-ink [&.on]:opacity-100 [&.on]:border-accent-line [&.on]:bg-accent-bg [&.on]:text-accent-ink"
                   :class="{ on: appFilter.claude }"
                   aria-label="仅显示 Claude"
-                  aria-pressed="appFilter.claude"
+                  :aria-pressed="appFilter.claude"
                   @click="appFilter.claude = !appFilter.claude"
                 >
                   claude
@@ -53,7 +53,7 @@
                   class="filter-btn h-24px px-8px border border-solid border-line rounded-sm bg-surface text-xs text-ink-3 opacity-65 transition-all duration-120ms hover:opacity-100 hover:bg-surface-3 hover:text-ink [&.on]:opacity-100 [&.on]:border-accent-line [&.on]:bg-accent-bg [&.on]:text-accent-ink"
                   :class="{ on: appFilter.codex }"
                   aria-label="仅显示 Codex"
-                  aria-pressed="appFilter.codex"
+                  :aria-pressed="appFilter.codex"
                   @click="appFilter.codex = !appFilter.codex"
                 >
                   codex

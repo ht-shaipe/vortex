@@ -30,9 +30,9 @@
               <td>{{ r.endpointName }}</td>
               <td class="right num text-right">{{ fmtInt(r.requests) }}</td>
               <td class="right num text-right" :class="{ 'text-err': r.errors > 0 }">{{ fmtInt(r.errors) }}</td>
-              <td class="right num text-right">{{ fmtInt(r.inputTokens) }}</td>
-              <td class="right num text-right">{{ fmtInt(r.outputTokens) }}</td>
-              <td class="right num text-right">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
+              <td class="right num text-right">{{ formatTokenCompact(r.inputTokens) }}</td>
+              <td class="right num text-right">{{ formatTokenCompact(r.outputTokens) }}</td>
+              <td class="right num text-right">{{ formatTokenCompact(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
               <td class="right text-right">
                 <div class="ops inline-flex items-center gap-2px">
                   <button
@@ -72,7 +72,7 @@ import { ref, watch } from 'vue'
 import { Clock, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import Pagination from './Pagination.vue'
-import { fmtInt } from '@/lib/format'
+import { fmtInt, formatTokenCompact } from '@/lib/format'
 import { statsApi, type DailyStat } from '@/api/stats'
 
 const PAGE_SIZE = 12 // 每页行数

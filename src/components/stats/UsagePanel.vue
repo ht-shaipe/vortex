@@ -4,12 +4,12 @@
       <div class="flex items-center flex-wrap gap-[var(--gap-lg)]">
         <!-- 顶部页面切换标签（由父级通过插槽传入，与操作按钮同行） -->
         <slot name="top-tabs" />
-        <div class="tabs slim mb-0 border-b-none [&_.tab]:px-12px [&_.tab]:py-5px">
+        <div class="tabs slim mb-0 border-b-none [&_.tab]:px-12px [&_.tab]:py-5px overflow-x-auto shrink min-w-0 [&::-webkit-scrollbar]:h-0">
           <button
             v-for="t in appTabs"
             :key="t.key"
             type="button"
-            class="tab"
+            class="tab shrink-0"
             :class="{ active: app === t.key }"
             @click="app = t.key"
           >
@@ -77,9 +77,9 @@
                 <td class="small text-sm text-ink-3">{{ r.appType || '—' }}</td>
                 <td class="mono small text-sm text-ink-3">{{ r.model || '—' }}</td>
                 <td class="right num text-right">{{ fmtInt(r.requests) }}</td>
-                <td class="right num text-right">{{ fmtInt(r.inputTokens) }}</td>
-                <td class="right num text-right">{{ fmtInt(r.outputTokens) }}</td>
-                <td class="right num text-right">{{ fmtInt(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
+                <td class="right num text-right">{{ formatTokenCompact(r.inputTokens) }}</td>
+                <td class="right num text-right">{{ formatTokenCompact(r.outputTokens) }}</td>
+                <td class="right num text-right">{{ formatTokenCompact(r.cacheCreationTokens + r.cacheReadTokens) }}</td>
               </tr>
             </template>
           </tbody>
@@ -102,7 +102,7 @@ import StatCard from './StatCard.vue'
 import TokenHint from './TokenHint.vue'
 import UsageHeatmap from './UsageHeatmap.vue'
 import UsageTrendChart from './UsageTrendChart.vue'
-import { fmtInt } from '@/lib/format'
+import { fmtInt, formatTokenCompact } from '@/lib/format'
 import {
   isHourlyTrend,
   rangeValueUsageFilter,
@@ -142,10 +142,27 @@ const appTabs = computed(() => [
 
 /** provider → 展示名。 */
 function appLabel(t: string): string {
-  if (t === 'claude' || t === 'anthropic') return 'Claude'
-  if (t === 'codex') return 'Codex'
-  if (t === 'openai') return 'OpenAI'
-  return t
+  const map: Record<string, string> = {
+    claude: 'Claude',
+    anthropic: 'Claude',
+    codex: 'Codex',
+    openai: 'OpenAI',
+    zai: 'Z.AI',
+    groq: 'Groq',
+    xai: 'xAI',
+    mistral: 'Mistral',
+    openrouter: 'OpenRouter',
+    cloudflare: 'Cloudflare',
+    ollama: 'Ollama',
+    siliconflow: 'SiliconFlow',
+    huggingface: 'HuggingFace',
+    deepseek: 'DeepSeek',
+    volcengine: '火山引擎',
+    sensetime: '商汤',
+    'custom-openai': '自定义',
+    unknown: '未知',
+  }
+  return map[t.toLowerCase()] ?? t
 }
 
 const appType = computed(() => (app.value === 'all' ? undefined : app.value)) // 实际查询用的来源过滤值

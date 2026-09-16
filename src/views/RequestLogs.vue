@@ -39,8 +39,8 @@
             <td><StatusBadge :tone="statusTone(r.status)" :label="statusLabel(r.status)" /></td>
             <td class="mono">{{ r.provider || '—' }}</td>
             <td class="mono">{{ r.model || '—' }}</td>
-            <td class="num" :title="r.tokensInput != null ? r.tokensInput.toLocaleString() : ''">{{ fmtToken(r.tokensInput) }}</td>
-            <td class="num" :title="r.tokensOutput != null ? r.tokensOutput.toLocaleString() : ''">{{ fmtToken(r.tokensOutput) }}</td>
+            <td class="num" :title="tokenTitle(r, r.tokensInput)">{{ fmtToken(r.tokensInput, r.usageEstimated, isZeroUsage(r)) }}</td>
+            <td class="num" :title="tokenTitle(r, r.tokensOutput)">{{ fmtToken(r.tokensOutput, r.usageEstimated, isZeroUsage(r)) }}</td>
             <td class="num">{{ r.latencyMs != null ? fmtLatency(r.latencyMs) : '—' }}</td>
           </tr>
         </tbody>
@@ -81,6 +81,8 @@ interface Row {
   tokensInput?: number
   tokensOutput?: number
   latencyMs?: number
+  /** token 数是否为估算值（上游未返回用量时按内容估算） */
+  usageEstimated?: boolean
 }
 
 const records = ref<Row[]>([])
@@ -118,11 +120,35 @@ function fmtTime(iso?: string): string {
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 /**
- * 格式化 Token 数量：紧凑展示（1k / 102k），空值返回占位符，精确值见 title。
+ * 判断该记录是否为"成功但完全没有用量"（上游未返回且无法估算）。
+ * @param r 日志记录
+ */
+function isZeroUsage(r: Row): boolean {
+  return r.status === 'success' && !r.tokensInput && !r.tokensOutput && !r.usageEstimated
+}
+/**
+ * 格式化 Token 数量：紧凑展示（1k / 102k）。
+ * 估算值加 ≈ 前缀；成功但无用量显示"未返回"；精确值见 title。
+ * @param n Token 数量
+ * @param estimated 是否为估算值
+ * @param zeroUsage 成功但上游未返回用量
+ */
+function fmtToken(n?: number, estimated?: boolean, zeroUsage?: boolean): string {
+  if (zeroUsage) return '未返回'
+  if (n == null) return '—'
+  return `${estimated ? '≈' : ''}${formatTokenK(n)}`
+}
+/**
+ * 生成 Token 单元格的悬停提示文本：精确值 + 估算/未返回说明。
+ * @param r 日志记录
  * @param n Token 数量
  */
-function fmtToken(n?: number): string {
-  return n == null ? '—' : formatTokenK(n)
+function tokenTitle(r: Row, n?: number): string {
+  if (n == null) return ''
+  const parts = [n.toLocaleString()]
+  if (r.usageEstimated) parts.push('上游未返回用量，为按内容估算的近似值')
+  else if (isZeroUsage(r)) parts.push('上游未返回用量')
+  return parts.join('\n')
 }
 /**
  * 格式化耗时：小于 1000ms 用毫秒，否则折算为秒并保留一位小数。
@@ -142,15 +168,19 @@ async function load() {
     const data = await getUsagePaged(page.value, pageSize)
     const list: unknown[] = data.usage ?? []
     total.value = data.total ?? 0
-    records.value = list.map((item: Record<string, unknown>) => ({
-      time: (item.created_at ?? item.timestamp ?? item.time) as string | undefined,
-      status: item.status as string | undefined,
-      provider: item.provider as string | undefined,
-      model: item.model as string | undefined,
-      tokensInput: (item.tokens_input ?? item.input_tokens) as number | undefined,
-      tokensOutput: (item.tokens_output ?? item.output_tokens) as number | undefined,
-      latencyMs: item.latency_ms as number | undefined,
-    }))
+    records.value = list.map((item) => {
+      const o = (item ?? {}) as Record<string, unknown>
+      return {
+      time: (o.created_at ?? o.timestamp ?? o.time) as string | undefined,
+      status: o.status as string | undefined,
+      provider: o.provider as string | undefined,
+      model: o.model as string | undefined,
+      tokensInput: (o.tokens_input ?? o.input_tokens) as number | undefined,
+      tokensOutput: (o.tokens_output ?? o.output_tokens) as number | undefined,
+      latencyMs: o.latency_ms as number | undefined,
+      usageEstimated: o.usage_estimated === true || o.usage_estimated === 1,
+      }
+    })
   } catch (e) {
     ElMessage.error(`加载失败：${e instanceof Error ? e.message : String(e)}`)
   } finally {

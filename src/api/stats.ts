@@ -34,6 +34,8 @@ export interface RawUsageEntry {
   latency_ms: number | null
   ttft_ms: number | null
   cost: number
+  /** token 数是否为估算值（1 = 上游未返回用量，按内容估算） */
+  usage_estimated: number | boolean
   timestamp: string
 }
 
@@ -127,6 +129,8 @@ export interface RequestLog {
   firstByteMs: number | null
   actualModel: string | null
   errorBody: string | null
+  /** token 数是否为估算值（上游未返回用量时按内容估算） */
+  usageEstimated: boolean
   cost: number
 }
 
@@ -437,6 +441,7 @@ export const statsApi = {
         firstByteMs: r.ttft_ms,
         actualModel: null,
         errorBody: r.error_code,
+        usageEstimated: r.usage_estimated === true || r.usage_estimated === 1,
         cost: r.cost ?? 0,
       }
     })

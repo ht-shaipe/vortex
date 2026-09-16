@@ -22,7 +22,6 @@
             <th style="width: 88px">状态</th>
             <th style="width: 132px">模型</th>
             <th class="right text-right">用时</th>
-            <th class="right text-right">首字</th>
             <th class="right text-right">Token</th>
           </tr>
         </thead>
@@ -43,24 +42,24 @@
             <td class="right num small text-right text-sm text-ink-3">
               {{ !r.isError && r.durationMs != null ? formatDuration(r.durationMs) : '—' }}
             </td>
-            <td class="right num small text-right text-sm text-ink-3">
-              {{ !r.isError && r.firstByteMs != null ? formatDuration(r.firstByteMs) : '—' }}
-            </td>
             <td class="right text-right">
               <el-tooltip placement="left" :show-after="80">
                 <template #content>
                   <div class="tok flex flex-col gap-4px text-sm min-w-150px">
                     <div v-if="r.model" class="tok-model text-ink-3">模型：{{ r.model }}</div>
-                    <div class="tok-row flex justify-between gap-16px"><span>输入</span><span>{{ fmtInt(r.inputTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ fmtInt(r.outputTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ fmtInt(r.cacheCreationTokens) }}</span></div>
-                    <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ fmtInt(r.cacheReadTokens) }}</span></div>
-                    <div class="tok-row total flex justify-between gap-16px border-t border-line-2 border-solid border-0 pt-4px font-semibold"><span>合计</span><span>{{ fmtInt(totalTokens(r)) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输入</span><span>{{ formatTokenCompact(r.inputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>输出</span><span>{{ formatTokenCompact(r.outputTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存创建</span><span>{{ formatTokenCompact(r.cacheCreationTokens) }}</span></div>
+                    <div class="tok-row flex justify-between gap-16px"><span>缓存读取</span><span>{{ formatTokenCompact(r.cacheReadTokens) }}</span></div>
+                    <div class="tok-row total flex justify-between gap-16px border-t border-line-2 border-solid border-0 pt-4px font-semibold"><span>合计</span><span>{{ formatTokenCompact(totalTokens(r)) }}</span></div>
+                    <div v-if="r.usageEstimated" class="tok-est text-ink-4">上游未返回用量，以上为按内容估算的近似值</div>
+                    <div v-else-if="!r.isError && totalTokens(r) === 0" class="tok-est text-ink-4">上游未返回用量</div>
                     <div v-if="r.errorBody" class="tok-err text-err max-w-260px break-all">错误：{{ r.errorBody }}</div>
                   </div>
                 </template>
                 <span class="tok-trigger tnum inline-flex items-center gap-4px text-ink-3 hover:text-ink cursor-default">
-                  {{ formatTokenK(totalTokens(r)) }}
+                  <template v-if="!r.isError && totalTokens(r) === 0 && !r.usageEstimated">未返回</template>
+                  <template v-else>{{ r.usageEstimated ? '≈' : '' }}{{ formatTokenK(totalTokens(r)) }}</template>
                   <el-icon :size="12"><InfoFilled /></el-icon>
                 </span>
               </el-tooltip>
@@ -83,7 +82,7 @@ import { computed, ref, watch } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import DateRangePicker from './DateRangePicker.vue'
 import Pagination from './Pagination.vue'
-import { fmtInt, formatDuration, formatTokenK } from '@/lib/format'
+import { fmtInt, formatDuration, formatTokenK, formatTokenCompact } from '@/lib/format'
 import { rangeValueMs, startOfTodayMs, type RangeValue } from '@/lib/range'
 import { statsApi, type RequestLog } from '@/api/stats'
 

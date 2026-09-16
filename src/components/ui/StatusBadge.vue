@@ -13,7 +13,7 @@
 // Props 定义：tone 控制色调，label 为文案，dot 控制是否显示圆点
 withDefaults(
   defineProps<{
-    tone?: 'ok' | 'warn' | 'err' | 'neutral'
+    tone?: 'ok' | 'warn' | 'err' | 'info' | 'neutral'
     label?: string
     dot?: boolean
   }>(),

@@ -173,14 +173,28 @@ impl ResilienceManager {
     ///
     /// 若该名称尚无熔断器，则自动创建一个（阈值 5，冷却 60 秒）并记录失败。
     pub fn record_failure(&self, name: &str) {
+        self.record_failure_cfg(name, 5, 60);
+    }
+
+    /// 记录一次失败，自定义熔断器阈值与冷却时长。
+    ///
+    /// 若该名称尚无熔断器，则按给定参数创建；已有熔断器沿用其创建时的参数。
+    /// 模型级熔断（`provider:connection:model`）使用更低的阈值（3 次），
+    /// 使"模型不可用"（如下线、无权限）比连接级故障更快触发快速失败。
+    ///
+    /// # 参数
+    /// - `name`：熔断器名称
+    /// - `threshold`：失败次数阈值
+    /// - `reset_duration_secs`：冷却时长（秒）
+    pub fn record_failure_cfg(&self, name: &str, threshold: u32, reset_duration_secs: u64) {
         let mut breakers = self.breakers.lock();
         if let Some(b) = breakers.iter_mut().find(|b| b.name == name) {
             b.record_failure();
             return;
         }
-        // 首次失败：创建新熔断器（阈值 5 次，冷却 60 秒）
+        // 首次失败：按给定参数创建新熔断器
         drop(breakers);
-        let new_breaker = CircuitBreaker::new(name, 5, 60);
+        let new_breaker = CircuitBreaker::new(name, threshold, reset_duration_secs);
         new_breaker.record_failure();
         self.breakers.lock().push(new_breaker);
     }

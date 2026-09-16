@@ -13,10 +13,11 @@
  * 职责：展示空数据占位图标、标题、描述及额外插槽内容。
  */
 import { DataBoard } from '@element-plus/icons-vue'
+import type { Component } from 'vue'
 
 // Props 定义：icon 为图标组件，title 为标题，desc 为描述文案
 withDefaults(
-  defineProps<{ icon?: unknown; title?: string; desc?: string }>(),
+  defineProps<{ icon?: Component; title?: string; desc?: string }>(),
   { icon: DataBoard, title: '', desc: '' },
 )
 </script>
