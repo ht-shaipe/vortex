@@ -747,8 +747,8 @@ async function save() {
     // 仅当填写了新密钥时才更新
     if (form.apiKey) updates.apiKey = form.apiKey
     await updateProvider(route.params.id as string, updates)
-    ElMessage.success('已保存')
-    await load()
+    ElMessage.success('保存成功')
+    router.push('/subscriptions')
   } finally {
     saving.value = false
   }

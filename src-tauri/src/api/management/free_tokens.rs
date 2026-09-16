@@ -178,7 +178,7 @@ fn site_from_remote_or_request(
         "providerId": req.provider_id,
         "source": "user",
         "submitter": req.submitter,
-        "sortOrder": 9000,
+        "reorder": 9000,
         "createdAt": chrono::Utc::now().to_rfc3339(),
         "updatedAt": chrono::Utc::now().to_rfc3339(),
     })
@@ -194,6 +194,36 @@ fn save_local_copy(pool: &crate::db::core::DbPool, req: &CreateFreeTokenSiteRequ
             log::warn!("[FREE-TOKENS] 本地副本写入失败(已忽略): {}", e);
         }
     }
+}
+
+/// 辅助：把 `Option<String>` 中空字符串视为 `None`，便于远程接口识别。
+fn non_empty(opt: &Option<String>) -> Option<&str> {
+    opt.as_deref().filter(|s| !s.trim().is_empty())
+}
+
+/// 构造转发到远程 CMS 的完整 JSON payload。
+///
+/// 在用户提交的字段基础上补全 `source` 与 `reorder`，并将空字符串清洗为 `null`，
+/// 保证远程接口能正确识别用户推荐条目。
+fn build_remote_payload(req: &CreateFreeTokenSiteRequest) -> serde_json::Value {
+    json!({
+        "name": req.name.trim(),
+        "homeUrl": non_empty(&req.home_url),
+        "applyUrl": non_empty(&req.apply_url),
+        "apiSupported": req.api_supported.unwrap_or(true),
+        "apiBase": non_empty(&req.api_base),
+        "apiFormat": non_empty(&req.api_format),
+        "freeQuota": non_empty(&req.free_quota).unwrap_or(""),
+        "region": req.region.as_deref().unwrap_or("global"),
+        "requiresCard": req.requires_card.unwrap_or(false),
+        "requiresVerify": req.requires_verify.unwrap_or(false),
+        "tags": req.tags.clone().unwrap_or(json!([])),
+        "note": non_empty(&req.note),
+        "providerId": non_empty(&req.provider_id),
+        "submitter": non_empty(&req.submitter),
+        "source": "user",
+        "reorder": 9000
+    })
 }
 
 /// 列表查询参数（camelCase，与前端约定一致）
@@ -274,11 +304,9 @@ pub async fn create_site(
     let remote = &state.config.free_tokens_remote;
     // 远程模式：优先提交到远程
     if !remote.is_empty() {
-        // 序列化请求体为 JSON 字符串
-        let payload = match serde_json::to_string(&body.0) {
-            Ok(p) => p,
-            Err(e) => return HttpResponse::InternalServerError().json(json!({"error": e.to_string()})),
-        };
+        // 构造包含 source / reorder 的完整 payload，并清洗空字符串
+        let payload = build_remote_payload(&body.0).to_string();
+        log::info!("[FREE-TOKENS] 远程提交 payload: {}", payload);
         let headers = hub_headers(&state.config);
 
         let client = crate::create_awc_client(&state.ssl_connector);
@@ -293,6 +321,7 @@ pub async fn create_site(
         .await
         {
             Ok(value) => {
+                log::info!("[FREE-TOKENS] 远程提交响应: {}", value);
                 // 业务码校验：非 0/200 视为提交失败，降级本地
                 if let Err(e) = check_remote_code(&value) {
                     log::warn!("[FREE-TOKENS] 远程提交业务失败，改为本地保存: {}", e);

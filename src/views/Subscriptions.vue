@@ -42,7 +42,7 @@
           class="list-search max-w-240px"
         />
         <span class="spacer flex-1" />
-        <span class="list-count text-11.5px text-ink-4 shrink-0 tabular-nums">共 {{ filtered.length }} 个连接</span>
+        <span class="list-count text-11.5px text-ink-4 shrink-0 tabular-nums">优先级数值越大优先使用，共 {{ filtered.length }} 个连接</span>
         <button type="button" class="btn sm shrink-0" :disabled="testingAll || filtered.length === 0" @click="testAll">
           <el-icon v-if="testingAll" class="spin" :size="12"><Loading /></el-icon>
           {{ testingAll ? `测试中 ${progress.done}/${progress.total}` : '全部测试' }}
@@ -54,7 +54,7 @@
           <col style="width: 96px" />
           <col style="width: 240px" />
           <col style="width: 220px" />
-
+          <col style="width: 52px" />
           <col style="width: 92px" />
           <col style="width: 118px" />
         </colgroup>
@@ -63,7 +63,7 @@
             <th>状态</th>
             <th>提供商</th>
             <th>模型</th>
-
+            <th class="num">优先级</th>
             <th class="num">更新于</th>
             <th></th>
           </tr>
@@ -142,6 +142,9 @@
             </td>
 
 
+            <!-- 优先级 -->
+            <td class="num"><span class="pri-val text-12px tabular-nums text-ink-3">{{ conn.priority ?? 0 }}</span></td>
+
             <!-- 更新时间 -->
             <td class="num">{{ fmtTime(conn.updatedAt || conn.createdAt) }}</td>
 
@@ -163,7 +166,7 @@
 
           <!-- 搜索无结果 -->
           <tr v-if="filtered.length === 0">
-            <td colspan="5" class="text-center text-ink-4 py-24px text-12.5px">
+            <td colspan="6" class="text-center text-ink-4 py-24px text-12.5px">
               没有匹配「{{ keyword }}」的连接
             </td>
           </tr>

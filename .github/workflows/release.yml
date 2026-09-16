@@ -102,6 +102,7 @@ jobs:
           echo "tauri.conf.json version synced to $APP_VERSION"
 
       - name: Pre-create GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

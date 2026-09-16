@@ -561,10 +561,14 @@ async function submitSite() {
       note: form.note.trim(),
       submitter: form.submitter.trim(),
     })
-    // 重新加载当前页，保证分页总数与列表状态一致
-    await load()
+    // 提交成功：先关闭弹窗并提示，再刷新列表（刷新失败不影响成功反馈）
     dialogVisible.value = false
-    ElMessage.success('已加入清单')
+    ElMessage.success({ message: '推荐已提交，感谢你的贡献！', duration: 4000 })
+    try {
+      await load()
+    } catch {
+      // 列表刷新失败不掩盖提交成功的事实，下次翻页或手动重试即可
+    }
   } catch (e) {
     ElMessage.error(`提交失败：${errMsg(e)}`)
   } finally {
