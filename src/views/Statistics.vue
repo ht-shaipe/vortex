@@ -149,29 +149,6 @@
           </div>
         </div>
 
-        <!-- 压缩内容回忆 -->
-        <div class="card">
-          <div class="px-16px py-10px border-b border-line border-solid border-0">
-            <div class="card-title text-13.5px">压缩内容回忆</div>
-            <div class="card-sub text-11.5px">被 Prompt 压缩的原始内容记录，点击行查看完整原文</div>
-          </div>
-          <div v-if="compContentLoading" class="py-20px text-center text-ink-4"><el-icon class="spin" :size="14"><Loading /></el-icon></div>
-          <div v-else-if="compContentList.length > 0">
-            <table class="table">
-              <thead><tr><th>Hash</th><th class="num">节省 Tokens</th><th>模型</th><th>时间</th></tr></thead>
-              <tbody>
-                <tr v-for="c in compContentList" :key="c.hash" class="cursor-pointer" @click="showCompContent(c.hash)">
-                  <td class="mono text-11.5px text-ink-3">{{ c.hash.slice(0, 16) }}…</td>
-                  <td class="num mono text-12.5px tabular-nums text-ok">{{ c.savedTokens }}</td>
-                  <td class="mono text-12px">{{ c.model || '—' }}</td>
-                  <td class="text-11.5px text-ink-4">{{ c.createdAt.slice(0, 19) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <EmptyState v-else title="暂无压缩记录" desc="Prompt 压缩发生后，这里会展示被压缩的原始内容与节省的 Token 数" />
-        </div>
-
         <!-- 按提供方 -->
         <div class="card">
           <div class="card-head py-10px px-16px border-b border-line border-solid border-0">
@@ -203,6 +180,30 @@
             </tbody>
           </table>
         </div>
+
+        <!-- 压缩内容回忆 -->
+        <div class="card mt-12px">
+          <div class="px-16px py-10px border-b border-line border-solid border-0">
+            <div class="card-title text-13.5px">压缩内容回忆</div>
+            <div class="card-sub text-11.5px">被 Prompt 压缩的原始内容记录，点击行查看完整原文</div>
+          </div>
+          <div v-if="compContentLoading" class="py-20px text-center text-ink-4"><el-icon class="spin" :size="14"><Loading /></el-icon></div>
+          <div v-else-if="compContentList.length > 0">
+            <table class="table">
+              <thead><tr><th>Hash</th><th class="num">节省 Tokens</th><th>模型</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr v-for="c in compContentList" :key="c.hash" class="cursor-pointer" @click="showCompContent(c.hash)">
+                  <td class="mono text-11.5px text-ink-3">{{ c.hash.slice(0, 16) }}…</td>
+                  <td class="num mono text-12.5px tabular-nums text-ok">{{ c.savedTokens }}</td>
+                  <td class="mono text-12px">{{ c.model || '—' }}</td>
+                  <td class="text-11.5px text-ink-4">{{ c.createdAt.slice(0, 19) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <EmptyState v-else title="暂无压缩记录" desc="Prompt 压缩发生后，这里会展示被压缩的原始内容与节省的 Token 数" />
+        </div>
+
       </template>
     </div>
 
@@ -237,9 +238,10 @@
             <div class="card-title text-13.5px">按模型成本</div>
           </div>
           <table class="table">
-            <thead><tr><th>模型</th><th class="num">请求数</th><th class="num">成本</th><th class="num">输入 Tokens</th><th class="num">输出 Tokens</th><th class="num">节省 Tokens</th></tr></thead>
+            <thead><tr><th>提供方</th><th>模型</th><th class="num">请求数</th><th class="num">成本</th><th class="num">输入 Tokens</th><th class="num">输出 Tokens</th><th class="num">节省 Tokens</th></tr></thead>
             <tbody>
-              <tr v-for="(m, idx) in costData.byModel" :key="m.model || idx">
+              <tr v-for="(m, idx) in costData.byModel" :key="(m.provider || '') + '|' + (m.model || '') + '|' + idx">
+                <td class="text-12.5px">{{ m.provider || '—' }}</td>
                 <td class="mono text-12.5px">{{ m.model || '—' }}</td>
                 <td class="num mono text-12.5px tabular-nums">{{ m.requests }}</td>
                 <td class="num mono text-12.5px tabular-nums">${{ m.cost.toFixed(4) }}</td>

@@ -4,7 +4,7 @@
 //! → 用量记录。流式响应以归一化 SSE 流返回，由入站协议层决定包装方式。
 
 use crate::db::models::{ProxyRequest, UsageEntry};
-use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, rate_limits as db_rate_limits, routing_profiles as db_routing_profiles, usage as db_usage};
+use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, rate_limits as db_rate_limits, routing_profiles as db_routing_profiles, settings as db_settings, usage as db_usage};
 use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
@@ -499,17 +499,73 @@ impl ProxyEngine {
             return Err(AppError::Routing("No active connections for auto routing".into()));
         }
 
-        log::info!("auto 路由：共 {} 个活跃连接，按优先级遍历", all_connections.len());
+        // 读取 auto 路由策略：model-first（模型优先）或 provider-first（提供方优先，默认）
+        let auto_strategy = db_settings::get(conn, "settings", "general")
+            .ok()
+            .flatten()
+            .and_then(|s| s.get("autoRouteStrategy").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "provider-first".to_string());
 
-        // 收集所有候选 (connection_index, model) 并用 bandit 排序
+        log::info!("auto 路由：共 {} 个活跃连接，策略: {}", all_connections.len(), auto_strategy);
+
+        // 收集所有候选 (connection_index, model)
         let mut candidates: Vec<(usize, String)> = Vec::new();
-        for (ci, connection) in all_connections.iter().enumerate() {
-            let models: Vec<String> = match &connection.models {
-                Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
-                _ => connection.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
-            };
-            for model in models {
-                candidates.push((ci, model));
+
+        if auto_strategy == "model-first" {
+            // 模型优先：按模型映射（alias targets）顺序收集候选，同模型内按连接优先级排序
+            let aliases = db_aliases::list(conn).unwrap_or_default();
+            let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+            for alias in &aliases {
+                if !alias.is_active { continue; }
+                for target in &alias.targets {
+                    // 找到匹配的连接（按 connection_id 精确匹配，或按 provider+model 模糊匹配）
+                    let mut matching: Vec<(usize, String)> = Vec::new();
+                    for (ci, c) in all_connections.iter().enumerate() {
+                        if c.provider != target.provider { continue; }
+                        let models: Vec<String> = match &c.models {
+                            Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                            _ => c.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+                        };
+                        for m in &models {
+                            if m != &target.model { continue; }
+                            if let Some(ref cid) = target.connection_id {
+                                if &c.id != cid { continue; }
+                            }
+                            let key = (c.id.clone(), m.clone());
+                            if seen.insert(key) {
+                                matching.push((ci, m.clone()));
+                            }
+                        }
+                    }
+                    // 同模型内按连接优先级排序（priority DESC）
+                    matching.sort_by(|a, b| {
+                        all_connections[b.0].priority.cmp(&all_connections[a.0].priority)
+                    });
+                    candidates.extend(matching);
+                }
+            }
+            // 若模型映射未覆盖任何候选，回退到提供方优先
+            if candidates.is_empty() {
+                for (ci, connection) in all_connections.iter().enumerate() {
+                    let models: Vec<String> = match &connection.models {
+                        Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                        _ => connection.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+                    };
+                    for model in models {
+                        candidates.push((ci, model));
+                    }
+                }
+            }
+        } else {
+            // 提供方优先（默认）：按连接 priority DESC 遍历，每连接内遍历模型
+            for (ci, connection) in all_connections.iter().enumerate() {
+                let models: Vec<String> = match &connection.models {
+                    Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                    _ => connection.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+                };
+                for model in models {
+                    candidates.push((ci, model));
+                }
             }
         }
 
@@ -935,7 +991,7 @@ impl ProxyEngine {
             let cb_req_input = estimate_request_tokens(&request.messages);
             let cb_saved_tokens = request.saved_tokens;
             let cb_agent = request.agent.clone();
-            let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage| {
+            let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage, ok: bool| {
                 let Ok(c) = db_core::get_conn(&cb_pool) else { return };
                 let latency = cb_start.elapsed().as_millis() as i64;
                 // 估算兜底：上游未返回输入 token 时用请求体估算值补齐
@@ -957,9 +1013,9 @@ impl ProxyEngine {
                     tokens_cache_creation: usage.cache_creation,
                     tokens_reasoning: usage.reasoning,
                     service_tier: "standard".to_string(),
-                    status: "success".to_string(),
-                    success: true,
-                    error_code: None,
+                    status: if ok { "success".to_string() } else { "error".to_string() },
+                    success: ok,
+                    error_code: if ok { None } else { Some("stream_error".to_string()) },
                     latency_ms: Some(latency),
                     ttft_ms: None,
                     cost: 0.0,

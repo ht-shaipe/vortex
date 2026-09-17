@@ -1,165 +1,11 @@
-//! �%模型目录同步模块。
+//! 模型目录同步模块。
 //!
-//! 定期从远程 feed 拉取模型目录，更新本地 model_catalog 表。
-//! 同步频率：每 12 小时一次。支持手动触发。
+//! 从已配置的活跃连接拉取 /v1/models 端点，更新本地 model_catalog 表。
+//! 启动后延迟 10 秒首次拉取，之后每 12 小时循环。
 
 use crate::db::model_catalog::{self, CatalogEntry};
 use crate::error::Result;
 use serde::Deserialize;
-
-/// 远程 feed 响应格式
-#[derive(Debug, Deserialize)]
-struct FeedResponse {
-    models: Vec<FeedModel>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FeedModel {
-    provider: String,
-    model: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    context_window: Option<i64>,
-    #[serde(default)]
-    rpm: Option<i64>,
-    #[serde(default)]
-    rpd: Option<i64>,
-    #[serde(default)]
-    tpm: Option<i64>,
-    #[serde(default)]
-    tpd: Option<i64>,
-    #[serde(default)]
-    free_quota: Option<String>,
-    #[serde(default)]
-    supports_tools: bool,
-    #[serde(default)]
-    supports_streaming: bool,
-    #[serde(default)]
-    supports_vision: bool,
-    #[serde(default)]
-    capabilities: serde_json::Value,
-}
-
-/// 内置模型目录种子数据（编译期内嵌，随应用版本更新）
-const BUILTIN_SEED: &str = include_str!("catalog_seed.json");
-
-/// 从远程 feed 拉取并同步模型目录
-pub async fn sync_catalog(
-    pool: &crate::db::core::DbPool,
-    feed_url: &str,
-) -> Result<usize> {
-    log::info!("开始同步模型目录: {}", feed_url);
-
-    let client = awc::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .finish();
-
-    let mut response = client
-        .get(feed_url)
-        .insert_header(("User-Agent", "Vortex/0.1"))
-        .send()
-        .await
-        .map_err(|e| crate::error::AppError::Internal(format!("Feed fetch failed: {}", e)))?;
-
-    if !response.status().is_success() {
-        return Err(crate::error::AppError::Internal(format!(
-            "Feed returned HTTP {}",
-            response.status()
-        )));
-    }
-
-    let body = response
-        .body()
-        .await
-        .map_err(|e| crate::error::AppError::Internal(format!("Feed body read failed: {}", e)))?;
-
-    let feed: FeedResponse = serde_json::from_slice(&body)
-        .map_err(|e| crate::error::AppError::Internal(format!("Feed parse failed: {}", e)))?;
-
-    save_entries(pool, feed.models, feed_url).await
-}
-
-/// 把一批 feed 模型条目写入数据库（共用落库逻辑）
-async fn save_entries(
-    pool: &crate::db::core::DbPool,
-    models: Vec<FeedModel>,
-    source_feed: &str,
-) -> Result<usize> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let entries: Vec<CatalogEntry> = models
-        .into_iter()
-        .map(|m| CatalogEntry {
-            id: uuid::Uuid::new_v4().to_string(),
-            provider: m.provider,
-            model: m.model,
-            name: m.name,
-            context_window: m.context_window,
-            rpm: m.rpm,
-            rpd: m.rpd,
-            tpm: m.tpm,
-            tpd: m.tpd,
-            free_quota: m.free_quota,
-            supports_tools: m.supports_tools,
-            supports_streaming: m.supports_streaming,
-            supports_vision: m.supports_vision,
-            capabilities: m.capabilities,
-            source_feed: Some(source_feed.to_string()),
-            is_active: true,
-            last_synced: Some(now.clone()),
-            created_at: now.clone(),
-            updated_at: now.clone(),
-        })
-        .collect();
-
-    let count = entries.len();
-    let pool_clone = pool.clone();
-    let entries_clone = entries.clone();
-    tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
-        let conn = crate::db::core::get_conn(&pool_clone).map_err(|e| e.to_string())?;
-        model_catalog::batch_upsert(&conn, &entries_clone).map_err(|e| e.to_string())?;
-        log::info!("模型目录同步完成: {} 条", entries_clone.len());
-        Ok(())
-    })
-    .await
-    .map_err(|e| crate::error::AppError::Internal(format!("Sync task failed: {}", e)))?
-    .map_err(crate::error::AppError::Internal)?;
-
-    Ok(count)
-}
-
-/// 导入内置种子目录（无条件 UPSERT，用于手动「同步」刷新快照）。
-/// 返回导入的条目数。
-pub async fn seed_builtin_catalog(pool: &crate::db::core::DbPool) -> Result<usize> {
-    let feed: FeedResponse = serde_json::from_str(BUILTIN_SEED)
-        .map_err(|e| crate::error::AppError::Internal(format!("内置目录数据解析失败: {}", e)))?;
-    save_entries(pool, feed.models, "builtin").await
-}
-
-/// 表为空时导入内置种子目录（应用首次启动时调用，幂等）。
-/// 返回实际导入的条目数；表非空时返回 0。
-pub async fn seed_builtin_catalog_if_empty(pool: &crate::db::core::DbPool) -> Result<usize> {
-    let pool_check = pool.clone();
-    let empty = tokio::task::spawn_blocking(move || -> std::result::Result<bool, String> {
-        let conn = crate::db::core::get_conn(&pool_check).map_err(|e| e.to_string())?;
-        let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM model_catalog", [], |row| row.get(0))
-            .map_err(|e| e.to_string())?;
-        Ok(n == 0)
-    })
-    .await
-    .map_err(|e| crate::error::AppError::Internal(format!("Seed check failed: {}", e)))?
-    .map_err(crate::error::AppError::Internal)?;
-
-    if empty {
-        let n = seed_builtin_catalog(pool).await?;
-        log::info!("首次启动：已导入内置模型目录 {} 条", n);
-        Ok(n)
-    } else {
-        Ok(0)
-    }
-}
 
 /// 从已配置的活跃连接自动拉取 `/v1/models`（或 `/models`）端点，
 /// 将返回的模型列表合并到 model_catalog 表。
@@ -190,16 +36,7 @@ pub async fn refresh_from_connections(
     let mut all_entries = Vec::new();
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 解析内置种子数据，用于补充从 /v1/models 拉取的模型的元信息
-    let builtin_feed: FeedResponse = serde_json::from_str(BUILTIN_SEED).unwrap_or(FeedResponse { models: vec![] });
-    let builtin_lookup: std::collections::HashMap<String, &FeedModel> = builtin_feed
-        .models
-        .iter()
-        .map(|m| (format!("{}:{}", m.provider, m.model), m))
-        .collect();
-
     for conn in &connections {
-        // 优先使用连接级 baseUrl，回退到提供商默认 base_url
         let base_url = match conn.provider_specific_data.get("baseUrl") {
             Some(v) => {
                 let s = v.as_str().unwrap_or("").trim_end_matches('/').to_string();
@@ -223,7 +60,6 @@ pub async fn refresh_from_connections(
             }
         };
 
-        // 构造 models 端点 URL：优先用提供商定义的 models_path，否则按 base_url 格式推断
         let models_url = if let Some((_, mp)) = provider_defaults.get(&conn.provider) {
             if !mp.is_empty() {
                 format!("{}{}", base_url, mp)
@@ -327,23 +163,21 @@ pub async fn refresh_from_connections(
 
         let count = models_resp.data.len();
         for item in models_resp.data {
-            let lookup_key = format!("{}:{}", provider, item.id);
-            let builtin = builtin_lookup.get(&lookup_key);
             all_entries.push(CatalogEntry {
                 id: uuid::Uuid::new_v4().to_string(),
                 provider: provider.clone(),
                 model: item.id.clone(),
-                name: builtin.and_then(|b| b.name.clone()).or(Some(item.id.clone())),
-                context_window: builtin.and_then(|b| b.context_window),
-                rpm: builtin.and_then(|b| b.rpm),
-                rpd: builtin.and_then(|b| b.rpd),
-                tpm: builtin.and_then(|b| b.tpm),
-                tpd: builtin.and_then(|b| b.tpd),
-                free_quota: builtin.and_then(|b| b.free_quota.clone()),
-                supports_tools: builtin.map(|b| b.supports_tools).unwrap_or(false),
-                supports_streaming: builtin.map(|b| b.supports_streaming).unwrap_or(true),
-                supports_vision: builtin.map(|b| b.supports_vision).unwrap_or(false),
-                capabilities: builtin.map(|b| b.capabilities.clone()).unwrap_or(serde_json::Value::Array(vec![])),
+                name: Some(item.id),
+                context_window: None,
+                rpm: None,
+                rpd: None,
+                tpm: None,
+                tpd: None,
+                free_quota: None,
+                supports_tools: false,
+                supports_streaming: true,
+                supports_vision: false,
+                capabilities: serde_json::Value::Array(vec![]),
                 source_feed: Some(format!("connection:{}", conn.name)),
                 is_active: true,
                 last_synced: Some(now.clone()),
@@ -395,27 +229,4 @@ pub struct ConnectionRefreshResult {
     pub model_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-/// 启动定时同步任务（每 12 小时）。必须在 Actix runtime 上下文中调用。
-pub fn start_periodic_sync(
-    pool: crate::db::core::DbPool,
-    feed_url: String,
-) {
-    if feed_url.is_empty() {
-        log::info!("模型目录 feed URL 未配置，仅使用内置目录数据");
-        return;
-    }
-    actix_rt::spawn(async move {
-        loop {
-            // 启动后等待 5 分钟再首次同步
-            tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-            match sync_catalog(&pool, &feed_url).await {
-                Ok(count) => log::info!("定时模型目录同步完成: {} 条", count),
-                Err(e) => log::warn!("定时模型目录同步失败: {}", e),
-            }
-            // 每 12 小时同步一次
-            tokio::time::sleep(std::time::Duration::from_secs(43200)).await;
-        }
-    });
 }

@@ -280,19 +280,14 @@
         <el-icon class="spin" :size="18"><Loading /></el-icon>
       </div>
 
-      <!-- 空态：引导同步数据 -->
+      <!-- 空态：引导从连接拉取 -->
       <div v-else-if="catalog.length === 0" class="card">
-        <EmptyState title="模型目录为空" desc="点击「同步」即可导入内置的官方模型参数快照（上下文窗口、限速、能力标签）；配置远程 feed 后可自动更新">
-          <div class="text-12px text-ink-4 font-mono bg-surface-2 py-8px px-14px rounded-sm leading-[1.7]">
-            可选：设置环境变量配置远程 feed 以自动更新<br />
-            <span class="text-ink-2">VORTEX_CATALOG_FEED_URL=https://example.com/models.json</span><br />
-            feed 格式：{ "models": [ { "provider": "openai", "model": "gpt-4o", ... } ] }
-          </div>
+        <EmptyState title="模型目录为空" desc="添加订阅连接后，点击「从连接拉取」即可自动获取各上游提供的模型列表">
           <div class="empty-actions flex gap-8px mt-12px">
-            <button type="button" class="btn primary" :disabled="syncing" @click="syncCatalog">
-              <el-icon v-if="syncing" class="spin" :size="14"><Loading /></el-icon>
-              <el-icon v-else :size="14"><RefreshRight /></el-icon>
-              {{ syncing ? '同步中…' : '立即同步' }}
+            <button type="button" class="btn primary" :disabled="connRefreshing" @click="refreshFromConnections">
+              <el-icon v-if="connRefreshing" class="spin" :size="14"><Loading /></el-icon>
+              <el-icon v-else :size="14"><Connection /></el-icon>
+              {{ connRefreshing ? '拉取中…' : '从连接拉取' }}
             </button>
           </div>
         </EmptyState>
@@ -312,11 +307,6 @@
               <el-icon v-if="connRefreshing" class="spin" :size="12"><Loading /></el-icon>
               <el-icon v-else :size="12"><Connection /></el-icon>
               {{ connRefreshing ? '拉取中' : '从连接拉取' }}
-            </button>
-            <button type="button" class="btn sm primary" :disabled="syncing" @click="syncCatalog">
-              <el-icon v-if="syncing" class="spin" :size="12"><Loading /></el-icon>
-              <el-icon v-else :size="12"><RefreshRight /></el-icon>
-              {{ syncing ? '同步中' : '同步' }}
             </button>
           </div>
         </div>
@@ -363,16 +353,6 @@
                 <span v-if="m.freeQuota" class="shrink-0 pill ok text-10.5px" :title="m.freeQuota">{{ m.freeQuota }}</span>
                 <span v-if="!m.rpm && !m.rpd && !m.tpm && !m.tpd && !m.freeQuota" class="text-ink-5">无限速信息</span>
               </div>
-
-              <!-- 应用为限额 -->
-              <el-tooltip content="把官方限速值写入速率限制规则，超限时路由自动跳到下一个候选" placement="top">
-                <button
-                  type="button"
-                  class="btn sm shrink-0"
-                  :disabled="!m.rpm && !m.rpd && !m.tpm && !m.tpd"
-                  @click="applyAsCap(m)"
-                >应用为限额</button>
-              </el-tooltip>
             </div>
           </div>
         </div>
@@ -474,7 +454,7 @@
  */
 import { computed, onMounted, ref, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, Plus, Connection, Refresh, RefreshRight, WarningFilled, InfoFilled } from '@element-plus/icons-vue'
+import { Loading, Plus, Connection, Refresh, WarningFilled, InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
@@ -486,8 +466,8 @@ import { modelCatalogApi, type CatalogEntry } from '@/api/modelCatalog'
 const tabs = [
   { key: 'connections', label: '连接管理' },
   { key: 'rate-limits', label: '速率限制' },
-  { key: 'catalog', label: '模型目录' },
   { key: 'tos', label: 'ToS 审查' },
+  { key: 'catalog', label: '模型目录' },
 ] as const
 const tab = ref<typeof tabs[number]['key']>('connections')
 
@@ -873,7 +853,6 @@ async function removeRateLimit(cap: RateLimitCap) {
 
 const catalog = ref<CatalogEntry[]>([])
 const catLoading = ref(false)
-const syncing = ref(false)
 const connRefreshing = ref(false)
 // 目录搜索关键字（与连接列表的 keyword 独立）
 const catKeyword = ref('')
@@ -927,28 +906,6 @@ function fmtNum(n?: number): string {
   return typeof n === 'number' ? n.toLocaleString('en-US') : ''
 }
 
-/**
- * 把官方限速值应用为速率限制规则。
- * @param m 目录条目
- */
-async function applyAsCap(m: CatalogEntry) {
-  try {
-    await rateLimitsApi.upsert({
-      provider: m.provider,
-      model: m.model,
-      rpm: m.rpm || undefined,
-      rpd: m.rpd || undefined,
-      tpm: m.tpm || undefined,
-      tpd: m.tpd || undefined,
-    })
-    ElMessage.success(`已把 ${m.provider}/${m.model} 的官方限速写入速率限制`)
-    // 限额列表可能已加载，同步刷新使新规则立即可见
-    if (rateLimits.value.length > 0) loadRateLimits()
-  } catch {
-    ElMessage.error('应用限额失败')
-  }
-}
-
 async function loadCatalog() {
   catLoading.value = true
   try {
@@ -957,25 +914,6 @@ async function loadCatalog() {
     ElMessage.error('加载模型目录失败')
   } finally {
     catLoading.value = false
-  }
-}
-
-/** 同步：导入内置快照，若配置了 feed 再拉远程。 */
-async function syncCatalog() {
-  syncing.value = true
-  try {
-    const r = await modelCatalogApi.sync()
-    if (r.warning) {
-      ElMessage.warning(`${r.warning}（内置快照已导入）`)
-    } else {
-      ElMessage.success(`同步完成，共 ${r.synced} 条模型`)
-    }
-    await loadCatalog()
-  } catch (e: any) {
-    const msg = e?.response?.data?.error || e?.message || '同步失败'
-    ElMessage.error(`同步失败：${msg}`)
-  } finally {
-    syncing.value = false
   }
 }
 

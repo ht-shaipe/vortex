@@ -29,7 +29,8 @@ use serde_json::json;
 ///
 /// 各 CLI 智能体在请求头中留有独特标识：Codex 带 `originator` 头，
 /// 其余靠 User-Agent 特征前缀。识别结果用于 auto 路由的跨智能体
-/// 模型占用避让；未识别时返回 None（不参与避让判定）。
+/// 模型占用避让；未识别时回退解析 UA 产品名（见 [`parse_agent_from_ua`]），
+/// 仍无法归类的返回 None（不参与避让判定）。
 pub fn detect_agent(headers: &HeaderMap) -> Option<String> {
     // Codex CLI 专有头：originator: codex_cli_rs
     if let Some(originator) = headers.get("originator").and_then(|v| v.to_str().ok()) {
@@ -44,18 +45,136 @@ pub fn detect_agent(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_default();
     // 按特异度从高到低匹配 UA 前缀/子串
-    if ua.starts_with("claude-cli") {
+    let detected = if ua.starts_with("claude-cli") {
         Some("claude_code".into())
+    } else if ua.starts_with("zcode") {
+        Some("zcode".into())
     } else if ua.contains("opencode") {
         Some("opencode".into())
     } else if ua.contains("qwen") {
         Some("qwen_code".into())
-    } else if ua.contains("dsh") {
+    } else if ua.contains("dsh") || ua.contains("deepseek") {
         Some("dsh".into())
     } else if ua.contains("codex") {
         Some("codex".into())
     } else {
         None
+    };
+    // 未命中已知指纹时，回退按 UA 首个产品标识归类，
+    // 使未知 CLI（如 workbuddy/5.5.6 cli/2.137.1）也能参与占用避让
+    let detected = detected.or_else(|| parse_agent_from_ua(&ua));
+    if detected.is_none() {
+        // 诊断：未识别的调用方打印 UA，便于扩充指纹规则
+        if ua.is_empty() {
+            log::info!("agent 指纹：请求未携带 User-Agent 头（originator 未命中），视为未知来源");
+        } else {
+            log::info!("agent 指纹：未识别的 User-Agent: {}", ua);
+        }
+    }
+    detected
+}
+
+/// 从未命中已知规则的 User-Agent 中提取产品名作为 agent 标识。
+///
+/// UA 首个空白分隔的 token 通常是产品名（形如 `name/version`），取 `/` 前
+/// 的部分并规范化为 snake_case（如 `workbuddy/5.5.6 ... cli/2.137.1` →
+/// `workbuddy`）。通用 HTTP 客户端库（浏览器、python-requests、curl 等）
+/// 不携带智能体语义，返回 None 保持匿名，避免把“工具链”当成调用方。
+fn parse_agent_from_ua(ua: &str) -> Option<String> {
+    // 首个 token 的 `/` 前部分即产品名
+    let first = ua.split_whitespace().next()?;
+    let product = first.split('/').next().unwrap_or(first);
+    // 非 ASCII 字母数字折叠为单下划线，去首尾下划线
+    let mut name = String::with_capacity(product.len());
+    let mut last_underscore = false;
+    for ch in product.chars() {
+        if ch.is_ascii_alphanumeric() {
+            name.push(ch);
+            last_underscore = false;
+        } else if !last_underscore {
+            name.push('_');
+            last_underscore = true;
+        }
+    }
+    let name = name.trim_matches('_');
+    // 纯数字（版本号）或无字母的标识不具备产品名语义
+    let has_alpha = name.chars().any(|c| c.is_ascii_alphabetic());
+    if name.len() < 2 || !has_alpha || is_generic_client(name) {
+        return None;
+    }
+    log::info!("agent 指纹：按 UA 产品名归为 {}（UA: {}）", name, ua);
+    Some(name.to_string())
+}
+
+/// 判断是否为通用 HTTP 客户端库的产品名（含前缀变体，如 python_requests）。
+fn is_generic_client(name: &str) -> bool {
+    const GENERIC: &[&str] = &[
+        "mozilla", "python", "requests", "urllib", "aiohttp", "httpx", "go", "java",
+        "okhttp", "axios", "node", "node_fetch", "undici", "got", "curl", "wget",
+        "httpclient", "apache", "kotlin", "ruby", "php", "perl", "libwww", "openssl",
+        "postman", "insomnia", "httpie", "swift", "cfnetwork", "darwin", "dart", "guzzle",
+        "grpc", "restclient", "rest_client", "spring", "dartdio", "dio", "unityplayer",
+    ];
+    GENERIC.iter().any(|&g| {
+        name == g
+            || (name.len() > g.len() && name.starts_with(g) && name.as_bytes()[g.len()] == b'_')
+    })
+}
+
+#[cfg(test)]
+mod agent_tests {
+    use super::*;
+
+    fn detect_with_ua(ua: &str) -> Option<String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            actix_web::http::header::HeaderName::from_static("user-agent"),
+            ua.parse().unwrap(),
+        );
+        detect_agent(&headers)
+    }
+
+    #[test]
+    fn fallback_extracts_product_name() {
+        // workbuddy 这类未知 CLI：取首个产品标识，参与占用避让
+        assert_eq!(
+            detect_with_ua("workbuddy/5.5.6 workbuddy/5.5.6 cli/2.137.1"),
+            Some("workbuddy".into())
+        );
+    }
+
+    #[test]
+    fn fallback_normalizes_separators() {
+        // 连字符/下划线/点统一折叠为单下划线
+        assert_eq!(detect_with_ua("My-Cool.CLI/1.0"), Some("my_cool_cli".into()));
+    }
+
+    #[test]
+    fn fallback_ignores_generic_libraries() {
+        assert_eq!(detect_with_ua("python-requests/2.31.0"), None);
+        assert_eq!(detect_with_ua("Python/3.11 aiohttp/3.9.1"), None);
+        assert_eq!(detect_with_ua("Go-http-client/2.0"), None);
+        assert_eq!(detect_with_ua("curl/8.4.0"), None);
+        assert_eq!(detect_with_ua("node"), None);
+        assert_eq!(detect_with_ua("Mozilla/5.0 (Macintosh)"), None);
+    }
+
+    #[test]
+    fn fallback_rejects_noise() {
+        // 纯版本号、单字符等无意义标识
+        assert_eq!(detect_with_ua("1.0.0"), None);
+        assert_eq!(detect_with_ua("x/1"), None);
+        assert_eq!(detect_with_ua(""), None);
+    }
+
+    #[test]
+    fn known_rules_still_win() {
+        // 已知指纹不受 fallback 影响
+        assert_eq!(
+            detect_with_ua("claude-cli/1.0.23 (external)"),
+            Some("claude_code".into())
+        );
+        assert_eq!(detect_with_ua("Zcode/2.3.0"), Some("zcode".into()));
     }
 }
 

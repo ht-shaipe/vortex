@@ -4,7 +4,7 @@ use crate::db::models::{CreateModelAlias, ModelAlias, ModelAliasTarget, UpdateMo
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-/// 行映射：从 DB 行构建 ModelAlias（含 source 列）。
+/// 行映射：从 DB 行构建 ModelAlias（含 source、sort_order 列）。
 fn row_to_alias(row: &rusqlite::Row) -> rusqlite::Result<ModelAlias> {
     let targets_json: String = row.get(2)?;
     let targets: Vec<ModelAliasTarget> = serde_json::from_str(&targets_json).unwrap_or_default();
@@ -16,15 +16,16 @@ fn row_to_alias(row: &rusqlite::Row) -> rusqlite::Result<ModelAlias> {
         source: row.get(4)?,
         created_at: row.get(5)?,
         updated_at: row.get(6)?,
+        sort_order: row.get::<_, i64>(7).unwrap_or(0),
     })
 }
 
-const SELECT_COLS: &str = "id, alias, targets, is_active, source, created_at, updated_at";
+const SELECT_COLS: &str = "id, alias, targets, is_active, source, created_at, updated_at, sort_order";
 
-/// 列出所有模型别名。
+/// 列出所有模型别名，按 sort_order DESC、alias ASC 排序。
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<ModelAlias>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SELECT_COLS} FROM model_aliases ORDER BY alias ASC"
+        "SELECT {SELECT_COLS} FROM model_aliases ORDER BY sort_order DESC, alias ASC"
     ))?;
     let rows = stmt.query_map([], row_to_alias)?;
     rows.collect()
@@ -60,6 +61,7 @@ pub fn create(conn: &Connection, req: &CreateModelAlias) -> rusqlite::Result<Mod
         source: "manual".into(),
         created_at: now.clone(),
         updated_at: now,
+        sort_order: 0,
     })
 }
 
@@ -76,6 +78,9 @@ pub fn update(conn: &Connection, id: &str, req: &UpdateModelAlias) -> rusqlite::
     if let Some(is_active) = req.is_active {
         conn.execute("UPDATE model_aliases SET is_active = ?1, updated_at = ?2 WHERE id = ?3", params![is_active as i64, now, id])?;
     }
+    if let Some(sort_order) = req.sort_order {
+        conn.execute("UPDATE model_aliases SET sort_order = ?1, updated_at = ?2 WHERE id = ?3", params![sort_order, now, id])?;
+    }
     let mut stmt = conn.prepare(&format!("SELECT {SELECT_COLS} FROM model_aliases WHERE id = ?1"))?;
     let mut rows = stmt.query_map(params![id], row_to_alias)?;
     if let Some(row) = rows.next() {
@@ -88,6 +93,18 @@ pub fn update(conn: &Connection, id: &str, req: &UpdateModelAlias) -> rusqlite::
 /// 删除模型别名。
 pub fn delete(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM model_aliases WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// 批量更新排序权重。接受 (id, sort_order) 列表，逐条更新。
+pub fn batch_reorder(conn: &Connection, orders: &[(String, i64)]) -> rusqlite::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    for (id, sort_order) in orders {
+        conn.execute(
+            "UPDATE model_aliases SET sort_order = ?1, updated_at = ?2 WHERE id = ?3",
+            params![sort_order, now, id],
+        )?;
+    }
     Ok(())
 }
 
@@ -133,6 +150,7 @@ pub fn create_auto_batch(
             source: "auto".into(),
             created_at: now.clone(),
             updated_at: now.clone(),
+            sort_order: 0,
         });
     }
 

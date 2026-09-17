@@ -228,6 +228,8 @@ pub struct ProviderDef {
 | 014 | `014_compressed_content.sql` | 压缩内容寻址回忆表 |
 | 015 | `015_key_permissions.sql` | API Key 权限规则表 |
 | 016 | `016_usage_agent.sql` | usage_history 添加 agent 列，记录请求来源 Agent/终端标识 |
+| 017 | `017_clear_catalog_seed.sql` | 清空 model_catalog 旧内置种子数据 |
+| 018 | `018_model_alias_sort_order.sql` | model_aliases 添加 sort_order 列，支持自定义排序权重 |
 
 > 迁移按版本号一次性应用并记录在 `_vortex_migrations` 中；已应用的版本不会重跑，新增内容一律追加新版本文件。
 

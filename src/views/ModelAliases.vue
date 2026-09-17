@@ -23,6 +23,33 @@
     </div>
 
     <template v-if="tab === 'aliases'">
+    <!-- auto 路由策略选择 -->
+    <div class="card mb-12px py-12px px-16px">
+      <div class="flex items-center gap-16px flex-wrap">
+        <div class="flex items-center gap-8px">
+          <el-icon :size="14" class="text-ink-4"><Guide /></el-icon>
+          <span class="text-13px font-medium text-ink-2">auto 路由策略</span>
+        </div>
+        <div class="flex items-center gap-4px">
+          <button
+            type="button"
+            class="strategy-btn py-4px px-12px rounded-md text-12px transition-colors border border-solid"
+            :class="autoRouteStrategy === 'model-first' ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-ink-3 border-line'"
+            @click="setAutoRouteStrategy('model-first')"
+          >模型优先</button>
+          <button
+            type="button"
+            class="strategy-btn py-4px px-12px rounded-md text-12px transition-colors border border-solid"
+            :class="autoRouteStrategy === 'provider-first' ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-ink-3 border-line'"
+            @click="setAutoRouteStrategy('provider-first')"
+          >提供方优先</button>
+        </div>
+        <span class="text-12px text-ink-4 leading-[1.6]">
+          {{ autoRouteStrategy === 'model-first' ? '按模型映射中的目标顺序依次尝试，同模型内按连接优先级选择提供方' : '按连接优先级遍历提供方，每个提供方内依次尝试其模型' }}
+        </span>
+      </div>
+    </div>
+
     <div v-if="loading" class="text-center text-ink-4 py-40px">
       <el-icon class="spin" :size="18"><Loading /></el-icon>
     </div>
@@ -33,16 +60,34 @@
       <p class="text-12px text-ink-4 mt-4px">创建虚拟模型名后，客户端用该名称请求，网关按优先级依次尝试映射的真实模型</p>
     </div>
 
-    <div v-else class="flex flex-col gap-12px">
-      <div v-for="a in aliases" :key="a.id" class="card py-16px px-20px">
+    <div v-else class="aliases-list flex flex-col gap-12px" @dragstart.prevent>
+      <div v-for="(a, idx) in aliases" :key="a.id" class="card py-16px px-20px"
+        :class="{
+          'card-dragging': cardDrag && cardDrag.started && cardDrag.fromIdx === idx,
+          'drop-before': cardDropIdx !== null && cardDropIdx === idx,
+          'drop-after': cardDropIdx !== null && cardDropIdx === aliases.length && idx === aliases.length - 1,
+        }">
         <div class="alias-head flex items-center justify-between">
           <div class="flex items-center gap-10px">
+            <span class="cursor-grab text-ink-4 hover:text-ink-2 shrink-0 touch-action-none select-none" title="按住拖拽调整列表顺序"
+              @pointerdown="onCardHandleDown($event, idx)"
+              @pointermove="onCardHandleMove($event)"
+              @pointerup="onCardHandleUp($event)"
+              @pointercancel="onCardHandleCancel">
+              <el-icon :size="14"><Rank /></el-icon>
+            </span>
             <span class="alias-name font-mono text-15px font-semibold">{{ a.alias }}</span>
             <span class="pill" :class="a.is_active ? 'ok' : 'neutral'">{{ a.is_active ? '启用' : '停用' }}</span>
             <span class="pill" :class="a.source === 'auto' ? 'info' : 'neutral'">{{ a.source === 'auto' ? '自动' : '手动' }}</span>
             <span class="text-12px text-ink-4">{{ a.targets.length }} 个目标</span>
           </div>
           <div class="flex items-center gap-8px">
+            <button class="btn sm ghost" :disabled="idx === 0" @click="moveAlias(idx, -1)" title="上移（列表顺序）">
+              <el-icon :size="13"><ArrowUp /></el-icon>
+            </button>
+            <button class="btn sm ghost" :disabled="idx === aliases.length - 1" @click="moveAlias(idx, 1)" title="下移（列表顺序）">
+              <el-icon :size="13"><ArrowDown /></el-icon>
+            </button>
             <el-switch :model-value="a.is_active" @change="(v: boolean) => toggleActive(a, v)" />
             <button class="btn sm" @click="openEdit(a)">
               <el-icon :size="13"><Edit /></el-icon> 编辑
@@ -53,11 +98,31 @@
           </div>
         </div>
         <div class="alias-targets mt-12px">
-          <div v-for="(t, i) in a.targets" :key="i" class="target-row flex items-center gap-8px py-4px text-13px">
+          <div v-for="(t, i) in a.targets" :key="i"
+            class="target-row flex items-center gap-8px py-4px text-13px cursor-grab"
+            :data-alias="a.id"
+            :class="{
+              'row-dragging': rowDrag && rowDrag.started && rowDrag.aliasId === a.id && rowDrag.fromIdx === i,
+              'drop-before': rowDropIdx !== null && rowDrag?.aliasId === a.id && rowDropIdx === i,
+              'drop-after': rowDropIdx !== null && rowDrag?.aliasId === a.id && rowDropIdx === a.targets.length && i === a.targets.length - 1,
+            }"
+            :title="`按顺序故障转移：第 ${i + 1} 优先（拖拽或 ↑↓ 调整）`"
+            @pointerdown="onRowPointerDown($event, a, i)"
+            @pointermove="onRowPointerMove($event, a)"
+            @pointerup="onRowPointerUp($event, a)"
+            @pointercancel="onRowPointerCancel">
             <span class="target-idx inline-flex items-center justify-center w-20px h-20px rounded-full bg-surface-3 text-ink-4 text-11px font-semibold shrink-0">{{ i + 1 }}</span>
             <span class="pill info font-mono">{{ t.provider }}</span>
             <span class="text-13px text-ink-2 font-mono">{{ t.model }}</span>
             <span v-if="t.connection_id" class="text-11px text-ink-4">· {{ connNameMap[t.connection_id] ?? t.connection_id.slice(0, 8) }}</span>
+            <span v-if="a.targets.length > 1" class="ml-auto flex items-center gap-4px shrink-0">
+              <button class="btn sm ghost" :disabled="i === 0" @click="moveTargetRow(a, i, -1)" title="提高优先级">
+                <el-icon :size="12"><ArrowUp /></el-icon>
+              </button>
+              <button class="btn sm ghost" :disabled="i === a.targets.length - 1" @click="moveTargetRow(a, i, 1)" title="降低优先级">
+                <el-icon :size="12"><ArrowDown /></el-icon>
+              </button>
+            </span>
           </div>
         </div>
       </div>
@@ -236,12 +301,13 @@
  */
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown, ArrowRight, InfoFilled, MagicStick } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown, ArrowRight, InfoFilled, MagicStick, Guide, Rank } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
-import { listAliases, createAlias, updateAlias, deleteAlias, autoGenerate, type ModelAlias, type ModelAliasTarget } from '@/api/modelAliases'
+import { listAliases, createAlias, updateAlias, deleteAlias, autoGenerate, reorderAliases, type ModelAlias, type ModelAliasTarget } from '@/api/modelAliases'
 import { listProviders } from '@/api/providers'
 import { routingProfilesApi, type RoutingProfile, type ProfileTarget } from '@/api/routingProfiles'
+import { getSettings, updateSettings } from '@/api/settings'
 
 /** 可选模型项：一个连接下的一个具体模型。 */
 interface ModelOption {
@@ -269,6 +335,239 @@ const modelOptions = ref<ModelOption[]>([])
 const connNameMap = ref<Record<string, string>>({})
 const autoGenerating = ref(false)
 const tab = ref<'aliases' | 'profiles'>('aliases')
+const autoRouteStrategy = ref<'model-first' | 'provider-first'>('provider-first')
+
+
+// ── 排序：↑↓ 按钮 + pointer 拖拽（不依赖 HTML5 DnD：WKWebView 对其支持不完整）──
+
+const DRAG_THRESHOLD = 5
+
+/** 卡片上移/下移（按钮）。 */
+function moveAlias(idx: number, dir: number) {
+  void persistMoveAlias(idx, idx + dir)
+}
+
+/** 目标行上移/下移（按钮）。 */
+function moveTargetRow(a: ModelAlias, i: number, dir: number) {
+  void persistMoveTarget(a, i, i + dir)
+}
+
+/** 持久化卡片顺序：from → to。 */
+async function persistMoveAlias(from: number, to: number) {
+  if (to < 0 || to >= aliases.value.length || from === to) return
+  const arr = [...aliases.value]
+  const [moved] = arr.splice(from, 1)
+  arr.splice(to, 0, moved)
+  aliases.value = arr
+  try {
+    const orders = arr.map((a, i) => ({ id: a.id, sort_order: arr.length - i }))
+    await reorderAliases(orders)
+  } catch {
+    ElMessage.error('排序失败')
+    await load()
+  }
+}
+
+/** 持久化目标行顺序（故障转移优先级）：from → to。 */
+async function persistMoveTarget(a: ModelAlias, from: number, to: number) {
+  if (to < 0 || to >= a.targets.length || from === to) return
+  const targets = [...a.targets]
+  const [moved] = targets.splice(from, 1)
+  targets.splice(to, 0, moved)
+  a.targets = targets
+  try {
+    const updated = await updateAlias(a.id, { targets })
+    a.targets = updated.targets
+  } catch {
+    ElMessage.error('保存优先级失败')
+    await load()
+  }
+}
+
+/** 按指针 y 坐标计算插入位置（0..rects.length，表示插到该行之前，长度表示末尾）。 */
+function calcDropIdx(rects: { top: number; height: number }[], y: number): number {
+  for (let i = 0; i < rects.length; i++) {
+    if (y < rects[i].top + rects[i].height / 2) return i
+  }
+  return rects.length
+}
+
+/** 同一别名卡片下的所有目标行元素。 */
+function rowElsOf(aliasId: string): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(`.target-row[data-alias="${aliasId}"]`)]
+}
+
+/** 克隆被拖行做跟随指针的幽灵。 */
+function makeRowGhost(from: HTMLElement): HTMLElement {
+  const g = from.cloneNode(true) as HTMLElement
+  g.classList.remove('row-dragging', 'drop-before', 'drop-after')
+  const r = from.getBoundingClientRect()
+  Object.assign(g.style, {
+    position: 'fixed',
+    left: `${r.left}px`,
+    top: `${r.top}px`,
+    width: `${r.width}px`,
+    margin: '0',
+    zIndex: '9999',
+    pointerEvents: 'none',
+    opacity: '0.9',
+    background: 'var(--surface-2)',
+    borderRadius: '8px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+  })
+  document.body.appendChild(g)
+  return g
+}
+
+/** 卡片拖拽幽灵条（不克隆整卡，视觉更轻）。 */
+function makeBarGhost(label: string): HTMLElement {
+  const g = document.createElement('div')
+  g.textContent = label
+  Object.assign(g.style, {
+    position: 'fixed',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '5px 14px',
+    background: 'var(--surface-2)',
+    border: '1px solid var(--accent)',
+    borderRadius: '6px',
+    fontSize: '12.5px',
+    whiteSpace: 'nowrap',
+    zIndex: '9999',
+    pointerEvents: 'none',
+    opacity: '0.95',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+  })
+  document.body.appendChild(g)
+  return g
+}
+
+// ── 目标行拖拽：调整故障转移优先级 ──
+
+const rowDrag = ref<{
+  aliasId: string
+  fromIdx: number
+  ghost: HTMLElement | null
+  startY: number
+  started: boolean
+  pointerId: number
+} | null>(null)
+/** 插入指示：插到该索引的行之前（等于目标数时表示末尾）。 */
+const rowDropIdx = ref<number | null>(null)
+
+function onRowPointerDown(e: PointerEvent, a: ModelAlias, i: number) {
+  if (e.button !== 0) return
+  if ((e.target as HTMLElement).closest('button')) return // 按钮区域留给点击
+  rowDrag.value = { aliasId: a.id, fromIdx: i, ghost: null, startY: e.clientY, started: false, pointerId: e.pointerId }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+}
+
+function onRowPointerMove(e: PointerEvent, a: ModelAlias) {
+  const st = rowDrag.value
+  if (!st || st.aliasId !== a.id || e.pointerId !== st.pointerId) return
+  if (!st.started) {
+    if (Math.abs(e.clientY - st.startY) < DRAG_THRESHOLD) return
+    st.started = true
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'grabbing'
+    const rows = rowElsOf(a.id)
+    st.ghost = makeRowGhost(rows[st.fromIdx] ?? (e.currentTarget as HTMLElement))
+  }
+  if (st.ghost) st.ghost.style.transform = `translateY(${e.clientY - st.startY}px)`
+  rowDropIdx.value = calcDropIdx(
+    rowElsOf(a.id).map((r) => r.getBoundingClientRect()),
+    e.clientY,
+  )
+}
+
+async function onRowPointerUp(e: PointerEvent, a: ModelAlias) {
+  const st = rowDrag.value
+  if (!st || e.pointerId !== st.pointerId) return
+  const dropIdx = rowDropIdx.value
+  const started = st.started
+  const fromIdx = st.fromIdx
+  cleanupRowDrag()
+  if (!started || dropIdx === null || dropIdx === fromIdx) return
+  const to = dropIdx > fromIdx ? dropIdx - 1 : dropIdx
+  await persistMoveTarget(a, fromIdx, to)
+}
+
+function cleanupRowDrag() {
+  rowDrag.value?.ghost?.remove()
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  rowDrag.value = null
+  rowDropIdx.value = null
+}
+
+function onRowPointerCancel() {
+  cleanupRowDrag()
+}
+
+// ── 卡片拖拽（按住手柄）：调整列表顺序 ──
+
+const cardDrag = ref<{ fromIdx: number; ghost: HTMLElement | null; startY: number; started: boolean; pointerId: number } | null>(null)
+const cardDropIdx = ref<number | null>(null)
+
+function cardEls(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('.aliases-list > .card')]
+}
+
+function onCardHandleDown(e: PointerEvent, idx: number) {
+  if (e.button !== 0) return
+  cardDrag.value = { fromIdx: idx, ghost: null, startY: e.clientY, started: false, pointerId: e.pointerId }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+}
+
+function onCardHandleMove(e: PointerEvent) {
+  const st = cardDrag.value
+  if (!st || e.pointerId !== st.pointerId) return
+  if (!st.started) {
+    if (Math.abs(e.clientY - st.startY) < DRAG_THRESHOLD) return
+    st.started = true
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'grabbing'
+    const cards = cardEls()
+    st.ghost = makeBarGhost(cards[st.fromIdx]?.querySelector('.alias-name')?.textContent ?? '移动映射')
+  }
+  if (st.ghost) st.ghost.style.top = `${e.clientY - 16}px`
+  cardDropIdx.value = calcDropIdx(
+    cardEls().map((c) => c.getBoundingClientRect()),
+    e.clientY,
+  )
+}
+
+async function onCardHandleUp(e: PointerEvent) {
+  const st = cardDrag.value
+  if (!st || e.pointerId !== st.pointerId) return
+  const dropIdx = cardDropIdx.value
+  const started = st.started
+  const fromIdx = st.fromIdx
+  cleanupCardDrag()
+  if (!started || dropIdx === null || dropIdx === fromIdx) return
+  const to = dropIdx > fromIdx ? dropIdx - 1 : dropIdx
+  await persistMoveAlias(fromIdx, to)
+}
+
+function cleanupCardDrag() {
+  cardDrag.value?.ghost?.remove()
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  cardDrag.value = null
+  cardDropIdx.value = null
+}
+
+function onCardHandleCancel() {
+  cleanupCardDrag()
+}
 const profiles = ref<RoutingProfile[]>([])
 const profilesLoading = ref(false)
 const profileDialogOpen = ref(false)
@@ -527,9 +826,34 @@ async function removeProfile(p: RoutingProfile) {
   }
 }
 
+/** 加载 auto 路由策略设置。 */
+async function loadAutoRouteStrategy() {
+  try {
+    const s = await getSettings()
+    const v = s.general?.autoRouteStrategy
+    if (v === 'model-first' || v === 'provider-first') {
+      autoRouteStrategy.value = v
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 切换 auto 路由策略并保存。 */
+async function setAutoRouteStrategy(v: 'model-first' | 'provider-first') {
+  if (autoRouteStrategy.value === v) return
+  autoRouteStrategy.value = v
+  try {
+    await updateSettings({ general: { autoRouteStrategy: v } })
+  } catch {
+    /* ignore */
+  }
+}
+
 onMounted(() => {
   load()
   loadModelOptions()
+  loadAutoRouteStrategy()
 })
 </script>
 
@@ -537,5 +861,41 @@ onMounted(() => {
 /* 回退链节点：提供方/模型不换行展示 */
 .chain-node {
   white-space: nowrap;
+}
+/* 拖拽中：原行/原卡半透明（由指针拖拽逻辑驱动） */
+.row-dragging {
+  opacity: 0.35;
+}
+.card-dragging {
+  opacity: 0.4;
+}
+/* 插入位置指示线 */
+.drop-before {
+  position: relative;
+}
+.drop-before::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -5px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 1;
+}
+.drop-after {
+  position: relative;
+}
+.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 1;
 }
 </style>

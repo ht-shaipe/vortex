@@ -30,8 +30,6 @@ pub struct AppConfig {
     pub free_tokens_page_url: String,
     /// 访问 hub 管理接口的认证令牌（可选）。非空时以 `Authorization: Bearer` 携带。
     pub hub_token: String,
-    /// 模型目录远程 feed 地址（JSON，含 models 数组）。为空时不同步。
-    pub catalog_feed_url: String,
 }
 
 impl AppConfig {
@@ -49,7 +47,6 @@ impl AppConfig {
     /// | `VORTEX_FREE_TOKENS_REMOTE` | 免费 Token 提交/删除接口地址 | `https://hub.htui.cc/api/cms/token_site` |
     /// | `VORTEX_FREE_TOKENS_PAGE_URL` | 免费 Token 分页列表接口地址（POST） | `https://hub.htui.cc/api/cms/token_site/page` |
     /// | `VORTEX_HUB_TOKEN` | hub 管理接口认证令牌（可选，Bearer 方式携带） | 空 |
-    /// | `VORTEX_CATALOG_FEED_URL` | 模型目录远程 feed 地址（JSON） | 空 |
     ///
     /// # 返回值
     ///
@@ -101,8 +98,6 @@ impl AppConfig {
                 .unwrap_or_else(|_| "https://hub.htui.cc/api/cms/token_site/page".to_string()),
             // hub 管理接口认证令牌（可选）
             hub_token: std::env::var("VORTEX_HUB_TOKEN").unwrap_or_default(),
-            // 模型目录远程 feed 地址
-            catalog_feed_url: std::env::var("VORTEX_CATALOG_FEED_URL").unwrap_or_default(),
         }
     }
 

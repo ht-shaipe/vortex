@@ -32,24 +32,26 @@ pub async fn cost_analysis(
         ).unwrap_or(0);
 
         let mut by_model = Vec::new();
+        // 按「供应方 + 模型」分组，同名模型在不同供应方下分行展示；
         // 按使用量（输入+输出 Tokens）倒序，使用最多的模型排在最前；成本作次级排序
         let sql = format!(
-            "SELECT model, COUNT(*) as cnt, COALESCE(SUM(cost), 0) as cost, \
+            "SELECT provider, model, COUNT(*) as cnt, COALESCE(SUM(cost), 0) as cost, \
              COALESCE(SUM(tokens_input), 0) as tin, COALESCE(SUM(tokens_output), 0) as tout, \
              COALESCE(SUM(saved_tokens), 0) as saved \
-             FROM usage_history {} GROUP BY model \
+             FROM usage_history {} GROUP BY provider, model \
              ORDER BY (COALESCE(SUM(tokens_input), 0) + COALESCE(SUM(tokens_output), 0)) DESC, cost DESC",
             where_clause
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt.query_map([], |row| {
             Ok(json!({
-                "model": row.get::<_, Option<String>>(0)?,
-                "requests": row.get::<_, i64>(1)?,
-                "cost": row.get::<_, f64>(2)?,
-                "tokensInput": row.get::<_, i64>(3)?,
-                "tokensOutput": row.get::<_, i64>(4)?,
-                "savedTokens": row.get::<_, i64>(5)?,
+                "provider": row.get::<_, Option<String>>(0)?,
+                "model": row.get::<_, Option<String>>(1)?,
+                "requests": row.get::<_, i64>(2)?,
+                "cost": row.get::<_, f64>(3)?,
+                "tokensInput": row.get::<_, i64>(4)?,
+                "tokensOutput": row.get::<_, i64>(5)?,
+                "savedTokens": row.get::<_, i64>(6)?,
             }))
         }).map_err(|e| e.to_string())?;
         for row in rows { by_model.push(row.map_err(|e| e.to_string())?); }

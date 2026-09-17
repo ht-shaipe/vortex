@@ -1,5 +1,5 @@
 <template>
-  <div class="sync-page flex flex-col gap-[var(--gap-lg)] w-full max-w-780px mx-auto">
+  <div class="sync-page flex flex-col gap-[var(--gap-lg)] w-full">
     <!-- 页面标题 -->
     <h1 class="page-title m-0 text-h1 font-light tracking-[-0.02em]">同步</h1>
 

@@ -169,6 +169,7 @@ const agentNames: Record<string, string> = {
   opencode: 'OpenCode',
   qwen_code: 'Qwen Code',
   dsh: 'DeepSeek',
+  zcode: 'ZCode',
   gemini_cli: 'Gemini CLI',
   cursor_agent: 'Cursor',
   vortex_chat: '内置聊天',

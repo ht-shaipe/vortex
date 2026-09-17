@@ -432,6 +432,9 @@ pub struct ModelAlias {
     pub created_at: String,
     /// 更新时间（RFC3339）
     pub updated_at: String,
+    /// 排序权重（越大越靠前，默认 0）
+    #[serde(default)]
+    pub sort_order: i64,
 }
 
 /// 创建模型别名的请求体。
@@ -449,4 +452,5 @@ pub struct UpdateModelAlias {
     pub alias: Option<String>,
     pub targets: Option<Vec<ModelAliasTarget>>,
     pub is_active: Option<bool>,
+    pub sort_order: Option<i64>,
 }

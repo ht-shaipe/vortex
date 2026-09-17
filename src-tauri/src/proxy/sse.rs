@@ -90,8 +90,8 @@ pub fn estimate_tokens_from_text(text: &str) -> i64 {
     (cjk + (other + 3) / 4).max(1)
 }
 
-/// 流结束时的用量落库回调
-pub type UsageCallback = Arc<dyn Fn(StreamUsage) + Send + Sync>;
+/// 流结束时的用量落库回调。第二个参数为是否成功（false 表示流内含 error 或网络异常）。
+pub type UsageCallback = Arc<dyn Fn(StreamUsage, bool) + Send + Sync>;
 
 /// 将归一化 SSE 流包装为 OpenAI 兼容的流式 HTTP 响应
 pub fn sse_http_response(stream: SseStream) -> actix_web::HttpResponse {
@@ -169,6 +169,10 @@ trait SseParser: Send + 'static {
     fn feed(&mut self, bytes: &[u8]) -> String;
     /// 上游流正常结束时的收尾输出
     fn finish(&mut self) -> String;
+    /// 流内是否出现过 error（用于判定请求是否真正成功）
+    fn has_error(&self) -> bool {
+        false
+    }
     /// 捕获到的 token 用量（流结束后读取）
     fn usage(&self) -> StreamUsage {
         StreamUsage::default()
@@ -242,7 +246,7 @@ fn build_stream<P: SseParser>(
                     st.done = true;
                     let out = st.parser.upstream_error(&e.to_string());
                     if let Some(cb) = cb.as_ref() {
-                        cb(st.parser.usage());
+                        cb(st.parser.usage(), false);
                     }
                     return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
@@ -250,8 +254,9 @@ fn build_stream<P: SseParser>(
                     // 上游流正常结束：收尾并回调用量
                     st.done = true;
                     let out = st.parser.finish();
+                    let ok = !st.parser.has_error();
                     if let Some(cb) = cb.as_ref() {
-                        cb(st.parser.usage());
+                        cb(st.parser.usage(), ok);
                     }
                     return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
@@ -260,7 +265,7 @@ fn build_stream<P: SseParser>(
                     st.done = true;
                     let out = st.parser.read_timeout();
                     if let Some(cb) = cb.as_ref() {
-                        cb(st.parser.usage());
+                        cb(st.parser.usage(), false);
                     }
                     return Some((Ok(Bytes::from(out)), (st, cb)));
                 }
@@ -279,6 +284,8 @@ struct OpenAiPassthrough {
     buffer: String,
     /// 是否已见到内容
     saw_content: bool,
+    /// 流内是否出现过 error
+    has_error: bool,
     /// 是否已收到 finish_reason
     saw_finish: bool,
     /// 是否已收到 [DONE] 标记
@@ -299,6 +306,7 @@ impl OpenAiPassthrough {
         Self {
             buffer: String::new(),
             saw_content: false,
+            has_error: false,
             saw_finish: false,
             saw_done: false,
             input_tokens: 0,
@@ -339,6 +347,10 @@ impl SseParser for OpenAiPassthrough {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
                 continue;
             };
+            // 检测流内 error
+            if v.get("error").is_some() {
+                self.has_error = true;
+            }
             // 监测 finish_reason 和内容
             if let Some(choice) = v.get("choices").and_then(|c| c.get(0)) {
                 if let Some(fr) = choice.get("finish_reason").and_then(|f| f.as_str()) {
@@ -376,6 +388,10 @@ impl SseParser for OpenAiPassthrough {
             }
         }
         out
+    }
+
+    fn has_error(&self) -> bool {
+        self.has_error
     }
 
     fn finish(&mut self) -> String {
@@ -446,6 +462,8 @@ struct AnthropicToOpenai {
     started: bool,
     /// 是否已见到内容
     saw_content: bool,
+    /// 流内是否出现过 error
+    has_error: bool,
     /// finish_reason（已映射为 OpenAI 格式）
     finish_reason: Option<String>,
     /// 输入 token 计数（来自 message_start）
@@ -473,6 +491,7 @@ impl AnthropicToOpenai {
             model: "anthropic".to_string(),
             started: false,
             saw_content: false,
+            has_error: false,
             finish_reason: None,
             input_tokens: 0,
             output_tokens: 0,
@@ -634,6 +653,7 @@ impl AnthropicToOpenai {
                 }
                 "error" => {
                     // 流内错误事件
+                    self.has_error = true;
                     let err = v.get("error").cloned().unwrap_or(json!({}));
                     let msg = match err.get("message").and_then(|m| m.as_str()) {
                         Some(m) => m.to_string(),
@@ -672,6 +692,10 @@ impl SseParser for AnthropicToOpenai {
             out.push_str(&self.handle_event(event));
         }
         out
+    }
+
+    fn has_error(&self) -> bool {
+        self.has_error
     }
 
     fn finish(&mut self) -> String {
@@ -739,6 +763,8 @@ struct GeminiToOpenai {
     started: bool,
     /// 是否已见到内容
     saw_content: bool,
+    /// 流内是否出现过 error
+    has_error: bool,
     /// 是否已收到 finishReason
     saw_finish: bool,
     /// 输入 token 数（来自 usageMetadata.promptTokenCount）
@@ -761,6 +787,7 @@ impl GeminiToOpenai {
             model: "gemini".to_string(),
             started: false,
             saw_content: false,
+            has_error: false,
             saw_finish: false,
             input_tokens: 0,
             output_tokens: 0,
@@ -813,6 +840,7 @@ impl SseParser for GeminiToOpenai {
             // 检查流内错误
             if let Some(err) = event.get("error")
                 && !err.is_null() {
+                    self.has_error = true;
                     let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or(&json_str);
                     out.push_str(&error_event(&format!("上游流内错误: {}", msg)));
                     continue;
@@ -872,6 +900,10 @@ impl SseParser for GeminiToOpenai {
             }
         }
         out
+    }
+
+    fn has_error(&self) -> bool {
+        self.has_error
     }
 
     fn finish(&mut self) -> String {

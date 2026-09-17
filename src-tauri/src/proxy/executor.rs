@@ -138,6 +138,37 @@ where
     ExecutorOutput::UpstreamError { status, body }
 }
 
+/// 解析上游 400 错误响应，提取被拒绝的采样参数名。
+///
+/// 部分提供商对特定模型限制采样参数（如 Kimi moonshot-v1-auto 只允许 temperature=1），
+/// 上游返回 400 并在错误体中标注 `param` 字段。此函数提取需移除的参数名列表，
+/// 供执行器在重试时从请求体中剔除。
+fn parse_invalid_params(error_body: &str) -> Vec<String> {
+    let mut params = Vec::new();
+
+    if let Ok(json) = serde_json::from_str::<Value>(error_body) {
+        if let Some(param) = json
+            .get("error")
+            .and_then(|e| e.get("param"))
+            .and_then(|p| p.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            params.push(param.to_string());
+        }
+    }
+
+    if params.is_empty() {
+        let lower = error_body.to_lowercase();
+        for param in &["temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty"] {
+            if lower.contains(param) {
+                params.push(param.to_string());
+            }
+        }
+    }
+
+    params
+}
+
 /// 读取非流式 JSON 响应体，应用整体超时
 async fn read_json_response<S>(mut response: awc::ClientResponse<S>) -> Result<Value>
 where
@@ -250,28 +281,54 @@ impl ProviderExecutor for OpenAIExecutor {
             }
         }
 
-        let mut req = client.post(&url);
-        if let Some(ref api_key) = connection.api_key {
-            req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
-        }
+        // 发送请求（含参数自修复：部分模型如 Kimi 限制采样参数，
+        // 上游 400 时自动移除被拒绝的参数重试一次）
+        let mut param_fix_attempted = false;
+        loop {
+            let mut req = client.post(&url);
+            if let Some(ref api_key) = connection.api_key {
+                req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
+            }
 
-        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let status = response.status().as_u16();
 
-        // 上游返回错误
-        if response.status().as_u16() >= 400 {
-            return Ok(upstream_error(response).await);
-        }
+            if status == 400 && !param_fix_attempted {
+                let err_output = upstream_error(response).await;
+                if let ExecutorOutput::UpstreamError { body: ref err_body, .. } = err_output {
+                    let invalid = parse_invalid_params(err_body);
+                    if !invalid.is_empty() {
+                        log::info!("参数自修复：上游拒绝 {}，移除后重试", invalid.join(", "));
+                        if let Some(obj) = body.as_object_mut() {
+                            for p in &invalid {
+                                obj.remove(p);
+                            }
+                        }
+                        param_fix_attempted = true;
+                        continue;
+                    }
+                }
+                return Ok(err_output);
+            }
 
-        if request.stream {
-            // 流式：返回归一化 SSE 流
-            let stream: UpstreamStream = Box::pin(response);
-            Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(stream, "openai", usage_cb).await,
-            ))
-        } else {
-            // 非流式：解析 JSON 响应
-            let json_body = read_json_response(response).await?;
-            Ok(ExecutorOutput::Json(json_body))
+            if status >= 400 {
+                return Ok(upstream_error(response).await);
+            }
+
+            if request.stream {
+                let stream: UpstreamStream = Box::pin(response);
+                return Ok(ExecutorOutput::Stream(
+                    sse::stream_sse_response(stream, "openai", usage_cb).await,
+                ));
+            } else {
+                let json_body = read_json_response(response).await?;
+                if json_body.get("error").is_some() {
+                    let err_str = serde_json::to_string(&json_body).unwrap_or_default();
+                    log::warn!("openai: HTTP 200 但响应体含 error 字段: {}", err_str);
+                    return Ok(ExecutorOutput::UpstreamError { status: 200, body: json_body.to_string() });
+                }
+                return Ok(ExecutorOutput::Json(json_body));
+            }
         }
     }
 }
@@ -349,30 +406,55 @@ impl ProviderExecutor for AnthropicExecutor {
             .as_deref()
             .ok_or_else(|| AppError::Unauthorized("API key required".into()))?;
 
-        // Anthropic 认证：x-api-key 头 + 版本头
-        let req = client
-            .post(&url)
-            .insert_header(("x-api-key", api_key))
-            .insert_header(("anthropic-version", "2023-06-01"))
-            .insert_header(("content-type", "application/json"));
+        // 发送请求（含参数自修复重试）
+        let mut param_fix_attempted = false;
+        loop {
+            let req = client
+                .post(&url)
+                .insert_header(("x-api-key", api_key))
+                .insert_header(("anthropic-version", "2023-06-01"))
+                .insert_header(("content-type", "application/json"));
 
-        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let status = response.status().as_u16();
 
-        if response.status().as_u16() >= 400 {
-            return Ok(upstream_error(response).await);
-        }
+            if status == 400 && !param_fix_attempted {
+                let err_output = upstream_error(response).await;
+                if let ExecutorOutput::UpstreamError { body: ref err_body, .. } = err_output {
+                    let invalid = parse_invalid_params(err_body);
+                    if !invalid.is_empty() {
+                        log::info!("参数自修复：上游拒绝 {}，移除后重试", invalid.join(", "));
+                        if let Some(obj) = body.as_object_mut() {
+                            for p in &invalid {
+                                obj.remove(p);
+                            }
+                        }
+                        param_fix_attempted = true;
+                        continue;
+                    }
+                }
+                return Ok(err_output);
+            }
 
-        if request.stream {
-            // 流式：Anthropic SSE → OpenAI chunk 格式
-            let stream: UpstreamStream = Box::pin(response);
-            Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(stream, "anthropic", usage_cb).await,
-            ))
-        } else {
-            // 非流式：解析 Anthropic 响应并转回 OpenAI 格式
-            let json_body = read_json_response(response).await?;
-            let openai_response = crate::translator::anthropic_to_openai_response(&json_body, model);
-            Ok(ExecutorOutput::Json(openai_response))
+            if status >= 400 {
+                return Ok(upstream_error(response).await);
+            }
+
+            if request.stream {
+                let stream: UpstreamStream = Box::pin(response);
+                return Ok(ExecutorOutput::Stream(
+                    sse::stream_sse_response(stream, "anthropic", usage_cb).await,
+                ));
+            } else {
+                let json_body = read_json_response(response).await?;
+                if json_body.get("error").is_some() {
+                    let err_str = serde_json::to_string(&json_body).unwrap_or_default();
+                    log::warn!("anthropic: HTTP 200 但响应体含 error 字段: {}", err_str);
+                    return Ok(ExecutorOutput::UpstreamError { status: 200, body: json_body.to_string() });
+                }
+                let openai_response = crate::translator::anthropic_to_openai_response(&json_body, model);
+                return Ok(ExecutorOutput::Json(openai_response));
+            }
         }
     }
 }
@@ -456,25 +538,57 @@ impl ProviderExecutor for GeminiExecutor {
             body["systemInstruction"] = sys;
         }
 
-        let req = client.post(&url).insert_header(("content-type", "application/json"));
+        // 发送请求（含参数自修复重试，参数在 generationConfig 内）
+        let mut param_fix_attempted = false;
+        loop {
+            let req = client.post(&url).insert_header(("content-type", "application/json"));
 
-        let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let response = send_with_first_byte_timeout(req.send_json(&body)).await?;
+            let status = response.status().as_u16();
 
-        if response.status().as_u16() >= 400 {
-            return Ok(upstream_error(response).await);
-        }
+            if status == 400 && !param_fix_attempted {
+                let err_output = upstream_error(response).await;
+                if let ExecutorOutput::UpstreamError { body: ref err_body, .. } = err_output {
+                    let invalid = parse_invalid_params(err_body);
+                    if !invalid.is_empty() {
+                        log::info!("参数自修复：上游拒绝 {}，移除后重试", invalid.join(", "));
+                        if let Some(gc) = body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
+                            for p in &invalid {
+                                let gemini_key = match p.as_str() {
+                                    "temperature" => "temperature",
+                                    "top_p" => "topP",
+                                    "max_tokens" => "maxOutputTokens",
+                                    other => other,
+                                };
+                                gc.remove(gemini_key);
+                            }
+                        }
+                        param_fix_attempted = true;
+                        continue;
+                    }
+                }
+                return Ok(err_output);
+            }
 
-        if request.stream {
-            // 流式：Gemini SSE → OpenAI chunk 格式
-            let stream: UpstreamStream = Box::pin(response);
-            Ok(ExecutorOutput::Stream(
-                sse::stream_sse_response(stream, "gemini", usage_cb).await,
-            ))
-        } else {
-            // 非流式：解析 Gemini 响应并转回 OpenAI 格式
-            let json_body = read_json_response(response).await?;
-            let openai_response = crate::translator::gemini_to_openai_response(&json_body, model);
-            Ok(ExecutorOutput::Json(openai_response))
+            if status >= 400 {
+                return Ok(upstream_error(response).await);
+            }
+
+            if request.stream {
+                let stream: UpstreamStream = Box::pin(response);
+                return Ok(ExecutorOutput::Stream(
+                    sse::stream_sse_response(stream, "gemini", usage_cb).await,
+                ));
+            } else {
+                let json_body = read_json_response(response).await?;
+                if json_body.get("error").is_some() {
+                    let err_str = serde_json::to_string(&json_body).unwrap_or_default();
+                    log::warn!("gemini: HTTP 200 但响应体含 error 字段: {}", err_str);
+                    return Ok(ExecutorOutput::UpstreamError { status: 200, body: json_body.to_string() });
+                }
+                let openai_response = crate::translator::gemini_to_openai_response(&json_body, model);
+                return Ok(ExecutorOutput::Json(openai_response));
+            }
         }
     }
 }

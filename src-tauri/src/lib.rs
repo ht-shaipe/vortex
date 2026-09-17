@@ -221,6 +221,7 @@ pub fn start_api_server(
                             .route("/model-aliases", web::get().to(api::management::model_aliases::list_aliases))
                             .route("/model-aliases", web::post().to(api::management::model_aliases::create_alias))
                             .route("/model-aliases/auto-generate", web::post().to(api::management::model_aliases::auto_generate))
+                            .route("/model-aliases/reorder", web::post().to(api::management::model_aliases::reorder_aliases))
                             .route("/model-aliases/{id}", web::patch().to(api::management::model_aliases::update_alias))
                             .route("/model-aliases/{id}", web::delete().to(api::management::model_aliases::delete_alias))
                             .route("/rate-limits", web::get().to(api::management::rate_limits::list_rate_limits))
@@ -237,7 +238,6 @@ pub fn start_api_server(
                             .route("/backups", web::get().to(api::management::backup::list_backups))
                             .route("/backups", web::post().to(api::management::backup::create_backup))
                             .route("/model-catalog", web::get().to(api::management::model_catalog::list_catalog))
-                            .route("/model-catalog/sync", web::post().to(api::management::model_catalog::sync_catalog_handler))
                             .route("/model-catalog/refresh-from-connections", web::post().to(api::management::model_catalog::refresh_from_connections_handler))
                             .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
                             .route("/playground", web::post().to(api::management::playground::playground))
@@ -259,19 +259,6 @@ pub fn start_api_server(
             let handle = srv.handle();
             // 通过通道将句柄发送给主线程
             let _ = handle_tx.send(handle);
-
-            // 首次启动时导入内置模型目录（表为空时）
-            if let Err(e) =
-                crate::providers::catalog_sync::seed_builtin_catalog_if_empty(&state.db_pool).await
-            {
-                log::warn!("内置模型目录导入失败: {}", e);
-            }
-
-            // 启动模型目录定时同步任务
-            crate::providers::catalog_sync::start_periodic_sync(
-                state.db_pool.clone(),
-                state.config.catalog_feed_url.clone(),
-            );
 
             // 启动后自动从已配置连接拉取最新模型列表（延迟 10 秒，等待连接就绪），并每 12 小时定期拉取
             {

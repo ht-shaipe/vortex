@@ -1,6 +1,7 @@
 import api from './client'
 
 export interface CostByModel {
+  provider: string | null
   model: string | null
   requests: number
   cost: number

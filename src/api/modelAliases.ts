@@ -17,6 +17,7 @@ export interface ModelAlias {
   source: string
   created_at: string
   updated_at: string
+  sort_order?: number
 }
 
 export interface CreateModelAlias {
@@ -29,6 +30,7 @@ export interface UpdateModelAlias {
   alias?: string
   targets?: ModelAliasTarget[]
   is_active?: boolean
+  sort_order?: number
 }
 
 /** 列出所有模型别名。 */
@@ -58,4 +60,8 @@ export async function deleteAlias(id: string): Promise<void> {
 export async function autoGenerate(): Promise<{ total: number }> {
   const { data } = await api.post('/model-aliases/auto-generate')
   return data
+}
+/** 批量重排序模型别名。 */
+export async function reorderAliases(orders: { id: string; sort_order: number }[]): Promise<void> {
+  await api.post('/model-aliases/reorder', { orders })
 }

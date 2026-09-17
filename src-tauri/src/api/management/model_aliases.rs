@@ -98,3 +98,36 @@ pub async fn auto_generate(state: web::Data<std::sync::Arc<AppState>>) -> HttpRe
         Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     }
 }
+/// 批量重排序模型别名。
+/// 请求体: `{ "orders": [{ "id": "...", "sortOrder": 10 }, ...] }`
+pub async fn reorder_aliases(
+    state: web::Data<std::sync::Arc<AppState>>,
+    body: web::Json<ReorderRequest>,
+) -> HttpResponse {
+    let pool = state.db_pool.clone();
+    let orders: Vec<(String, i64)> = body.into_inner().orders
+        .into_iter()
+        .map(|o| (o.id, o.sort_order))
+        .collect();
+    let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let conn = crate::db::core::get_conn(&pool).map_err(|e| e.to_string())?;
+        crate::db::model_aliases::batch_reorder(&conn, &orders).map_err(|e| e.to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => HttpResponse::Ok().json(json!({ "ok": true })),
+        Ok(Err(e)) => HttpResponse::BadRequest().json(json!({ "error": e })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct ReorderRequest {
+    pub orders: Vec<ReorderItem>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ReorderItem {
+    pub id: String,
+    pub sort_order: i64,
+}
