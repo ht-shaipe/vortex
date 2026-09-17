@@ -137,14 +137,15 @@
  * 职责：从内置提供商列表中选择一个并接入，填写 API 密钥与可选的自定义地址，
  * 可预览可用模型并多选，列表首个模型作为默认模型用于路由回退。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { listProviders, createProvider, previewModels, type ProviderDef } from '@/api/providers'
 
 const router = useRouter()
+const route = useRoute()
 // 内置提供商定义列表
 const allProviders = ref<ProviderDef[]>([])
 // 是否正在保存
@@ -348,7 +349,7 @@ async function submit() {
 }
 
 /**
- * 组件挂载时加载内置提供商定义列表。
+ * 组件挂载时加载内置提供商定义列表，并从路由 query 预填字段（从薅Token页"配置使用"跳转来时）。
  */
 onMounted(async () => {
   try {
@@ -356,6 +357,14 @@ onMounted(async () => {
     allProviders.value = data.providers ?? []
   } catch {
     /* ignore */
+  }
+  const q = route.query
+  if (q.provider) {
+    form.provider = String(q.provider)
+    // watch 会触发 resetForm，需等其执行后再设置其余字段
+    await nextTick()
+    if (q.baseUrl) form.baseUrl = String(q.baseUrl)
+    if (q.apiFormat) form.apiFormat = String(q.apiFormat)
   }
 })
 

@@ -105,6 +105,15 @@ pub async fn list_models(
         }));
     }
 
+    // 追加 auto 虚拟模型：始终可用，按优先级自动选择提供方与模型
+    models.push(json!({
+        "id": "auto",
+        "object": "model",
+        "created": created,
+        "owned_by": "vortex-auto",
+        "permission": [],
+    }));
+
     // 返回 OpenAI 格式的模型列表
     HttpResponse::Ok().json(json!({
         "object": "list",

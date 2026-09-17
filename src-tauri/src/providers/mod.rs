@@ -8,6 +8,8 @@ pub mod types;
 pub mod registry;
 /// 模型自动归纳（按家族分组生成虚拟别名）
 pub mod auto_grouping;
+/// 远程模型目录同步
+pub mod catalog_sync;
 
 /// 提供商注册表，重导出供外部使用
 pub use registry::ProviderRegistry;

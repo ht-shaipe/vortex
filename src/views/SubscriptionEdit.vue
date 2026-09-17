@@ -20,6 +20,24 @@
           <div class="callout-body text-ink-2 font-mono break-words">{{ testResult.error || '未返回详细错误' }}</div>
         </div>
 
+        <!-- ToS 合规提示条 -->
+        <div
+          v-if="tosReview"
+          class="tos-bar flex items-start gap-10px py-10px px-14px rounded-md border border-solid border-line text-12.5px mb-[var(--gap-md)]"
+          :class="tosBarClass"
+        >
+          <el-tooltip
+            content="ToS（服务条款）合规审查：检查通过本应用代理调用该提供商 API 是否符合其服务条款。结论基于预置审查快照，条款可能随时更新，请自行留意。"
+            placement="top"
+          >
+            <span class="tos-tag shrink-0 inline-flex items-center text-11px font-medium leading-none py-3px px-8px rounded-full cursor-help">ToS {{ tosVerdictLabel }}</span>
+          </el-tooltip>
+          <div class="tos-body flex-1 min-w-0">
+            <div class="text-ink-2 leading-[1.5]">{{ tosReview.notes || '该提供商已纳入合规审查' }}</div>
+            <div v-if="tosReview.reviewDate" class="text-11px text-ink-4 mt-2px">审查于 {{ tosReview.reviewDate }}（结论基于当时的条款版本）</div>
+          </div>
+        </div>
+
         <!-- 基本信息 -->
         <div class="card section mb-[var(--gap-lg)]">
           <div class="card-head flex items-center justify-between gap-12px">
@@ -279,6 +297,70 @@
           </div>
         </div>
 
+        <!-- 模型限额（速率限制） -->
+        <div class="card section mb-[var(--gap-lg)]">
+          <div class="card-head flex items-center justify-between gap-12px">
+            <div>
+              <div class="card-title">模型限额</div>
+              <div class="card-sub">为该连接的模型配置 RPM/RPD/TPM/TPD 限额，超限时自动跳到下一个候选</div>
+            </div>
+            <button type="button" class="btn sm" :disabled="!selectedModels.length" @click="showLimitForm = true">
+              添加限额
+            </button>
+          </div>
+          <div class="card-body">
+            <div v-if="connCaps.length === 0" class="text-12px text-ink-4 py-12px text-center">未配置限额，该连接不受速率限制约束</div>
+            <div v-else class="flex flex-col gap-8px">
+              <div
+                v-for="c in connCaps"
+                :key="c.id"
+                class="limit-row flex items-center gap-12px py-8px px-12px bg-surface-2 border border-solid border-line rounded-sm"
+              >
+                <span class="mono text-12px text-ink-2 flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" :title="c.model">{{ c.model }}</span>
+                <span v-if="c.rpm" class="text-11px text-ink-3">RPM:<b>{{ c.rpm }}</b></span>
+                <span v-if="c.rpd" class="text-11px text-ink-3">RPD:<b>{{ c.rpd }}</b></span>
+                <span v-if="c.tpm" class="text-11px text-ink-3">TPM:<b>{{ c.tpm }}</b></span>
+                <span v-if="c.tpd" class="text-11px text-ink-3">TPD:<b>{{ c.tpd }}</b></span>
+                <button type="button" class="btn sm ghost text-err" @click="deleteCap(c.id)" title="删除限额">
+                  <el-icon :size="13"><Delete /></el-icon>
+                </button>
+              </div>
+            </div>
+
+            <!-- 限额添加表单（内联展开） -->
+            <div v-if="showLimitForm" class="limit-form mt-12px p-14px bg-surface border border-solid border-line rounded-md flex flex-col gap-12px">
+              <div class="flex items-center gap-12px">
+                <label class="text-12px text-ink-3 w-80px shrink-0">模型</label>
+                <el-select v-model="capForm.model" placeholder="选择模型" class="flex-1" filterable allow-create>
+                  <el-option v-for="m in selectedModels" :key="m.id" :label="m.name || m.id" :value="m.id" />
+                </el-select>
+              </div>
+              <div class="grid grid-cols-4 gap-10px">
+                <div class="flex flex-col gap-4px">
+                  <label class="text-11px text-ink-4">RPM</label>
+                  <el-input-number v-model="capForm.rpm" :min="0" :step="1" size="small" controls-position="right" placeholder="不限" class="w-full" />
+                </div>
+                <div class="flex flex-col gap-4px">
+                  <label class="text-11px text-ink-4">RPD</label>
+                  <el-input-number v-model="capForm.rpd" :min="0" :step="100" size="small" controls-position="right" placeholder="不限" class="w-full" />
+                </div>
+                <div class="flex flex-col gap-4px">
+                  <label class="text-11px text-ink-4">TPM</label>
+                  <el-input-number v-model="capForm.tpm" :min="0" :step="1000" size="small" controls-position="right" placeholder="不限" class="w-full" />
+                </div>
+                <div class="flex flex-col gap-4px">
+                  <label class="text-11px text-ink-4">TPD</label>
+                  <el-input-number v-model="capForm.tpd" :min="0" :step="10000" size="small" controls-position="right" placeholder="不限" class="w-full" />
+                </div>
+              </div>
+              <div class="flex justify-end gap-8px">
+                <button type="button" class="btn sm" @click="showLimitForm = false">取消</button>
+                <button type="button" class="btn sm accent" :disabled="!capForm.model" @click="saveCap">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 状态（只读） -->
         <div class="card section readonly-card bg-surface-2">
           <div class="card-head flex items-center justify-between gap-12px">
@@ -405,12 +487,14 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { getProvider, updateProvider, deleteProvider, testProvider, previewModels, getApiKey, type ProviderConnection } from '@/api/providers'
+import { rateLimitsApi, type RateLimitCap } from '@/api/rateLimits'
+import { tosReviewApi, type TosReview } from '@/api/tosReview'
 
 const route = useRoute()
 const router = useRouter()
@@ -432,6 +516,30 @@ const manualModelId = ref('')
 const manualModelName = ref('')
 // 最近一次测试结果
 const testResult = ref<{ status: string; latencyMs?: number; error?: string } | null>(null)
+
+// 速率限额状态
+const allCaps = ref<RateLimitCap[]>([])
+const showLimitForm = ref(false)
+const capForm = ref<{ model: string; rpm: number | undefined; rpd: number | undefined; tpm: number | undefined; tpd: number | undefined }>({ model: '', rpm: undefined, rpd: undefined, tpm: undefined, tpd: undefined })
+
+/** 当前连接的限额列表 */
+const connCaps = computed(() => {
+  if (!conn.value) return []
+  return allCaps.value.filter(c => c.connectionId === conn.value!.id)
+})
+
+// 当前提供商的 ToS 合规审查
+const tosReview = ref<TosReview | null>(null)
+/** ToS 提示条色调 */
+const tosBarClass = computed(() => {
+  const v = tosReview.value?.verdict
+  return v === 'ok' ? 'tos-ok' : v === 'caution' ? 'tos-warn' : v === 'avoid' ? 'tos-err' : 'tos-neutral'
+})
+/** ToS 结论中文标签 */
+const tosVerdictLabel = computed(() => {
+  const v = tosReview.value?.verdict
+  return v === 'ok' ? '可用' : v === 'caution' ? '谨慎' : v === 'avoid' ? '避免' : '未审查'
+})
 
 /** 已选模型（含自定义名称） */
 const selectedModels = ref<{ id: string; name: string }[]>([])
@@ -586,6 +694,60 @@ async function load() {
     healthCheckInterval: data.healthCheckInterval ?? 300,
     isActive: !!data.isActive,
   })
+  // 加载速率限额
+  loadCaps()
+  // 加载该提供商的 ToS 合规审查
+  loadTos(data.provider)
+}
+
+/** 加载指定提供商的 ToS 审查记录 */
+async function loadTos(provider: string) {
+  try {
+    const reviews = await tosReviewApi.list()
+    tosReview.value = reviews.find((r) => r.provider === provider) ?? null
+  } catch {
+    tosReview.value = null
+  }
+}
+
+/** 加载所有速率限额规则 */
+async function loadCaps() {
+  try {
+    allCaps.value = await rateLimitsApi.list()
+  } catch { /* 后端未就绪时静默 */ }
+}
+
+/** 保存限额规则（新建或更新） */
+async function saveCap() {
+  if (!conn.value || !capForm.value.model) return
+  try {
+    await rateLimitsApi.upsert({
+      provider: conn.value.provider,
+      model: capForm.value.model,
+      connectionId: conn.value.id,
+      rpm: capForm.value.rpm || undefined,
+      rpd: capForm.value.rpd || undefined,
+      tpm: capForm.value.tpm || undefined,
+      tpd: capForm.value.tpd || undefined,
+    })
+    ElMessage.success('限额已保存')
+    showLimitForm.value = false
+    capForm.value = { model: '', rpm: undefined, rpd: undefined, tpm: undefined, tpd: undefined }
+    await loadCaps()
+  } catch {
+    ElMessage.error('限额保存失败')
+  }
+}
+
+/** 删除限额规则 */
+async function deleteCap(id: string) {
+  try {
+    await rateLimitsApi.delete(id)
+    ElMessage.success('已删除限额')
+    await loadCaps()
+  } catch {
+    ElMessage.error('删除失败')
+  }
 }
 
 // 是否可拉取模型：自定义提供方需填写 base_url
@@ -800,4 +962,15 @@ onMounted(load)
   border-color: rgba(220, 80, 80, 0.35);
 }
 .callout.err .callout-title { color: #c04949; }
+
+/* ToS 合规提示条色调 */
+.tos-bar { border-width: 1px; }
+.tos-bar.tos-ok { background: var(--ok-bg); }
+.tos-bar.tos-ok .tos-tag { background: var(--ok); color: #fff; }
+.tos-bar.tos-warn { background: var(--warn-bg); }
+.tos-bar.tos-warn .tos-tag { background: var(--warn); color: #fff; }
+.tos-bar.tos-err { background: var(--err-bg); }
+.tos-bar.tos-err .tos-tag { background: var(--err); color: #fff; }
+.tos-bar.tos-neutral { background: var(--surface-2); }
+.tos-bar.tos-neutral .tos-tag { background: var(--ink-4); color: #fff; }
 </style>

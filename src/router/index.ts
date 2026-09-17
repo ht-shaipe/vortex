@@ -47,7 +47,8 @@ const router = createRouter({
         { path: 'sync', name: 'sync', component: () => import('@/views/Sync.vue') },
         // 聊天对话页
         { path: 'chat', name: 'chat', component: () => import('@/views/Chat.vue') },
-
+        // 延迟分析页
+        { path: 'latency-stats', name: 'latency-stats', redirect: { path: '/statistics', query: { tab: 'latency' } } },
 
         // 设置页
         { path: 'settings', name: 'settings', component: () => import('@/views/Settings.vue') },

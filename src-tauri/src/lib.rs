@@ -37,10 +37,12 @@ pub struct AppState {
     pub proxy_engine: parking_lot::RwLock<proxy::engine::ProxyEngine>,
     /// 路由弹性管理器，负责故障转移、负载均衡等路由策略。
     pub resilience_manager: routing::resilience::ResilienceManager,
-    /// TLS 连接器（openssl），用于构建 awc::Client（上游链路与管理链路共用）。
-    /// awc::Client 本身不是 Send+Sync（内部使用 Rc），因此只存储 SslConnector，
-    /// 在需要时按线程创建 awc::Client。
-    pub ssl_connector: openssl::ssl::SslConnector,
+    /// 内存速率限制器，滑动窗口 RPM/RPD/TPM/TPD 计数
+    pub rate_limiter: routing::rate_limiter::RateLimiter,
+    /// Thompson 采样 bandit 路由评分器
+    pub bandit_router: routing::bandit::BanditRouter,
+    /// 粘性会话管理器
+    pub sticky_session: proxy::sticky_session::StickySessionManager,
     /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
     pub encryption_key: Vec<u8>,
     /// 代理服务器的句柄，存储在互斥锁中以便启停控制。
@@ -49,34 +51,16 @@ pub struct AppState {
     pub proxy_port: u16,
 }
 
-/// 创建 TLS 连接器（openssl）。
-///
-/// 返回的 `SslConnector` 是 `Send + Sync`，可安全存入 `AppState`。
-/// 在需要发起 HTTP 请求时，调用 [`create_awc_client`] 构建 `awc::Client`。
-pub fn create_ssl_connector() -> openssl::ssl::SslConnector {
-    let mut ssl_builder =
-        openssl::ssl::SslConnector::builder(openssl::ssl::SslMethod::tls())
-            .expect("failed to build SSL connector");
-    // 加载系统 CA 证书
-    let _ = ssl_builder
-        .set_ca_file("/etc/ssl/cert.pem")
-        .map_err(|e| log::warn!("Failed to load CA file: {}", e));
-    // ALPN: h2 优先，回退 http/1.1
-    let _ = ssl_builder
-        .set_alpn_protos(b"\x02h2\x08http/1.1")
-        .map_err(|e| log::warn!("Failed to set ALPN: {}", e));
-    ssl_builder.build()
-}
-
-/// 从 TLS 连接器创建 HTTP 客户端（awc + openssl）。
+/// 创建 HTTP 客户端（awc + rustls）。
 ///
 /// 必须在 actix runtime 上下文中调用（awc 依赖 actix arbiter 驱动内部任务）。
 /// 每次调用创建新客户端，不共享连接池——对桌面应用低并发场景可接受。
 /// 上游链路（AI 提供商）与管理链路（hub.htui.cc）共用此客户端。
-pub fn create_awc_client(connector: &openssl::ssl::SslConnector) -> awc::Client {
+/// 使用 rustls 纯 Rust 实现，避免 Windows 上 OpenSSL 构建问题。
+pub fn create_awc_client() -> awc::Client {
     let awc_connector = awc::Connector::new()
-        .timeout(std::time::Duration::from_secs(10))
-        .openssl(connector.clone());
+        .timeout(std::time::Duration::from_secs(10));
+    // rustls 通过 awc 的 "rustls" feature 自动启用，无需额外配置
 
     awc::Client::builder()
         .connector(awc_connector)
@@ -120,13 +104,18 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
     let proxy_engine = proxy::engine::ProxyEngine::new();
     // 创建弹性路由管理器
     let resilience_manager = routing::resilience::ResilienceManager::new();
+    // 创建内存速率限制器
+    let rate_limiter = routing::rate_limiter::RateLimiter::new();
+    // 创建 bandit 路由评分器
+    let bandit_router = routing::bandit::BanditRouter::new();
+    // 创建粘性会话管理器
+    let sticky_session = proxy::sticky_session::StickySessionManager::new();
     // 不设全局总超时：超时保护改为多级：
     //   - 连接超时 10s（create_awc_client 内）
     //   - 流式首字节 60s / 非流式整体 300s（executor.rs 按请求应用）
     //   - 流式逐块 120s（sse.rs 按次计时）
     // http2_prior_knowledge() 不用 — 用 ALPN 协商让服务端选择 h2 或 http/1.1。
     // 部分上游（如 z.ai）要求 HTTP/2，ALPN 中无 h2 时 TLS 握手被服务端直接关闭（eof）。
-    let ssl_connector = create_ssl_connector();
 
     // 派生加密密钥字节序列
     let encryption_key = cfg.encryption_key_bytes();
@@ -141,7 +130,9 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
         provider_registry,
         proxy_engine: parking_lot::RwLock::new(proxy_engine),
         resilience_manager,
-        ssl_connector,
+        rate_limiter,
+        bandit_router,
+        sticky_session,
         encryption_key,
         proxy_handle: parking_lot::Mutex::new(None),
         proxy_port,
@@ -197,6 +188,8 @@ pub fn start_api_server(
                             .route("/models", web::get().to(api::v1::models::list_models))
                             .route("/embeddings", web::post().to(api::v1::embeddings::create_embeddings))
                             .route("/images/generations", web::post().to(api::v1::images::create_images))
+                            .route("/mcp/tools", web::get().to(api::v1::mcp::mcp_tools))
+                            .route("/mcp/call", web::post().to(api::v1::mcp::mcp_call))
                     )
                     // /api/* 管理 API 路由组
                     .service(
@@ -225,6 +218,24 @@ pub fn start_api_server(
                             .route("/model-aliases/auto-generate", web::post().to(api::management::model_aliases::auto_generate))
                             .route("/model-aliases/{id}", web::patch().to(api::management::model_aliases::update_alias))
                             .route("/model-aliases/{id}", web::delete().to(api::management::model_aliases::delete_alias))
+                            .route("/rate-limits", web::get().to(api::management::rate_limits::list_rate_limits))
+                            .route("/rate-limits", web::post().to(api::management::rate_limits::upsert_rate_limit))
+                            .route("/rate-limits/{id}", web::delete().to(api::management::rate_limits::delete_rate_limit))
+                            .route("/rate-limits/usage", web::get().to(api::management::rate_limits::list_usage))
+                            .route("/rate-limits/cleanup", web::post().to(api::management::rate_limits::cleanup_usage))
+                            .route("/bulk-keys/import", web::post().to(api::management::bulk_keys::bulk_import))
+                            .route("/bulk-keys/export", web::post().to(api::management::bulk_keys::bulk_export))
+                            .route("/routing-profiles", web::get().to(api::management::routing_profiles::list_profiles))
+                            .route("/routing-profiles", web::post().to(api::management::routing_profiles::create_profile))
+                            .route("/routing-profiles/{id}", web::delete().to(api::management::routing_profiles::delete_profile))
+                            .route("/tos-reviews", web::get().to(api::management::tos_review::list_tos_reviews))
+                            .route("/backups", web::get().to(api::management::backup::list_backups))
+                            .route("/backups", web::post().to(api::management::backup::create_backup))
+                            .route("/model-catalog", web::get().to(api::management::model_catalog::list_catalog))
+                            .route("/model-catalog/sync", web::post().to(api::management::model_catalog::sync_catalog_handler))
+                            .route("/model-catalog/refresh-from-connections", web::post().to(api::management::model_catalog::refresh_from_connections_handler))
+                            .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
+                            .route("/playground", web::post().to(api::management::playground::playground))
                             .route("/health", web::get().to(api::management::health::health_check))
                     )
             })
@@ -236,6 +247,20 @@ pub fn start_api_server(
             let handle = srv.handle();
             // 通过通道将句柄发送给主线程
             let _ = handle_tx.send(handle);
+
+            // 首次启动时导入内置模型目录（表为空时）
+            if let Err(e) =
+                crate::providers::catalog_sync::seed_builtin_catalog_if_empty(&state.db_pool).await
+            {
+                log::warn!("内置模型目录导入失败: {}", e);
+            }
+
+            // 启动模型目录定时同步任务
+            crate::providers::catalog_sync::start_periodic_sync(
+                state.db_pool.clone(),
+                state.config.catalog_feed_url.clone(),
+            );
+
             // 阻塞等待服务器运行结束
             srv.await.expect("Server error");
         });

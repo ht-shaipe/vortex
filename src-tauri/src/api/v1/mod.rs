@@ -15,6 +15,8 @@ pub mod models;
 pub mod embeddings;
 /// POST /v1/images/generations 图像生成端点
 pub mod images;
+/// MCP 服务器端点
+pub mod mcp;
 
 use actix_web::HttpResponse;
 use crate::error::AppError;

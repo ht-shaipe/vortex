@@ -104,7 +104,7 @@ async fn fetch_remote_page(
     let headers = hub_headers(&state.config);
 
     let payload = json!({ "pageIndex": page, "pageSize": page_size }).to_string();
-    let client = crate::create_awc_client(&state.ssl_connector);
+    let client = crate::create_awc_client();
     let value = remote_proxy::send_proxy_request(
         &client,
         &url,
@@ -309,7 +309,7 @@ pub async fn create_site(
         log::info!("[FREE-TOKENS] 远程提交 payload: {}", payload);
         let headers = hub_headers(&state.config);
 
-        let client = crate::create_awc_client(&state.ssl_connector);
+        let client = crate::create_awc_client();
         match remote_proxy::send_proxy_request(
             &client,
             remote,
@@ -380,7 +380,7 @@ pub async fn delete_site(
     if !remote.is_empty() {
         let url = format!("{}/{}", remote.trim_end_matches('/'), id);
         let headers = hub_headers(&state.config);
-        let client = crate::create_awc_client(&state.ssl_connector);
+        let client = crate::create_awc_client();
         if remote_proxy::send_proxy_request(&client, &url, "DELETE", &headers, None, 30)
             .await
             .is_ok()

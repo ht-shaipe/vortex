@@ -316,6 +316,8 @@ async function streamCompletionViaIpc(
   messages: { role: string; content: string }[],
   isCancelled: () => boolean,
   onDelta: (delta: string) => void,
+  temperature?: number,
+  maxTokens?: number,
 ): Promise<void> {
   const { Channel, invoke } = await import('@tauri-apps/api/core')
 
@@ -348,6 +350,8 @@ async function streamCompletionViaIpc(
     model,
     messages,
     stream: true,
+    temperature,
+    maxTokens,
   })
 
   if (isCancelled()) throw new CancelledError()
@@ -367,7 +371,12 @@ class CancelledError extends Error {
  * 把增量派发到事件总线。
  * 完成/失败都会落库（更新消息 content 与 status），保证刷新后不丢内容。
  */
-async function streamCompletion(topicId: string, assistantId: string): Promise<void> {
+async function streamCompletion(
+  topicId: string,
+  assistantId: string,
+  temperature?: number,
+  maxTokens?: number,
+): Promise<void> {
   const s = load()
   const topic = s.topics.find((t) => t.id === topicId)
   if (!topic) return
@@ -411,7 +420,7 @@ async function streamCompletion(topicId: string, assistantId: string): Promise<v
           .then(({ invoke }) => invoke('cancel_chat_stream', { requestId }))
           .catch(() => {})
       }
-      await streamCompletionViaIpc(requestId, topic.model, payloadMessages, isCancelled, onDelta)
+      await streamCompletionViaIpc(requestId, topic.model, payloadMessages, isCancelled, onDelta, temperature, maxTokens)
     } else {
       const controller = new AbortController()
       cancelFn = () => controller.abort()
@@ -426,7 +435,13 @@ async function streamCompletion(topicId: string, assistantId: string): Promise<v
         method: 'POST',
         headers,
         signal: controller.signal,
-        body: JSON.stringify({ model: topic.model, stream: true, messages: payloadMessages }),
+        body: JSON.stringify({
+          model: topic.model,
+          stream: true,
+          messages: payloadMessages,
+          temperature,
+          max_tokens: maxTokens,
+        }),
       })
 
       if (!res.ok) {
@@ -580,7 +595,12 @@ export const chatApi = {
   },
 
   /** 追加一轮问答：用户消息挂在当前活动叶子下，助手消息为其子节点。 */
-  async send(topicId: string, content: string): Promise<ChatSendResponse> {
+  async send(
+    topicId: string,
+    content: string,
+    temperature?: number,
+    maxTokens?: number,
+  ): Promise<ChatSendResponse> {
     const s = load()
     const t = s.topics.find((x) => x.id === topicId)
     if (!t) throw new Error('会话不存在')
@@ -613,12 +633,17 @@ export const chatApi = {
     save(s)
     touchTopicTitle(topicId)
 
-    void streamCompletion(topicId, assistantId)
+    void streamCompletion(topicId, assistantId, temperature, maxTokens)
     return { userMessageId: userId, assistantMessageId: assistantId }
   },
 
   /** 重生成：在同一用户消息下新开一个助手分支（保留旧分支可切回）。 */
-  async regenerate(topicId: string, assistantMessageId: string): Promise<ChatSendResponse> {
+  async regenerate(
+    topicId: string,
+    assistantMessageId: string,
+    temperature?: number,
+    maxTokens?: number,
+  ): Promise<ChatSendResponse> {
     const s = load()
     const t = s.topics.find((x) => x.id === topicId)
     if (!t) throw new Error('会话不存在')
@@ -641,7 +666,7 @@ export const chatApi = {
     t.updatedAt = ts
     save(s)
 
-    void streamCompletion(topicId, newId)
+    void streamCompletion(topicId, newId, temperature, maxTokens)
     return { userMessageId: old.parentId ?? '', assistantMessageId: newId }
   },
 

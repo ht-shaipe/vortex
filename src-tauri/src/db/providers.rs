@@ -115,6 +115,38 @@ pub fn list_by_provider(conn: &rusqlite::Connection, provider: &str, enc_key: &[
     Ok(result)
 }
 
+/// 查询所有活跃连接（跨提供商），按优先级降序排列。
+///
+/// 用于 `auto` 模型路由：遍历所有可用连接，按优先级依次尝试。
+///
+/// # 参数
+/// - `conn`：数据库连接
+/// - `enc_key`：解密密钥
+///
+/// # 返回
+/// 所有活跃连接列表，按 priority DESC 排序
+pub fn list_all_active(conn: &rusqlite::Connection, enc_key: &[u8]) -> Result<Vec<ProviderConnection>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, provider, auth_type, name, email, priority, is_active, \
+         access_token, refresh_token, expires_at, api_key, id_token, project_id, \
+         test_status, error_code, last_error, last_error_at, backoff_level, \
+         rate_limited_until, health_check_interval, consecutive_use_count, \
+         rate_limit_protection, group_name, max_concurrent, proxy_enabled, \
+         display_name, default_model, token_type, scope, last_used_at, \
+         last_health_check_at, last_tested, provider_specific_data, \
+         created_at, updated_at, last_latency_ms \
+         FROM provider_connections WHERE is_active = 1 \
+         ORDER BY priority DESC, name ASC"
+    )?;
+
+    let rows = stmt.query_map([], |row| row_to_connection(row, enc_key))?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
 /// 按 ID 查询单个提供商连接。
 ///
 /// # 参数

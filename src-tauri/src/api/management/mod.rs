@@ -22,3 +22,19 @@ pub mod health;
 pub mod free_tokens;
 /// 模型别名（虚拟模型映射）管理端点
 pub mod model_aliases;
+/// 速率限制管理端点
+pub mod rate_limits;
+/// 批量密钥导入/导出端点
+pub mod bulk_keys;
+/// 路由配置文件管理端点
+pub mod routing_profiles;
+/// ToS 合规审查端点
+pub mod tos_review;
+/// 加密数据库备份端点
+pub mod backup;
+/// 模型目录管理端点
+pub mod model_catalog;
+/// 延迟统计端点
+pub mod latency_stats;
+/// Playground 测试端点
+pub mod playground;

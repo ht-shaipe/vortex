@@ -101,9 +101,12 @@
         <!-- 备注 -->
         <div v-if="s.note" class="sc-note text-12px leading-[1.65] text-ink-3 line-clamp-3 [word-break:break-word] [overflow-wrap:break-word] max-h-[calc(1.65em_*_3)] pt-1px">{{ s.note }}</div>
 
-        <!-- 卡片底部操作：申请入口、官网、删除 -->
+        <!-- 卡片底部操作：配置使用、申请入口、官网、删除 -->
         <div class="sc-foot flex items-center gap-8px flex-wrap mt-auto pt-4px [&_.by]:text-11px [&_.by]:text-ink-4 [&_.by]:ml-auto">
-          <button v-if="linkFor(s)" class="btn sm accent" @click="openLink(linkFor(s))">
+          <button v-if="s.apiSupported && s.apiBase" class="btn sm accent" @click="configUse(s)">
+            <el-icon :size="13"><Setting /></el-icon>配置使用
+          </button>
+          <button v-if="linkFor(s)" class="btn sm" @click="openLink(linkFor(s))">
             <el-icon :size="13"><Link /></el-icon>申请入口
           </button>
           <button v-if="s.homeUrl" class="btn sm" @click="openLink(s.homeUrl)">官网</button>
@@ -174,6 +177,7 @@
             <!-- 操作按钮 -->
             <td>
               <div class="tbl-actions flex gap-6px">
+                <button v-if="s.apiSupported && s.apiBase" class="btn sm accent" @click="configUse(s)">配置使用</button>
                 <button v-if="linkFor(s)" class="btn sm" @click="openLink(linkFor(s))">申请</button>
                 <button v-if="s.source === 'user'" class="btn sm danger" @click="removeSite(s)">删除</button>
               </div>
@@ -328,19 +332,23 @@
  * 是否为我的推荐进行筛选，提供卡片/表格两种视图，并支持提交与删除推荐。
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Select, Star, Link, Loading } from '@element-plus/icons-vue'
+import { Plus, Select, Star, Link, Loading, Setting } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import Pagination from '@/components/stats/Pagination.vue'
 import { runtime } from '@/lib/runtime'
+import { listProviders } from '@/api/providers'
 import {
   listFreeTokenSites,
   submitFreeTokenSite,
   deleteFreeTokenSite,
   type FreeTokenSite,
 } from '@/api/freeTokens'
+
+const router = useRouter()
 
 /** 视图模式：卡片或表格 */
 type ViewMode = 'card' | 'table'
@@ -404,6 +412,65 @@ const filtered = computed(() => {
     return haystack.includes(kw)
   })
 })
+
+/**
+ * 将站点的 apiFormat 映射为订阅页的协议标识。
+ * @param format 站点的 API 格式描述
+ */
+function mapApiFormat(format: string | null): string {
+  if (!format) return 'openai-completions'
+  const f = format.toLowerCase()
+  if (f.includes('anthropic')) return 'anthropic-messages'
+  if (f.includes('responses')) return 'openai-responses'
+  return 'openai-completions'
+}
+
+/**
+ * 从站点名称派生合法的 customProviderId（小写字母开头，仅含字母数字短横线，长度 3-30）。
+ * @param name 站点名称
+ */
+function deriveCustomId(name: string): string {
+  let id = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+  if (!/^[a-z]/.test(id)) id = 'api-' + id
+  id = id.slice(0, 30)
+  if (id.length < 3) id = id.padEnd(3, 'x')
+  return id
+}
+
+/**
+ * 配置使用：检查是否已有对应订阅，有则跳编辑页，无则跳新建页并预填字段。
+ * @param s 站点
+ */
+async function configUse(s: FreeTokenSite) {
+  const baseUrl = (s.apiBase ?? '').replace(/\/+$/, '')
+  // 尝试匹配已有订阅（按 baseUrl 尾斜杠归一化比较）
+  try {
+    const { connections } = await listProviders()
+    const existing = connections.find((c) => {
+      if (!c.baseUrl) return false
+      return c.baseUrl.replace(/\/+$/, '') === baseUrl
+    })
+    if (existing) {
+      router.push(`/subscriptions/${existing.id}`)
+      return
+    }
+  } catch {
+    // 加载失败时继续走新建流程
+  }
+  // 跳新建页，通过 query 预填字段
+  const protocol = mapApiFormat(s.apiFormat)
+  if (s.providerId) {
+    router.push({
+      path: '/subscriptions/new',
+      query: { provider: s.providerId, baseUrl: s.apiBase ?? '', apiFormat: protocol },
+    })
+  } else {
+    router.push({
+      path: '/subscriptions/custom',
+      query: { name: s.name, providerId: deriveCustomId(s.name), baseUrl: s.apiBase ?? '', apiFormat: protocol },
+    })
+  }
+}
 
 /**
  * 取站点的申请链接，优先用申请地址，回退到官网。

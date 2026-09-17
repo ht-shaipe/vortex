@@ -17,6 +17,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("006", include_str!("migrations/006_model_aliases.sql")),
     ("007", include_str!("migrations/007_model_alias_source.sql")),
     ("008", include_str!("migrations/008_usage_estimated.sql")),
+    ("009", include_str!("migrations/009_rate_limits.sql")),
+    ("010", include_str!("migrations/010_model_catalog.sql")),
+    ("011", include_str!("migrations/011_routing_profiles.sql")),
+    ("012", include_str!("migrations/012_tos_review.sql")),
 ];
 
 /// 执行数据库迁移。

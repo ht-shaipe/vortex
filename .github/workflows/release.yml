@@ -107,12 +107,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ steps.ver.outputs.version }}"
-          # 幂等操作：release 已存在则跳过，不存在则创建
-          gh release view "$TAG" >/dev/null 2>&1 || \
-          gh release create "$TAG" \
-            --title "Vortex v${{ steps.ver.outputs.version }}" \
-            --notes "See the assets below to download and install this version." \
-            --draft=false
+          # 幂等创建：多平台并发时可能已被其他 job 创建，忽略 422 冲突
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" \
+              --title "Vortex v${{ steps.ver.outputs.version }}" \
+              --notes "See the assets below to download and install this version." \
+              --draft=false 2>&1 || true
+          fi
           echo "Release $TAG ready"
 
       - name: Build Tauri app

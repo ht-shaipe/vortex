@@ -118,14 +118,15 @@
  * 职责：接入任意 OpenAI 兼容端点，填写自定义 Provider ID、显示名称、API 地址、
  * 协议与密钥，可预览可用模型并多选，列表首个模型作为默认模型用于路由回退。
  */
-import { computed, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
 import { createProvider, previewModels } from '@/api/providers'
 
 const router = useRouter()
+const route = useRoute()
 // 是否正在保存
 const saving = ref(false)
 // 是否正在拉取模型
@@ -180,6 +181,20 @@ const canSubmit = computed(() => {
 
 // 是否可拉取模型：API 地址已填
 const canFetchModels = computed(() => !!form.baseUrl.trim())
+
+/**
+ * 组件挂载时读取路由 query 预填表单（从薅Token页"配置使用"跳转来时）。
+ */
+onMounted(() => {
+  const q = route.query
+  if (q.name) form.displayName = String(q.name)
+  if (q.providerId) form.customProviderId = String(q.providerId)
+  if (q.baseUrl) form.baseUrl = String(q.baseUrl)
+  if (q.apiFormat) {
+    form.apiProtocol = String(q.apiFormat)
+    onProtocolChange(form.apiProtocol)
+  }
+})
 
 /**
  * 拉取自定义端点的可用模型列表。

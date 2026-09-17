@@ -21,5 +21,13 @@ pub mod settings;
 pub mod free_tokens;
 /// 模型别名（虚拟模型映射）CRUD
 pub mod model_aliases;
+/// 速率限制配置与用量 CRUD
+pub mod rate_limits;
+/// 远程模型目录 CRUD
+pub mod model_catalog;
+/// 路由配置文件 CRUD（命名回退链）
+pub mod routing_profiles;
+/// ToS 合规审查 CRUD
+pub mod tos_review;
 /// AES-256-GCM 加密/解密、密钥派生与密钥生成
 pub mod encryption;

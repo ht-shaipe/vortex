@@ -38,6 +38,54 @@
         </div>
 
         <div class="head-right flex items-center gap-6px">
+          <!-- 参数设置按钮 -->
+          <el-popover placement="bottom-end" :width="320" trigger="click">
+            <template #reference>
+              <button
+                type="button"
+                class="btn sm icon"
+                title="对话参数"
+                aria-label="对话参数设置"
+              >
+                <el-icon :size="14"><Setting /></el-icon>
+              </button>
+            </template>
+            <div class="param-panel flex flex-col gap-16px p-4px">
+              <div class="param-item flex flex-col gap-8px">
+                <div class="flex items-center justify-between">
+                  <label class="text-13px text-ink-2 font-medium">Temperature</label>
+                  <span class="text-12px text-ink-3 tabular-nums">{{ temperature.toFixed(2) }}</span>
+                </div>
+                <el-slider
+                  v-model="temperature"
+                  :min="0"
+                  :max="2"
+                  :step="0.01"
+                  :show-tooltip="false"
+                />
+                <p class="text-11px text-ink-4 m-0">控制随机性，值越高输出越多样</p>
+              </div>
+              <div class="param-item flex flex-col gap-8px">
+                <div class="flex items-center justify-between">
+                  <label class="text-13px text-ink-2 font-medium">Max Tokens</label>
+                  <el-input-number
+                    v-model="maxTokens"
+                    :min="1"
+                    :max="32000"
+                    :step="100"
+                    size="small"
+                    controls-position="right"
+                    class="w-120px"
+                  />
+                </div>
+                <p class="text-11px text-ink-4 m-0">最大输出长度，留空或 0 表示不限制</p>
+              </div>
+              <div class="param-actions flex justify-end gap-8px pt-4px border-t border-line">
+                <button type="button" class="btn sm" @click="resetParams">重置默认</button>
+              </div>
+            </div>
+          </el-popover>
+
           <!-- 无可用模型时引导去配置 -->
           <template v-if="modelGroups.length === 0">
             <button type="button" class="btn sm" @click="goConfigure">去配置端点</button>
@@ -118,7 +166,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Fold } from '@element-plus/icons-vue'
+import { Fold, Setting } from '@element-plus/icons-vue'
 import TopicList from '@/components/chat/TopicList.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ComposerBar from '@/components/chat/ComposerBar.vue'
@@ -150,6 +198,10 @@ const draft = ref('')
 const modelGroups = ref<ModelOptionGroup[]>([])
 // 当前选中的模型 key（endpointId/model）
 const selectedKey = ref('')
+
+// 对话参数
+const temperature = ref(0.7)
+const maxTokens = ref<number | null>(null)
 
 /** 正在生成的会话 id 集合（后端按 topic 并行，前端须隔离）。 */
 const streamingIds = ref<Set<string>>(new Set())
@@ -478,7 +530,12 @@ async function handleSend(): Promise<void> {
     markStreaming(topicId, true)
     draft.value = ''
     try {
-      const res = await chatApi.send(topicId, text)
+      const res = await chatApi.send(
+        topicId,
+        text,
+        temperature.value || undefined,
+        maxTokens.value || undefined,
+      )
       const msgs = await chatApi.listMessages(topicId)
       if (activeId.value === topicId) {
         messages.value = msgs
@@ -521,7 +578,12 @@ async function handleRegenerate(m: BranchMessage): Promise<void> {
   const topicId = activeId.value
   markStreaming(topicId, true)
   try {
-    await chatApi.regenerate(topicId, m.id)
+    await chatApi.regenerate(
+      topicId,
+      m.id,
+      temperature.value || undefined,
+      maxTokens.value || undefined,
+    )
     messages.value = await chatApi.listMessages(topicId)
   } catch (e) {
     markStreaming(topicId, false)
@@ -587,6 +649,14 @@ async function onModelChange(key: string): Promise<void> {
  */
 function goConfigure(): void {
   void router.push('/subscriptions')
+}
+
+/**
+ * 重置对话参数为默认值。
+ */
+function resetParams(): void {
+  temperature.value = 0.7
+  maxTokens.value = null
 }
 </script>
 

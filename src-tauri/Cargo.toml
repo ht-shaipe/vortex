@@ -29,8 +29,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 url = "2"
-openssl = { version = "0.10", features = ["vendored"] }
-awc = { version = "3", features = ["openssl"] }
+awc = { version = "3", features = ["rustls"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }

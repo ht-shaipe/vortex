@@ -4,12 +4,13 @@
 //! → 用量记录。流式响应以归一化 SSE 流返回，由入站协议层决定包装方式。
 
 use crate::db::models::{ProxyRequest, UsageEntry};
-use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, usage as db_usage};
+use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, rate_limits as db_rate_limits, routing_profiles as db_routing_profiles, usage as db_usage};
 use crate::error::{AppError, Result};
 use crate::providers::ProviderRegistry;
 use crate::proxy::executor::{ExecutorFactory, ExecutorOutput};
 use crate::proxy::retry::RetryPolicy;
 use crate::proxy::sse::{self, SseStream, StreamUsage, UsageCallback, UsageExtract};
+use crate::proxy::tool_call_rescue;
 use crate::AppState;
 use std::sync::Arc;
 use std::time::Instant;
@@ -66,6 +67,7 @@ impl ProxyEngine {
         request: ProxyRequest,
     ) -> Result<ProxyOutput> {
         let start = Instant::now();
+        let mut request = request;
         let conn = db_core::get_conn(&state.db_pool)?;
 
         // API Key 鉴权
@@ -89,6 +91,55 @@ impl ProxyEngine {
                 }
             } else {
                 return Err(AppError::Unauthorized("API key required".into()));
+            }
+        }
+
+        // Prompt 压缩：在路由前压缩消息列表（fail-open）
+        {
+            let comp_config = crate::proxy::prompt_compression::CompressionConfig::default();
+            if comp_config.enabled {
+                let original = &request.messages;
+                let compressed = crate::proxy::prompt_compression::compress_messages(original, &comp_config);
+                if compressed != *original {
+                    log::info!("Prompt 压缩：消息已压缩");
+                    request.messages = compressed;
+                }
+            }
+        }
+
+        // 粘性会话：若请求携带 session_id 且有有效绑定，直接使用绑定的模型
+        let session_id = request.extra.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        if let Some(ref sid) = session_id {
+            if let Some((provider, model, connection_id)) = state.sticky_session.get(sid) {
+                log::info!("粘性会话 '{}' 命中：{}/{}/{:?}", sid, provider, model, connection_id);
+                if let Some(def) = state.provider_registry.get(&provider) {
+                    let connection = if let Some(ref cid) = connection_id {
+                        db_providers::list_by_provider(&conn, &provider, &state.encryption_key)?
+                            .into_iter()
+                            .find(|c| c.id == *cid)
+                    } else {
+                        db_providers::list_by_provider(&conn, &provider, &state.encryption_key)?
+                            .into_iter()
+                            .next()
+                    };
+                    if let Some(conn_obj) = connection {
+                        let result = self
+                            .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &model, start)
+                            .await;
+                        match &result {
+                            Ok(_) => {
+                                state.sticky_session.set(sid, &provider, &model, Some(&conn_obj.id));
+                            }
+                            Err(e) => {
+                                log::warn!("粘性会话 '{}' 绑定模型失败: {}，回退到正常路由", sid, e);
+                                state.sticky_session.clear(sid);
+                            }
+                        }
+                        if result.is_ok() {
+                            return result;
+                        }
+                    }
+                }
             }
         }
 
@@ -189,6 +240,73 @@ impl ProxyEngine {
             });
         }
 
+        // auto 模型：按优先级遍历所有活跃连接与模型
+        if request.model == "auto" {
+            return self.handle_auto_route(state, client, &conn, &request, start).await;
+        }
+
+        // 路由配置 profile：auto:<profile_name> 使用命名回退链
+        if let Some(profile_name) = request.model.strip_prefix("auto:") {
+            if let Some(profile) = db_routing_profiles::get_by_name(&conn, profile_name)? {
+                log::info!("路由配置 '{}' 命中，共 {} 个目标", profile.name, profile.targets.len());
+                let mut last_err: Option<AppError> = None;
+                let mut last_circuit: Option<String> = None;
+                for target in &profile.targets {
+                    let Some(def) = state.provider_registry.get(&target.provider) else {
+                        log::warn!("配置 '{}' 目标 provider '{}' 未注册，跳过", profile.name, target.provider);
+                        continue;
+                    };
+                    let connection = if let Some(ref cid) = target.connection_id {
+                        db_providers::list_by_provider(&conn, &target.provider, &state.encryption_key)?
+                            .into_iter()
+                            .find(|c| c.id == *cid)
+                    } else {
+                        db_providers::list_by_provider(&conn, &target.provider, &state.encryption_key)?
+                            .into_iter()
+                            .next()
+                    };
+                    let Some(conn_obj) = connection else {
+                        log::warn!("配置 '{}' 目标 provider '{}' 无活跃连接，跳过", profile.name, target.provider);
+                        continue;
+                    };
+                    let breaker_name = format!("{}:{}", def.id, conn_obj.id);
+                    if !state.resilience_manager.is_available(&breaker_name) {
+                        log::warn!("配置 '{}' 目标 {}/{} 熔断器打开，跳过", profile.name, target.provider, target.model);
+                        last_circuit = Some(breaker_name);
+                        continue;
+                    }
+                    log::info!("配置 '{}' 尝试目标 {}/{}", profile.name, target.provider, target.model);
+                    let result = self
+                        .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
+                        .await;
+                    match result {
+                        Ok(output) => {
+                            log::info!("配置 '{}' 目标 {}/{} 成功", profile.name, target.provider, target.model);
+                            if let Some(ref sid) = session_id {
+                                state.sticky_session.set(sid, &target.provider, &target.model, Some(&conn_obj.id));
+                            }
+                            return Ok(output);
+                        }
+                        Err(e) => {
+                            log::warn!("配置 '{}' 目标 {}/{} 失败: {}，尝试下一个", profile.name, target.provider, target.model, e);
+                            if let AppError::CircuitOpen(ref name) = e {
+                                last_circuit = Some(name.clone());
+                            } else {
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                }
+                return Err(if let Some(e) = last_err {
+                    e
+                } else if let Some(name) = last_circuit {
+                    AppError::CircuitOpen(name)
+                } else {
+                    AppError::Routing(format!("All targets failed for profile '{}'", profile.name))
+                });
+            }
+        }
+
         // 路由解析：找到提供商定义、活跃连接与实际模型名
         let (provider_def, connection, model) =
             self.resolve_route(&conn, &state.provider_registry, &request, &state.encryption_key)?;
@@ -201,7 +319,11 @@ impl ProxyEngine {
 
         // 失败时记录错误用量
         match &result {
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some(ref sid) = session_id {
+                    state.sticky_session.set(sid, &provider_def.id, &model, Some(&conn_obj.id));
+                }
+            }
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 let entry = UsageEntry {
@@ -292,6 +414,201 @@ impl ProxyEngine {
         Err(AppError::Routing(format!("Cannot resolve model: {}", request.model)))
     }
 
+    /// auto 模型路由：按优先级遍历所有活跃连接与模型
+    ///
+    /// 当请求模型为 `auto` 时，查询所有活跃连接（按优先级降序），
+    /// 遍历每个连接的模型列表，检查熔断器状态后依次尝试。
+    /// 失败的模型使用更长的冷静期（300秒）以避免反复命中故障目标。
+    ///
+    /// # 参数
+    /// - `state`：应用全局状态
+    /// - `client`：HTTP 客户端
+    /// - `conn`：数据库连接
+    /// - `request`：代理请求
+    /// - `start`：请求起始时间
+    async fn handle_auto_route(
+        &self,
+        state: &Arc<AppState>,
+        client: &awc::Client,
+        conn: &rusqlite::Connection,
+        request: &ProxyRequest,
+        start: Instant,
+    ) -> Result<ProxyOutput> {
+        // 查询所有活跃连接，已按 priority DESC 排序
+        let all_connections = db_providers::list_all_active(conn, &state.encryption_key)?;
+        if all_connections.is_empty() {
+            return Err(AppError::Routing("No active connections for auto routing".into()));
+        }
+
+        log::info!("auto 路由：共 {} 个活跃连接，按优先级遍历", all_connections.len());
+
+        // 收集所有候选 (connection_index, model) 并用 bandit 排序
+        let mut candidates: Vec<(usize, String)> = Vec::new();
+        for (ci, connection) in all_connections.iter().enumerate() {
+            let models: Vec<String> = match &connection.models {
+                Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                _ => connection.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+            };
+            for model in models {
+                candidates.push((ci, model));
+            }
+        }
+
+        // auto 粘性：优先尝试最近成功的模型，保持 agent 连续性
+        if let Some((last_provider, last_model, last_conn_id)) = state.bandit_router.get_last_success() {
+            for (ci, model) in &candidates {
+                let pconn = &all_connections[*ci];
+                if pconn.provider != last_provider || model != &last_model {
+                    continue;
+                }
+                if let Some(ref cid) = last_conn_id {
+                    if &pconn.id != cid {
+                        continue;
+                    }
+                }
+                let Some(provider_def) = state.provider_registry.get(&pconn.provider) else {
+                    break;
+                };
+                let breaker_name = format!("{}:{}", provider_def.id, pconn.id);
+                let auto_model_breaker = format!("auto:{}:{}:{}", provider_def.id, pconn.id, model);
+                if !state.resilience_manager.is_available(&breaker_name)
+                    || !state.resilience_manager.is_available(&auto_model_breaker)
+                {
+                    log::info!("auto 粘性：上次模型 {}/{}/{} 熔断中，回退到 bandit 排序", last_provider, pconn.name, last_model);
+                    state.bandit_router.clear_last_success();
+                    break;
+                }
+                log::info!("auto 粘性：优先尝试上次成功的 {}/{}/{}", last_provider, pconn.name, last_model);
+                let result = self
+                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start)
+                    .await;
+                match result {
+                    Ok(output) => {
+                        let latency_ms = start.elapsed().as_millis() as f64;
+                        state.bandit_router.record_success(&pconn.provider, model.as_str(), Some(&pconn.id), latency_ms);
+                        log::info!("auto 粘性：成功 {}/{}/{}", last_provider, pconn.name, last_model);
+                        return Ok(output);
+                    }
+                    Err(e) => {
+                        log::warn!("auto 粘性：{}/{}/{} 失败: {}，回退到 bandit 排序", last_provider, pconn.name, last_model, e);
+                        state.bandit_router.clear_last_success();
+                        state.bandit_router.record_failure(&pconn.provider, model.as_str(), Some(&pconn.id));
+                        state.resilience_manager.record_failure_cfg(&auto_model_breaker, 2, 300);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 用 bandit 评分排序候选
+        let bandit_keys: Vec<(String, String, Option<String>)> = candidates
+            .iter()
+            .map(|(ci, model)| {
+                let conn = &all_connections[*ci];
+                (conn.provider.clone(), model.clone(), Some(conn.id.clone()))
+            })
+            .collect();
+        let ranked_indices = state.bandit_router.rank_candidates(&bandit_keys);
+
+        let mut last_err: Option<AppError> = None;
+        let mut last_circuit: Option<String> = None;
+
+        for &idx in &ranked_indices {
+            let (ci, model) = &candidates[idx];
+            let connection = &all_connections[*ci];
+            // 获取提供商定义
+            let Some(provider_def) = state.provider_registry.get(&connection.provider) else {
+                log::warn!("auto: provider '{}' 未注册，跳过连接 {}", connection.provider, connection.name);
+                continue;
+            };
+
+            // 连接级熔断器检查
+            let breaker_name = format!("{}:{}", provider_def.id, connection.id);
+            if !state.resilience_manager.is_available(&breaker_name) {
+                log::warn!("auto: 连接级熔断器打开，跳过 {}/{}", provider_def.id, connection.name);
+                last_circuit = Some(breaker_name);
+                continue;
+            }
+
+            // 模型级熔断器检查（auto 专用，冷静期 300 秒）
+            let auto_model_breaker = format!("auto:{}:{}:{}", provider_def.id, connection.id, model);
+            if !state.resilience_manager.is_available(&auto_model_breaker) {
+                log::warn!("auto: 模型熔断器打开，跳过 {}/{}/{}", provider_def.id, connection.name, model);
+                last_circuit = Some(auto_model_breaker);
+                continue;
+            }
+
+            log::info!("auto: 尝试 {}/{}/{} (连接: {}, 优先级: {})", 
+                provider_def.id, model, connection.name, connection.id, connection.priority);
+
+            let result = self
+                .handle_single_with_retry(state, client, conn, request, provider_def, connection, model.as_str(), start)
+                .await;
+
+            match result {
+                Ok(output) => {
+                    let latency_ms = start.elapsed().as_millis() as f64;
+                    state.bandit_router.record_success(
+                        &connection.provider, model.as_str(), Some(&connection.id), latency_ms,
+                    );
+                    log::info!("auto: 成功 {}/{}/{}", provider_def.id, connection.name, model);
+                    return Ok(output);
+                }
+                Err(e) => {
+                    let err_str = format!("{}", e);
+                    log::warn!("auto: {}/{}/{} 失败: {}，尝试下一个", provider_def.id, connection.name, model, e);
+                    state.bandit_router.record_failure(
+                        &connection.provider, model.as_str(), Some(&connection.id),
+                    );
+
+                    // 记录用量错误条目
+                    let latency = start.elapsed().as_millis() as i64;
+                    let entry = UsageEntry {
+                        id: 0,
+                        provider: Some(connection.name.clone()),
+                        model: Some(model.to_string()),
+                        connection_id: Some(connection.id.clone()),
+                        api_key_id: request.api_key.clone(),
+                        api_key_name: None,
+                        tokens_input: 0,
+                        tokens_output: 0,
+                        tokens_cache_read: 0,
+                        tokens_cache_creation: 0,
+                        tokens_reasoning: 0,
+                        service_tier: "standard".to_string(),
+                        status: "error".to_string(),
+                        success: false,
+                        error_code: Some(err_str),
+                        latency_ms: Some(latency),
+                        ttft_ms: None,
+                        cost: 0.0,
+                        usage_estimated: false,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = db_usage::record(conn, &entry);
+
+                    // 模型级熔断：auto 专用，冷静期 300 秒（比普通模型级 60 秒更长）
+                    if let AppError::CircuitOpen(ref name) = e {
+                        last_circuit = Some(name.clone());
+                    } else {
+                        // 非熔断错误也记录到 auto 专用熔断器，冷静期 300 秒
+                        state.resilience_manager.record_failure_cfg(&auto_model_breaker, 2, 300);
+                        last_err = Some(e);
+                    }
+                }
+            }
+        }
+
+        // 所有候选均失败
+        Err(if let Some(e) = last_err {
+            e
+        } else if let Some(name) = last_circuit {
+            AppError::CircuitOpen(name)
+        } else {
+            AppError::Routing("All candidates failed for auto routing".into())
+        })
+    }
+
     /// 带重试与熔断的单连接请求处理
     ///
     /// 每次尝试前检查熔断器状态，执行后根据结果记录成功/失败。
@@ -347,6 +664,17 @@ impl ProxyEngine {
                 break;
             }
 
+            // 速率限制检查：RPM/RPD/TPM/TPD
+            let estimated_tokens = estimate_request_tokens(&request.messages);
+            if !state.rate_limiter.check(&def.id, model, Some(&connection.id), estimated_tokens) {
+                log::warn!(
+                    "速率限制触发，跳过：{}/{} (连接: {})",
+                    def.id, model, connection.id
+                );
+                last_err = Some(AppError::CircuitOpen(format!("rate-limited:{}:{}", def.id, model)));
+                break;
+            }
+
             // 构造流式用量落库回调（流结束时由 sse.rs 调用）
             let cb_pool = state.db_pool.clone();
             let cb_provider = connection.name.clone();
@@ -354,6 +682,8 @@ impl ProxyEngine {
             let cb_conn = connection.id.clone();
             let cb_api_key = request.api_key.clone();
             let cb_start = start;
+            let cb_provider_id = def.id.clone();
+            let cb_rate_limiter = state.rate_limiter.clone();
             // 请求体输入 token 估算值：上游未返回 usage 时回填输入侧
             let cb_req_input = estimate_request_tokens(&request.messages);
             let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage| {
@@ -388,6 +718,10 @@ impl ProxyEngine {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = db_usage::record(&c, &entry);
+                // 记数速率限制用量
+                let total_tokens = input_tokens + usage.output_tokens;
+                cb_rate_limiter.record(&cb_provider_id, &cb_model, Some(&cb_conn), total_tokens);
+                let _ = db_rate_limits::record_usage(&c, &cb_provider_id, &cb_model, Some(&cb_conn), total_tokens);
             });
 
             match executor.execute(client, request, def, connection, model, Some(usage_cb)).await {
@@ -429,6 +763,21 @@ impl ProxyEngine {
                     };
                     let _ = db_usage::record(conn, &entry);
 
+                    // 记数速率限制用量
+                    let total_tokens = tokens_in + extracted.output_tokens;
+                    state.rate_limiter.record(&def.id, model, Some(&connection.id), total_tokens);
+                    let _ = db_rate_limits::record_usage(conn, &def.id, model, Some(&connection.id), total_tokens);
+
+                    // 记数 bandit 评分
+                    state.bandit_router.record_success(&def.id, model, Some(&connection.id), latency as f64);
+
+                    // Tool-call rescue：检测并救援纯文本 tool call
+                    let mut body = body;
+                    let rescued = tool_call_rescue::rescue_from_response(&mut body);
+                    if rescued {
+                        log::info!("Tool-call rescue: 纯文本 tool call 已转换为结构化格式");
+                    }
+
                     return Ok(ProxyOutput::Response(body));
                 }
                 Ok(ExecutorOutput::Stream(stream)) => {
@@ -460,6 +809,8 @@ impl ProxyEngine {
                         // 模型级熔断：4xx（除 429）通常意味着"该模型不可用"
                         //（下线 / 无权限 / 不存在），比连接级更快触发快速失败
                         state.resilience_manager.record_failure_cfg(&model_breaker, 3, 60);
+                        // bandit 评分记录失败
+                        state.bandit_router.record_failure(&def.id, model, Some(&connection.id));
                         // 原样透传上游状态码与响应体，方便下游排查
                         return Err(AppError::Upstream { status: status_code, body });
                     }
@@ -483,6 +834,8 @@ impl ProxyEngine {
                     );
                     state.resilience_manager.record_failure(&breaker_name);
                     state.resilience_manager.record_failure_cfg(&model_breaker, 3, 60);
+                    // bandit 评分记录失败
+                    state.bandit_router.record_failure(&def.id, model, Some(&connection.id));
                     if !self.retry_policy.should_retry(attempt, None) {
                         return Err(e);
                     }

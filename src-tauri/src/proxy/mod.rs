@@ -10,3 +10,11 @@ pub mod sse;
 pub mod retry;
 /// 上游执行器，按 API 格式构建并发送请求
 pub mod executor;
+/// Tool-call rescue：纯文本 tool call 救援为结构化
+pub mod tool_call_rescue;
+/// 粘性会话管理
+pub mod sticky_session;
+/// Prompt 压缩管线
+pub mod prompt_compression;
+/// Fusion 多模型合成
+pub mod fusion;

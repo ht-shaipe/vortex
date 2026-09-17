@@ -299,7 +299,7 @@ pub async fn test_provider(
 
     // 2. HTTP 连接测试（async）
     let def = state.provider_registry.get(&provider.provider);
-    let upstream_client = crate::create_awc_client(&state.ssl_connector);
+    let upstream_client = crate::create_awc_client();
     let test_result = test_connection(&provider, def, &upstream_client).await;
 
     // 3. DB 写入测试结果
@@ -673,7 +673,7 @@ pub async fn preview_models(
 
     // 使用上游链路客户端（awc + openssl）
     log::info!("[preview-models] provider={} url={} auth={}", body.provider, models_url, auth_kind);
-    let client = crate::create_awc_client(&state.ssl_connector);
+    let client = crate::create_awc_client();
     let mut req = client.get(&models_url);
     if let Some(ref key) = body.api_key {
         if !key.trim().is_empty() {
