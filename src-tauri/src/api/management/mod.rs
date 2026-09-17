@@ -38,3 +38,11 @@ pub mod model_catalog;
 pub mod latency_stats;
 /// Playground 测试端点
 pub mod playground;
+/// 成本分析端点
+pub mod cost_analysis;
+/// 智能推荐端点
+pub mod recommendations;
+/// 内容寻址回忆端点
+pub mod compressed_content;
+/// API Key 权限管理端点
+pub mod key_permissions;

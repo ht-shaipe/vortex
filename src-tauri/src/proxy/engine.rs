@@ -78,6 +78,12 @@ impl ProxyEngine {
                     return Err(AppError::Unauthorized("Invalid API key".into()));
                 }
                 let key_obj = key_record.unwrap();
+                // 校验 key_permissions 表的 allow/deny 规则
+                if !crate::db::key_permissions::check_access(&conn, &key_obj.id, &request.model)? {
+                    return Err(AppError::Unauthorized(
+                        format!("Model '{}' is not allowed for this API key (permission denied)", request.model),
+                    ));
+                }
                 // 校验 API Key 的模型白名单
                 if let Some(allowed) = key_obj.allowed_models.as_array() {
                     if !allowed.is_empty() {
@@ -94,16 +100,48 @@ impl ProxyEngine {
             }
         }
 
-        // Prompt 压缩：在路由前压缩消息列表（fail-open）
+        // Prompt 压缩：从 settings 读取压缩级别（fail-open + never-worse 保护）
         {
-            let comp_config = crate::proxy::prompt_compression::CompressionConfig::default();
-            if comp_config.enabled {
-                let original = &request.messages;
-                let compressed = crate::proxy::prompt_compression::compress_messages(original, &comp_config);
-                if compressed != *original {
-                    log::info!("Prompt 压缩：消息已压缩");
-                    request.messages = compressed;
+            let comp_config = {
+                let pool = state.db_pool.clone();
+                let level_str = tokio::task::spawn_blocking(move || -> String {
+                    let Ok(conn) = crate::db::core::get_conn(&pool) else { return "minimal".to_string() };
+                    let val = crate::db::settings::get(&conn, "settings", "general").unwrap_or(None);
+                    val.as_ref()
+                        .and_then(|v| v.get("compressionLevel"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("minimal")
+                        .to_string()
+                }).await.unwrap_or_else(|_| "minimal".to_string());
+
+                let level = match level_str.as_str() {
+                    "none" => crate::proxy::prompt_compression::CompressionLevel::None,
+                    "aggressive" => crate::proxy::prompt_compression::CompressionLevel::Aggressive,
+                    _ => crate::proxy::prompt_compression::CompressionLevel::Minimal,
+                };
+                crate::proxy::prompt_compression::CompressionConfig {
+                    enabled: level != crate::proxy::prompt_compression::CompressionLevel::None,
+                    level,
+                    ..Default::default()
                 }
+            };
+            let original_messages = request.messages.clone();
+            let (compressed, saved) = crate::proxy::prompt_compression::compress_messages(&request.messages, &comp_config);
+            if saved > 0 {
+                log::info!("Prompt 压缩：节省 ~{} tokens", saved);
+                // 存储原始内容到回忆系统（best-effort，失败不影响请求）
+                let pool = state.db_pool.clone();
+                let model = request.model.clone();
+                tokio::task::spawn_blocking(move || {
+                    let Ok(conn) = crate::db::core::get_conn(&pool) else { return };
+                    let content = serde_json::to_string(&original_messages).unwrap_or_default();
+                    let hash = crate::db::compressed_content::content_hash(&content);
+                    let _ = crate::db::compressed_content::store(
+                        &conn, &hash, &content, saved, None, Some(&model),
+                    );
+                });
+                request.messages = compressed;
+                request.saved_tokens = saved;
             }
         }
 
@@ -218,6 +256,7 @@ impl ProxyEngine {
                             ttft_ms: None,
                             cost: 0.0,
                             usage_estimated: false,
+                            saved_tokens: request.saved_tokens,
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         };
                         let _ = db_usage::record(&conn, &entry);
@@ -346,6 +385,7 @@ impl ProxyEngine {
                     ttft_ms: None,
                     cost: 0.0,
                     usage_estimated: false,
+                    saved_tokens: request.saved_tokens,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = db_usage::record(&conn, &entry);
@@ -583,6 +623,7 @@ impl ProxyEngine {
                         ttft_ms: None,
                         cost: 0.0,
                         usage_estimated: false,
+                        saved_tokens: request.saved_tokens,
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = db_usage::record(conn, &entry);
@@ -686,6 +727,7 @@ impl ProxyEngine {
             let cb_rate_limiter = state.rate_limiter.clone();
             // 请求体输入 token 估算值：上游未返回 usage 时回填输入侧
             let cb_req_input = estimate_request_tokens(&request.messages);
+            let cb_saved_tokens = request.saved_tokens;
             let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage| {
                 let Ok(c) = db_core::get_conn(&cb_pool) else { return };
                 let latency = cb_start.elapsed().as_millis() as i64;
@@ -715,6 +757,7 @@ impl ProxyEngine {
                     ttft_ms: None,
                     cost: 0.0,
                     usage_estimated,
+                    saved_tokens: cb_saved_tokens,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = db_usage::record(&c, &entry);
@@ -759,6 +802,7 @@ impl ProxyEngine {
                         ttft_ms: None,
                         cost: extracted.cost,
                         usage_estimated: extracted.estimated,
+                        saved_tokens: request.saved_tokens,
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = db_usage::record(conn, &entry);

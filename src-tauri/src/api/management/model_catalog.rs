@@ -62,7 +62,13 @@ pub async fn refresh_from_connections_handler(
 ) -> HttpResponse {
     let pool = state.db_pool.clone();
     let enc_key = state.encryption_key.clone();
-    match crate::providers::catalog_sync::refresh_from_connections(&pool, &enc_key).await {
+    let provider_defaults: std::collections::HashMap<String, (String, String)> = state
+        .provider_registry
+        .list()
+        .into_iter()
+        .map(|d| (d.id.clone(), (d.base_url.clone(), d.models_path.clone())))
+        .collect();
+    match crate::providers::catalog_sync::refresh_from_connections(&pool, &enc_key, &provider_defaults).await {
         Ok((success, total, results)) => HttpResponse::Ok().json(json!({
             "successConnections": success,
             "totalModels": total,

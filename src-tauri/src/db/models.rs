@@ -240,6 +240,9 @@ pub struct UsageEntry {
     pub cost: f64,
     /// token 数是否为估算值（上游未返回用量时按内容估算）
     pub usage_estimated: bool,
+    /// Prompt 压缩节省的 token 数
+    #[serde(default)]
+    pub saved_tokens: i64,
     /// 时间戳（RFC3339）
     pub timestamp: String,
 }
@@ -263,6 +266,9 @@ pub struct UsageStats {
     pub success_rate: f64,
     /// 估算请求数（上游未返回用量，按内容估算）
     pub estimated_count: i64,
+    /// Prompt 压缩节省的总 Token 数
+    #[serde(default)]
+    pub total_saved_tokens: i64,
     /// 按提供方分组的请求数（JSON 对象）
     pub by_provider: serde_json::Value,
     /// 按模型分组的请求数（JSON 对象）
@@ -292,6 +298,9 @@ pub struct ProxyRequest {
     pub source_format: String,
     /// 额外参数（JSON）
     pub extra: serde_json::Value,
+    /// Prompt 压缩节省的 token 数（内部设置，非外部传入）
+    #[serde(default)]
+    pub saved_tokens: i64,
 }
 
 /// 免费 Token 站点目录条目。

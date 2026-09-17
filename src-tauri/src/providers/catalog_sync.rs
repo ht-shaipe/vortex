@@ -170,6 +170,7 @@ pub async fn seed_builtin_catalog_if_empty(pool: &crate::db::core::DbPool) -> Re
 pub async fn refresh_from_connections(
     pool: &crate::db::core::DbPool,
     enc_key: &[u8],
+    provider_defaults: &std::collections::HashMap<String, (String, String)>,
 ) -> Result<(usize, usize, Vec<ConnectionRefreshResult>)> {
     let pool_clone = pool.clone();
     let enc_key_clone = enc_key.to_vec();
@@ -189,22 +190,47 @@ pub async fn refresh_from_connections(
     let mut all_entries = Vec::new();
     let now = chrono::Utc::now().to_rfc3339();
 
+    // 解析内置种子数据，用于补充从 /v1/models 拉取的模型的元信息
+    let builtin_feed: FeedResponse = serde_json::from_str(BUILTIN_SEED).unwrap_or(FeedResponse { models: vec![] });
+    let builtin_lookup: std::collections::HashMap<String, &FeedModel> = builtin_feed
+        .models
+        .iter()
+        .map(|m| (format!("{}:{}", m.provider, m.model), m))
+        .collect();
+
     for conn in &connections {
+        // 优先使用连接级 baseUrl，回退到提供商默认 base_url
         let base_url = match conn.provider_specific_data.get("baseUrl") {
-            Some(v) => v.as_str().unwrap_or("").trim_end_matches('/').to_string(),
-            None => continue,
+            Some(v) => {
+                let s = v.as_str().unwrap_or("").trim_end_matches('/').to_string();
+                if s.is_empty() {
+                    provider_defaults.get(&conn.provider).map(|(b, _)| b.clone()).unwrap_or_default()
+                } else {
+                    s
+                }
+            }
+            None => provider_defaults.get(&conn.provider).map(|(b, _)| b.clone()).unwrap_or_default(),
         };
         if base_url.is_empty() {
+            log::warn!("连接 {} 无 base_url，跳过", conn.name);
             continue;
         }
         let api_key = match &conn.api_key {
             Some(k) if !k.is_empty() => k.clone(),
-            _ => continue,
+            _ => {
+                log::warn!("连接 {} 无 api_key，跳过", conn.name);
+                continue;
+            }
         };
 
-        let models_url = if base_url.ends_with("/v1") {
-            format!("{}/models", base_url)
-        } else if base_url.ends_with("/v1/") {
+        // 构造 models 端点 URL：优先用提供商定义的 models_path，否则按 base_url 格式推断
+        let models_url = if let Some((_, mp)) = provider_defaults.get(&conn.provider) {
+            if !mp.is_empty() {
+                format!("{}{}", base_url, mp)
+            } else {
+                format!("{}/models", base_url)
+            }
+        } else if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
             format!("{}/models", base_url.trim_end_matches('/'))
         } else {
             format!("{}/v1/models", base_url)
@@ -212,6 +238,8 @@ pub async fn refresh_from_connections(
 
         let provider = conn.provider.clone();
         let is_anthropic = provider == "anthropic";
+
+        log::info!("从连接 {} 拉取模型列表: {}", conn.name, models_url);
 
         let mut req = client
             .get(&models_url)
@@ -226,7 +254,7 @@ pub async fn refresh_from_connections(
             req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
         }
 
-        let resp = match req.send().await {
+        let mut resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("从 {} 拉取模型列表失败 ({}): {}", conn.name, models_url, e);
@@ -275,8 +303,6 @@ pub async fn refresh_from_connections(
         #[derive(Deserialize)]
         struct ModelItem {
             id: String,
-            #[serde(default)]
-            owned_by: Option<String>,
         }
 
         let models_resp: ModelsResponse = match serde_json::from_slice(&body) {
@@ -295,22 +321,23 @@ pub async fn refresh_from_connections(
 
         let count = models_resp.data.len();
         for item in models_resp.data {
-            let model_provider = item.owned_by.unwrap_or_else(|| provider.clone());
+            let lookup_key = format!("{}:{}", provider, item.id);
+            let builtin = builtin_lookup.get(&lookup_key);
             all_entries.push(CatalogEntry {
                 id: uuid::Uuid::new_v4().to_string(),
-                provider: model_provider,
-                model: item.id,
-                name: None,
-                context_window: None,
-                rpm: None,
-                rpd: None,
-                tpm: None,
-                tpd: None,
-                free_quota: None,
-                supports_tools: false,
-                supports_streaming: true,
-                supports_vision: false,
-                capabilities: serde_json::Value::Array(vec![]),
+                provider: provider.clone(),
+                model: item.id.clone(),
+                name: builtin.and_then(|b| b.name.clone()).or(Some(item.id.clone())),
+                context_window: builtin.and_then(|b| b.context_window),
+                rpm: builtin.and_then(|b| b.rpm),
+                rpd: builtin.and_then(|b| b.rpd),
+                tpm: builtin.and_then(|b| b.tpm),
+                tpd: builtin.and_then(|b| b.tpd),
+                free_quota: builtin.and_then(|b| b.free_quota.clone()),
+                supports_tools: builtin.map(|b| b.supports_tools).unwrap_or(false),
+                supports_streaming: builtin.map(|b| b.supports_streaming).unwrap_or(true),
+                supports_vision: builtin.map(|b| b.supports_vision).unwrap_or(false),
+                capabilities: builtin.map(|b| b.capabilities.clone()).unwrap_or(serde_json::Value::Array(vec![])),
                 source_feed: Some(format!("connection:{}", conn.name)),
                 is_active: true,
                 last_synced: Some(now.clone()),

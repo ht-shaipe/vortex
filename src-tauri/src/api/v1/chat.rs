@@ -85,5 +85,6 @@ fn parse_chat_request(body: &serde_json::Value, req: &HttpRequest) -> crate::err
         api_key,
         source_format: "openai".to_string(), // 标记来源格式为 OpenAI
         extra: json!({}),
+        saved_tokens: 0,
     })
 }

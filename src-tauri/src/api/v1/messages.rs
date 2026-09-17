@@ -126,6 +126,7 @@ fn parse_anthropic_request(
         api_key,
         source_format: "anthropic".to_string(), // 标记来源格式为 Anthropic
         extra: json!({}),
+        saved_tokens: 0,
     })
 }
 

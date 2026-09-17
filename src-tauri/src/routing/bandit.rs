@@ -80,8 +80,8 @@ impl ScoreArm {
 #[derive(Clone)]
 pub struct BanditRouter {
     arms: Arc<RwLock<HashMap<String, ScoreArm>>>,
-    /// 探索常数 C（默认 sqrt(2)）
-    c: f64,
+    /// 探索常数 C（默认 sqrt(2)），由自调优动态更新
+    c: Arc<RwLock<f64>>,
     /// 总轮次
     rounds: Arc<RwLock<u32>>,
     /// auto 路由最近成功的候选 key，用于粘性优先
@@ -92,7 +92,7 @@ impl BanditRouter {
     pub fn new() -> Self {
         Self {
             arms: Arc::new(RwLock::new(HashMap::new())),
-            c: std::f64::consts::SQRT_2,
+            c: Arc::new(RwLock::new(std::f64::consts::SQRT_2)),
             rounds: Arc::new(RwLock::new(0)),
             last_success: Arc::new(RwLock::new(None)),
         }
@@ -105,6 +105,29 @@ impl BanditRouter {
         }
     }
 
+    /// 自调优探索常数 C：每 50 轮根据整体成功率调整
+    fn auto_tune(&self) {
+        let rounds = *self.rounds.read();
+        if rounds == 0 || rounds % 50 != 0 {
+            return;
+        }
+        let arms = self.arms.read();
+        let total_success: u32 = arms.values().map(|a| a.success_count).sum();
+        let total_fail: u32 = arms.values().map(|a| a.failure_count).sum();
+        let total = total_success + total_fail;
+        if total == 0 {
+            return;
+        }
+        let success_rate = total_success as f64 / total as f64;
+        let mut c = self.c.write();
+        if success_rate > 0.9 {
+            *c = (*c * 0.95).max(0.5);
+        } else if success_rate < 0.7 {
+            *c = (*c * 1.05).min(3.0);
+        }
+        log::debug!("Bandit 自调优: success_rate={:.2}, c={:.3}", success_rate, *c);
+    }
+
     /// 对一组候选按 UCB 评分排序，返回排序后的索引
     pub fn rank_candidates(
         &self,
@@ -112,12 +135,13 @@ impl BanditRouter {
     ) -> Vec<usize> {
         let arms = self.arms.read();
         let rounds = *self.rounds.read();
+        let c = *self.c.read();
         let mut scored: Vec<(usize, f64)> = candidates
             .iter()
             .enumerate()
             .map(|(i, (provider, model, conn))| {
                 let key = Self::make_key(provider, model, conn.as_deref());
-                let score = arms.get(&key).map(|a| a.ucb_score(rounds, self.c)).unwrap_or(1.0);
+                let score = arms.get(&key).map(|a| a.ucb_score(rounds, c)).unwrap_or(1.0);
                 (i, score)
             })
             .collect();
@@ -133,6 +157,8 @@ impl BanditRouter {
         arm.record_success(latency_ms);
         *self.rounds.write() += 1;
         *self.last_success.write() = Some(key);
+        drop(arms);
+        self.auto_tune();
     }
 
     /// 获取 auto 路由最近成功的候选
@@ -162,6 +188,8 @@ impl BanditRouter {
         let arm = arms.entry(key).or_insert_with(ScoreArm::new);
         arm.record_failure();
         *self.rounds.write() += 1;
+        drop(arms);
+        self.auto_tune();
     }
 
     /// 获取某候选的统计信息
@@ -169,5 +197,10 @@ impl BanditRouter {
         let key = Self::make_key(provider, model, connection_id);
         let arms = self.arms.read();
         arms.get(&key).map(|a| (a.success_count, a.failure_count, a.last_latency_ms))
+    }
+
+    /// 获取当前探索常数 C（用于调试/展示）
+    pub fn exploration_constant(&self) -> f64 {
+        *self.c.read()
     }
 }

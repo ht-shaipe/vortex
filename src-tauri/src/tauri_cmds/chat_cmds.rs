@@ -116,6 +116,7 @@ pub async fn chat_completions_stream(
         api_key: None,
         source_format: "openai".to_string(),
         extra: serde_json::Value::Null,
+        saved_tokens: 0,
     };
 
     // 引擎内部把 rusqlite Connection 跨 await 持有（非 Send），

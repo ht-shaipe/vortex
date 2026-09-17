@@ -94,8 +94,8 @@ const mainItems = computed<NavItem[]>(() => [
   { to: '/statistics', label: '数据统计', icon: Histogram },
   { to: '/sync', label: '配置同步', icon: Connection },
   { to: '/request-logs', label: '请求日志', icon: Document },
+  { to: '/chat', label: '对话测试', icon: ChatDotRound },
   { to: '/free-tokens', label: '薅Token', icon: Present },
-  { to: '/chat', label: '对话', icon: ChatDotRound },
 
 ])
 

@@ -64,6 +64,16 @@
             </div>
             <el-switch v-model="form.hide_mapped_models" @change="saveField('hideMappedModels', form.hide_mapped_models)" />
           </div>
+          <!-- Prompt 压缩级别 -->
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Prompt 压缩级别</div>
+              <div class="setting-desc">在路由前压缩消息列表以减少 token 消耗，none=不压缩，minimal=去重+裁剪，aggressive=激进裁剪</div>
+            </div>
+            <div class="radio-group">
+              <button v-for="lv in compLevels" :key="lv.id" class="radio-option" :class="{ active: form.compression_level === lv.id }" @click="form.compression_level = lv.id; saveField('compressionLevel', lv.id)">{{ lv.label }}</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -119,6 +129,43 @@
               <span class="header-tag font-mono text-11px text-ink-4 bg-surface-3 border border-solid border-line rounded-sm py-3px px-8px whitespace-nowrap">Access-Control-Allow-Origin</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- 安全与访问：模型访问权限 -->
+      <div v-if="active === 'security'" class="card section mb-[var(--gap-lg)]">
+        <div class="card-head">
+          <div><div class="card-title">模型访问权限</div><div class="card-sub">按 API Key 设置 allow/deny 规则，控制可访问的模型</div></div>
+        </div>
+        <div class="card-body">
+          <!-- 添加规则表单 -->
+          <div class="setting-row">
+            <div class="flex items-center gap-8px flex-wrap w-full">
+              <el-select v-model="newPerm.keyId" placeholder="选择 API Key" size="small" class="w-180px" filterable>
+                <el-option v-for="k in apiKeys" :key="k.id" :label="k.name" :value="k.id" />
+              </el-select>
+              <el-select v-model="newPerm.ruleType" size="small" class="w-100px">
+                <el-option label="允许" value="allow" />
+                <el-option label="拒绝" value="deny" />
+              </el-select>
+              <el-input v-model="newPerm.pattern" placeholder="模型匹配 (如 gpt-4* 或 *)" size="small" class="w-200px" />
+              <button type="button" class="btn sm primary" :disabled="!newPerm.keyId || !newPerm.pattern" @click="addPermission">添加</button>
+            </div>
+          </div>
+          <!-- 规则列表 -->
+          <div v-if="permissions.length > 0" class="mt-8px">
+            <div v-for="p in permissions" :key="p.id" class="perm-row flex items-center justify-between py-6px px-8px">
+              <div class="flex items-center gap-8px">
+                <span class="text-12px font-mono bg-surface-3 py-2px px-6px rounded-sm" :class="{ 'text-ok': p.ruleType === 'allow', 'text-err': p.ruleType === 'deny' }">{{ p.ruleType }}</span>
+                <span class="text-12px text-ink-3">{{ getKeyName(p.apiKeyId) }}</span>
+                <span class="text-12px font-mono text-ink-2">{{ p.modelPattern }}</span>
+              </div>
+              <button type="button" class="btn sm" @click="deletePermission(p.id)">
+                <el-icon :size="12"><Close /></el-icon>
+              </button>
+            </div>
+          </div>
+          <div v-else class="text-12px text-ink-4 py-12px">暂无权限规则（默认允许所有模型）</div>
         </div>
       </div>
 
@@ -183,14 +230,16 @@
  * 职责：管理网关与界面配置，分为通用（主题、端口、语言）、安全与访问
  * （Token 鉴权、CORS）、高级（User-Agent 覆盖、恢复出厂设置）三个分类。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Loading, Lock, Refresh, Setting, Tools, WarningFilled } from '@element-plus/icons-vue'
+import { CopyDocument, Loading, Lock, Refresh, Setting, Tools, WarningFilled, Close } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useAutoStart } from '@/composables/useAutoStart'
 import { getSettings, updateSettings } from '@/api/settings'
+import { listKeys, type ApiKey } from '@/api/keys'
+import { keyPermissionsApi, type KeyPermission } from '@/api/keyPermissions'
 
 // 主题组合式函数
 const theme = useTheme()
@@ -206,6 +255,12 @@ const themes = [
   { id: 'system' as const, label: '跟随系统' },
   { id: 'light' as const, label: '浅色' },
   { id: 'dark' as const, label: '深色' },
+]
+// Prompt 压缩级别选项
+const compLevels = [
+  { id: 'none', label: '关闭' },
+  { id: 'minimal', label: '最小' },
+  { id: 'aggressive', label: '激进' },
 ]
 // 设置分类标签
 const tabs = [
@@ -224,6 +279,7 @@ const form = reactive({
   openai_ua: '',
   anthropic_ua: '',
   hide_mapped_models: true,
+  compression_level: 'minimal',
   security: {
     tokenAuth: false,
     token: '',
@@ -237,6 +293,40 @@ const resetOpen = ref(false)
 // 是否正在执行恢复出厂
 const resetting = ref(false)
 
+// 模型访问权限
+const apiKeys = ref<ApiKey[]>([])
+const permissions = ref<KeyPermission[]>([])
+const newPerm = reactive({ keyId: '', ruleType: 'allow', pattern: '' })
+
+async function loadPermissions() {
+  try {
+    const [keysRes, rules] = await Promise.all([listKeys(), keyPermissionsApi.list()])
+    apiKeys.value = keysRes.keys
+    permissions.value = rules
+  } catch { /* ignore */ }
+}
+
+function getKeyName(id: string): string {
+  return apiKeys.value.find(k => k.id === id)?.name ?? id.slice(0, 8)
+}
+
+async function addPermission() {
+  if (!newPerm.keyId || !newPerm.pattern) return
+  try {
+    await keyPermissionsApi.create(newPerm.keyId, newPerm.ruleType, newPerm.pattern)
+    newPerm.pattern = ''
+    await loadPermissions()
+    ElMessage.success('权限规则已添加')
+  } catch { ElMessage.error('添加失败') }
+}
+
+async function deletePermission(id: string) {
+  try {
+    await keyPermissionsApi.delete(id)
+    await loadPermissions()
+  } catch { ElMessage.error('删除失败') }
+}
+
 /**
  * 将后端返回的设置数据应用到表单。
  * @param data 后端设置对象
@@ -247,6 +337,7 @@ function applySettings(data: Record<string, unknown>) {
   if (g.openai_ua != null) form.openai_ua = String(g.openai_ua)
   if (g.anthropic_ua != null) form.anthropic_ua = String(g.anthropic_ua)
   if (g.hideMappedModels != null) form.hide_mapped_models = Boolean(g.hideMappedModels)
+  if (g.compressionLevel != null) form.compression_level = String(g.compressionLevel)
 
   const s = (data.security ?? {}) as Record<string, unknown>
   if (s.tokenAuth != null) form.security.tokenAuth = Boolean(s.tokenAuth)
@@ -373,5 +464,9 @@ async function doReset() {
 onMounted(() => {
   load()
   autoStart.init()
+})
+
+watch(active, (v) => {
+  if (v === 'security') void loadPermissions()
 })
 </script>

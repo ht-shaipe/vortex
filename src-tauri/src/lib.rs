@@ -17,6 +17,7 @@ mod remote_proxy;
 mod translator;
 mod api;
 mod tauri_cmds;
+mod agent_integrations;
 
 use actix_cors::Cors;
 use actix_web::{dev::ServerHandle, web, App, HttpServer, middleware as actix_mw};
@@ -185,6 +186,7 @@ pub fn start_api_server(
                         web::scope("/v1")
                             .route("/chat/completions", web::post().to(api::v1::chat::chat_completions))
                             .route("/messages", web::post().to(api::v1::messages::anthropic_messages))
+                            .route("/responses", web::post().to(api::v1::responses::responses))
                             .route("/models", web::get().to(api::v1::models::list_models))
                             .route("/embeddings", web::post().to(api::v1::embeddings::create_embeddings))
                             .route("/images/generations", web::post().to(api::v1::images::create_images))
@@ -236,6 +238,13 @@ pub fn start_api_server(
                             .route("/model-catalog/refresh-from-connections", web::post().to(api::management::model_catalog::refresh_from_connections_handler))
                             .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
                             .route("/playground", web::post().to(api::management::playground::playground))
+                            .route("/cost-analysis", web::get().to(api::management::cost_analysis::cost_analysis))
+                            .route("/recommendations", web::get().to(api::management::recommendations::recommendations))
+                            .route("/compressed-content", web::get().to(api::management::compressed_content::list_compressed_content))
+                            .route("/compressed-content/{hash}", web::get().to(api::management::compressed_content::get_compressed_content))
+                            .route("/key-permissions", web::get().to(api::management::key_permissions::list_permissions))
+                            .route("/key-permissions", web::post().to(api::management::key_permissions::create_permission))
+                            .route("/key-permissions/{id}", web::delete().to(api::management::key_permissions::delete_permission))
                             .route("/health", web::get().to(api::management::health::health_check))
                     )
             })
@@ -260,6 +269,49 @@ pub fn start_api_server(
                 state.db_pool.clone(),
                 state.config.catalog_feed_url.clone(),
             );
+
+            // 启动后自动从已配置连接拉取最新模型列表（延迟 10 秒，等待连接就绪），并每 12 小时定期拉取
+            {
+                let pool = state.db_pool.clone();
+                let enc_key = state.encryption_key.clone();
+                let provider_defaults: std::collections::HashMap<String, (String, String)> = state
+                    .provider_registry
+                    .list()
+                    .into_iter()
+                    .map(|d| (d.id.clone(), (d.base_url.clone(), d.models_path.clone())))
+                    .collect();
+                actix_rt::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    loop {
+                        match crate::providers::catalog_sync::refresh_from_connections(&pool, &enc_key, &provider_defaults).await {
+                            Ok((s, t, _)) => {
+                                if s > 0 {
+                                    log::info!("从连接拉取模型目录完成: {} 个连接, {} 条模型", s, t);
+                                }
+                            }
+                            Err(e) => log::warn!("从连接拉取模型目录失败: {}", e),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(43200)).await;
+                    }
+                });
+            }
+
+            // 定期清理过期压缩内容（每 24 小时）
+            {
+                let pool = state.db_pool.clone();
+                actix_rt::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
+                        let pool_clone = pool.clone();
+                        let _ = tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
+                            let conn = crate::db::core::get_conn(&pool_clone).map_err(|e| e.to_string())?;
+                            let n = crate::db::compressed_content::cleanup_expired(&conn).map_err(|e| e.to_string())?;
+                            if n > 0 { log::info!("清理过期压缩内容: {} 条", n); }
+                            Ok(())
+                        }).await;
+                    }
+                });
+            }
 
             // 阻塞等待服务器运行结束
             srv.await.expect("Server error");
@@ -320,6 +372,11 @@ pub fn run() {
             tauri_cmds::status_cmds::get_system_status,
             tauri_cmds::chat_cmds::chat_completions_stream,
             tauri_cmds::chat_cmds::cancel_chat_stream,
+            tauri_cmds::agent_cmds::agent_detect,
+            tauri_cmds::agent_cmds::agent_preview_config,
+            tauri_cmds::agent_cmds::agent_apply_config,
+            tauri_cmds::agent_cmds::agent_restore_config,
+            tauri_cmds::agent_cmds::agent_list_backups,
         ])
         // 应用初始化回调：创建系统托盘
         .setup(|app| {

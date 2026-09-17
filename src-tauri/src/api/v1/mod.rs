@@ -9,6 +9,8 @@
 pub mod chat;
 /// POST /v1/messages Anthropic 兼容消息端点
 pub mod messages;
+/// POST /v1/responses OpenAI Responses API 兼容端点
+pub mod responses;
 /// GET /v1/models 模型列表端点
 pub mod models;
 /// POST /v1/embeddings 文本嵌入端点

@@ -16,19 +16,24 @@
         </div>
       </el-scrollbar>
     </main>
+
+    <!-- 新用户引导向导：首次启动且无订阅时自动展示 -->
+    <OnboardingWizard v-if="showOnboarding" @done="showOnboarding = false" />
   </div>
 </template>
 
 <script setup lang="ts">
 /**
  * AppLayout.vue — 应用根布局
- * 职责：组合侧边栏与主内容区，管理侧边栏折叠状态。
+ * 职责：组合侧边栏与主内容区，管理侧边栏折叠状态，首次启动时展示引导向导。
  * 窗口拖动由 main 区域顶部的 WindowChrome 组件处理，作为布局流中的实际头部元素。
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './Sidebar.vue'
 import WindowChrome from './WindowChrome.vue'
+import OnboardingWizard from '@/components/onboarding/OnboardingWizard.vue'
+import { listProviders } from '@/api/providers'
 
 const route = useRoute()
 const collapsed = ref(false)
@@ -39,5 +44,22 @@ const flush = computed(() => {
   if (FLUSH_PATHS.includes(route.path)) return true
   if (!route.path.startsWith('/subscriptions/')) return false
   return !NON_FLUSH_SUB.includes(route.path)
+})
+
+/** 是否展示新用户引导向导 */
+const showOnboarding = ref(false)
+
+onMounted(async () => {
+  if (localStorage.getItem('vortex-onboarding-completed')) return
+  try {
+    const { connections } = await listProviders()
+    if (connections.length === 0) {
+      showOnboarding.value = true
+    } else {
+      localStorage.setItem('vortex-onboarding-completed', '1')
+    }
+  } catch {
+    showOnboarding.value = true
+  }
 })
 </script>

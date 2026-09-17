@@ -208,7 +208,7 @@ impl ProviderRegistry {
             },
             ProviderDef {
                 id: "volcengine-code".into(), alias: "vc".into(), name: "火山方舟 Code Plan".into(),
-                icon: "doubao".into(), color: "#1664FF".into(),
+                icon: "volce".into(), color: "#1664FF".into(),
                 service_kinds: vec!["llm".into()],
                 no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from console.volcengine.com/ark".into()),
                 base_url: "https://ark.cn-beijing.volces.com/api/coding/paas/v4".into(),
@@ -217,7 +217,7 @@ impl ProviderRegistry {
             },
             ProviderDef {
                 id: "volcengine-agent".into(), alias: "va".into(), name: "火山方舟 Agent Plan".into(),
-                icon: "doubao".into(), color: "#1664FF".into(),
+                icon: "volce".into(), color: "#1664FF".into(),
                 service_kinds: vec!["llm".into()],
                 no_auth: false, has_free: false, free_note: None, auth_hint: Some("API key from console.volcengine.com/ark".into()),
                 base_url: "https://ark.cn-beijing.volces.com/api/plan/paas/v4".into(),

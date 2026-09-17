@@ -443,13 +443,17 @@ function deriveCustomId(name: string): string {
  */
 async function configUse(s: FreeTokenSite) {
   const baseUrl = (s.apiBase ?? '').replace(/\/+$/, '')
-  // 尝试匹配已有订阅（按 baseUrl 尾斜杠归一化比较）
   try {
     const { connections } = await listProviders()
-    const existing = connections.find((c) => {
+    // 先按 baseUrl 精确匹配（自定义提供方或覆盖了默认地址的预置提供方）
+    let existing = connections.find((c) => {
       if (!c.baseUrl) return false
       return c.baseUrl.replace(/\/+$/, '') === baseUrl
     })
+    // 未匹配且站点有预置 providerId 时，按 provider 匹配（使用默认地址的预置连接）
+    if (!existing && s.providerId) {
+      existing = connections.find((c) => c.provider === s.providerId)
+    }
     if (existing) {
       router.push(`/subscriptions/${existing.id}`)
       return

@@ -38,6 +38,7 @@ pub async fn playground(
         api_key: None,
         source_format: "openai".to_string(),
         extra: req.extra.unwrap_or(json!({})),
+        saved_tokens: 0,
     };
 
     let engine = state.proxy_engine.read();

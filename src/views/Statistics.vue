@@ -36,7 +36,7 @@
         </div>
       </template>
     </UsagePanel>
-    <div v-else>
+    <div v-if="tab === 'latency'">
       <div class="panel-bar flex items-center justify-between flex-wrap gap-[var(--gap-lg)] mb-[var(--gap-lg)]">
         <div class="tabs mb-0 border-b-none">
           <button
@@ -149,6 +149,29 @@
           </div>
         </div>
 
+        <!-- 压缩内容回忆 -->
+        <div class="card">
+          <div class="px-16px py-10px border-b border-line border-solid border-0">
+            <div class="card-title text-13.5px">压缩内容回忆</div>
+            <div class="card-sub text-11.5px">被 Prompt 压缩的原始内容记录，点击行查看完整原文</div>
+          </div>
+          <div v-if="compContentLoading" class="py-20px text-center text-ink-4"><el-icon class="spin" :size="14"><Loading /></el-icon></div>
+          <div v-else-if="compContentList.length > 0">
+            <table class="table">
+              <thead><tr><th>Hash</th><th class="num">节省 Tokens</th><th>模型</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr v-for="c in compContentList" :key="c.hash" class="cursor-pointer" @click="showCompContent(c.hash)">
+                  <td class="mono text-11.5px text-ink-3">{{ c.hash.slice(0, 16) }}…</td>
+                  <td class="num mono text-12.5px tabular-nums text-ok">{{ c.savedTokens }}</td>
+                  <td class="mono text-12px">{{ c.model || '—' }}</td>
+                  <td class="text-11.5px text-ink-4">{{ c.createdAt.slice(0, 19) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <EmptyState v-else title="暂无压缩记录" desc="Prompt 压缩发生后，这里会展示被压缩的原始内容与节省的 Token 数" />
+        </div>
+
         <!-- 按提供方 -->
         <div class="card">
           <div class="card-head py-10px px-16px border-b border-line border-solid border-0">
@@ -182,6 +205,78 @@
         </div>
       </template>
     </div>
+
+    <!-- 成本分析 -->
+    <div v-if="tab === 'cost'">
+      <div class="panel-bar flex items-center justify-between flex-wrap gap-[var(--gap-lg)] mb-[var(--gap-lg)]">
+        <div class="tabs mb-0 border-b-none">
+          <button v-for="t in TOP_TABS" :key="t.key" type="button" class="tab" :class="{ active: tab === t.key }" @click="tab = t.key">{{ t.label }}</button>
+        </div>
+        <button type="button" class="btn sm" :disabled="costLoading" @click="loadCost">
+          <el-icon :size="13"><Refresh /></el-icon>刷新
+        </button>
+      </div>
+      <div v-if="costLoading" class="text-center text-ink-4 py-40px"><el-icon class="spin" :size="18"><Loading /></el-icon></div>
+      <template v-else-if="costData">
+        <div class="grid grid-cols-3 gap-12px mb-12px">
+          <div class="card py-14px px-18px">
+            <div class="text-11.5px text-ink-4">总支出</div>
+            <div class="text-20px font-semibold tabular-nums mt-2px">${{ costData.totalCost.toFixed(2) }}</div>
+          </div>
+          <div class="card py-14px px-18px">
+            <div class="text-11.5px text-ink-4">压缩节省 Tokens</div>
+            <div class="text-20px font-semibold tabular-nums mt-2px text-ok">{{ formatTokenCompact(costData.totalSavedTokens) }}</div>
+          </div>
+          <div class="card py-14px px-18px">
+            <div class="text-11.5px text-ink-4">总请求数</div>
+            <div class="text-20px font-semibold tabular-nums mt-2px">{{ costData.totalRequests }}</div>
+          </div>
+        </div>
+        <div class="card mb-12px">
+          <div class="card-head py-10px px-16px border-b border-line border-solid border-0">
+            <div class="card-title text-13.5px">按模型成本</div>
+          </div>
+          <table class="table">
+            <thead><tr><th>模型</th><th class="num">请求数</th><th class="num">成本</th><th class="num">输入 Tokens</th><th class="num">输出 Tokens</th><th class="num">节省 Tokens</th></tr></thead>
+            <tbody>
+              <tr v-for="(m, idx) in costData.byModel" :key="m.model || idx">
+                <td class="mono text-12.5px">{{ m.model || '—' }}</td>
+                <td class="num mono text-12.5px tabular-nums">{{ m.requests }}</td>
+                <td class="num mono text-12.5px tabular-nums">${{ m.cost.toFixed(4) }}</td>
+                <td class="num mono text-12.5px tabular-nums">{{ formatTokenCompact(m.tokensInput) }}</td>
+                <td class="num mono text-12.5px tabular-nums">{{ formatTokenCompact(m.tokensOutput) }}</td>
+                <td class="num mono text-12.5px tabular-nums text-ok">{{ m.savedTokens > 0 ? formatTokenCompact(m.savedTokens) : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+
+    <!-- 优化建议 -->
+    <div v-if="tab === 'recs'">
+      <div class="panel-bar flex items-center justify-between flex-wrap gap-[var(--gap-lg)] mb-[var(--gap-lg)]">
+        <div class="tabs mb-0 border-b-none">
+          <button v-for="t in TOP_TABS" :key="t.key" type="button" class="tab" :class="{ active: tab === t.key }" @click="tab = t.key">{{ t.label }}</button>
+        </div>
+        <button type="button" class="btn sm" :disabled="recsLoading" @click="loadRecs">
+          <el-icon :size="13"><Refresh /></el-icon>刷新
+        </button>
+      </div>
+      <div v-if="recsLoading" class="text-center text-ink-4 py-40px"><el-icon class="spin" :size="18"><Loading /></el-icon></div>
+      <div v-else-if="recsData && recsData.length > 0" class="flex flex-col gap-8px">
+        <div v-for="(r, i) in recsData" :key="i" class="card py-12px px-16px flex items-start gap-12px">
+          <div class="text-18px mt--2px" :class="{ 'text-err': r.severity === 'high', 'text-warn': r.severity === 'medium', 'text-ok': r.severity === 'info', 'text-ink-3': r.severity === 'low' }">
+            <el-icon><WarningFilled v-if="r.severity === 'high'" /><InfoFilled v-else /></el-icon>
+          </div>
+          <div class="flex-1">
+            <div class="text-13px">{{ r.message }}</div>
+            <div class="text-11px text-ink-5 mt-2px">{{ r.type }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="card"><EmptyState title="暂无优化建议" desc="产生足够的请求后，系统会自动分析使用模式并给出优化建议" /></div>
+    </div>
   </div>
 </template>
 
@@ -192,18 +287,24 @@
  */
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Loading, Refresh } from '@element-plus/icons-vue'
+import { Loading, Refresh, WarningFilled, InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import EndpointStatsPanel from '@/components/stats/EndpointStatsPanel.vue'
 import UsagePanel from '@/components/stats/UsagePanel.vue'
 import { latencyStatsApi, type LatencyStatsResponse } from '@/api/latencyStats'
+import { analyticsApi, type CostAnalysis, type Recommendation } from '@/api/analytics'
+import { compressedContentApi, type CompressedContentEntry } from '@/api/compressedContent'
+import { formatTokenCompact } from '@/lib/format'
+import { ElMessage } from 'element-plus'
 
 const TOP_TABS = [
   { key: 'endpoint', label: '端点统计' },
   { key: 'usage', label: '用量统计' },
   { key: 'latency', label: '延迟分析' },
+  { key: 'cost', label: '成本分析' },
+  { key: 'recs', label: '优化建议' },
 ] as const
 
 type TopKey = (typeof TOP_TABS)[number]['key']
@@ -268,7 +369,48 @@ async function loadLatency() {
 
 watch([tab, latencyRange], ([activeTab]) => {
   if (activeTab === 'latency') void loadLatency()
+  if (activeTab === 'cost') { void loadCost(); void loadCompContent() }
+  if (activeTab === 'recs') void loadRecs()
 }, { immediate: true })
+
+// 成本分析
+const costData = ref<CostAnalysis | null>(null)
+const costLoading = ref(false)
+async function loadCost() {
+  costLoading.value = true
+  try { costData.value = await analyticsApi.costAnalysis() }
+  catch { /* ignore */ }
+  finally { costLoading.value = false }
+}
+
+// 优化建议
+const recsData = ref<Recommendation[]>([])
+const recsLoading = ref(false)
+async function loadRecs() {
+  recsLoading.value = true
+  try { recsData.value = (await analyticsApi.recommendations()).suggestions }
+  catch { /* ignore */ }
+  finally { recsLoading.value = false }
+}
+
+// 压缩内容回忆
+const compContentList = ref<CompressedContentEntry[]>([])
+const compContentLoading = ref(false)
+async function loadCompContent() {
+  compContentLoading.value = true
+  try { compContentList.value = await compressedContentApi.list() }
+  catch { /* ignore */ }
+  finally { compContentLoading.value = false }
+}
+
+async function showCompContent(hash: string) {
+  try {
+    const detail = await compressedContentApi.get(hash)
+    if (detail?.originalContent) {
+      ElMessage.info(`原始内容 ${detail.originalContent.length} 字符，节省 ${detail.savedTokens} tokens`)
+    }
+  } catch { /* ignore */ }
+}
 
 onBeforeUnmount(() => { latencyRequestId++ })
 </script>

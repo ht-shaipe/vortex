@@ -21,8 +21,8 @@ pub fn record(conn: &rusqlite::Connection, entry: &UsageEntry) -> Result<()> {
          (provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, timestamp) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
         params![
             entry.provider, entry.model, entry.connection_id,
             entry.api_key_id, entry.api_key_name,
@@ -30,7 +30,7 @@ pub fn record(conn: &rusqlite::Connection, entry: &UsageEntry) -> Result<()> {
             entry.tokens_cache_creation, entry.tokens_reasoning,
             entry.service_tier, entry.status, entry.success as i32,
             entry.error_code, entry.latency_ms, entry.ttft_ms,
-            entry.cost, entry.usage_estimated as i32, entry.timestamp
+            entry.cost, entry.usage_estimated as i32, entry.saved_tokens, entry.timestamp
         ],
     )?;
     Ok(())
@@ -93,6 +93,11 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
         &format!("SELECT COUNT(*) FROM usage_history {} WHERE usage_estimated = 1", where_clause), [], |row| row.get(0)
     ).unwrap_or(0);
 
+    // Prompt 压缩节省的总 Token 数
+    let total_saved_tokens: i64 = conn.query_row(
+        &format!("SELECT COALESCE(SUM(saved_tokens), 0) FROM usage_history {}", where_clause), [], |row| row.get(0)
+    ).unwrap_or(0);
+
     // 按提供方分组统计请求数
     let mut by_provider = serde_json::Map::new();
     let sql = format!("SELECT provider, COUNT(*) as cnt FROM usage_history {} GROUP BY provider", where_clause);
@@ -149,6 +154,7 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
         avg_latency_ms: avg_latency,
         success_rate,
         estimated_count,
+        total_saved_tokens,
         by_provider: serde_json::Value::Object(by_provider),
         by_model: serde_json::Value::Object(by_model),
         by_day: serde_json::Value::Object(by_day),
@@ -170,7 +176,7 @@ pub fn list_recent(conn: &rusqlite::Connection, limit: i64) -> Result<Vec<UsageE
         "SELECT id, provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, timestamp \
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp \
          FROM usage_history ORDER BY timestamp DESC LIMIT ?1"
     )?;
     let rows = stmt.query_map(params![limit], |row| {
@@ -194,7 +200,8 @@ pub fn list_recent(conn: &rusqlite::Connection, limit: i64) -> Result<Vec<UsageE
             ttft_ms: row.get(16)?,
             cost: row.get(17)?,
             usage_estimated: row.get::<_, i32>(18)? != 0,
-            timestamp: row.get(19)?,
+            saved_tokens: row.get(19)?,
+            timestamp: row.get(20)?,
         })
     })?;
     let mut result = Vec::new();
@@ -219,7 +226,7 @@ pub fn list_paginated(conn: &rusqlite::Connection, page: i64, page_size: i64) ->
         "SELECT id, provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, timestamp \
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp \
          FROM usage_history ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2"
     )?;
     let rows = stmt.query_map(params![page_size, offset], |row| {
@@ -243,7 +250,8 @@ pub fn list_paginated(conn: &rusqlite::Connection, page: i64, page_size: i64) ->
             ttft_ms: row.get(16)?,
             cost: row.get(17)?,
             usage_estimated: row.get::<_, i32>(18)? != 0,
-            timestamp: row.get(19)?,
+            saved_tokens: row.get(19)?,
+            timestamp: row.get(20)?,
         })
     })?;
     let mut result = Vec::new();

@@ -308,6 +308,11 @@
             <button type="button" class="btn sm" @click="loadCatalog">
               <el-icon :size="12"><Refresh /></el-icon>刷新
             </button>
+            <button type="button" class="btn sm" :disabled="connRefreshing" @click="refreshFromConnections">
+              <el-icon v-if="connRefreshing" class="spin" :size="12"><Loading /></el-icon>
+              <el-icon v-else :size="12"><Connection /></el-icon>
+              {{ connRefreshing ? '拉取中' : '从连接拉取' }}
+            </button>
             <button type="button" class="btn sm primary" :disabled="syncing" @click="syncCatalog">
               <el-icon v-if="syncing" class="spin" :size="12"><Loading /></el-icon>
               <el-icon v-else :size="12"><RefreshRight /></el-icon>
@@ -869,6 +874,7 @@ async function removeRateLimit(cap: RateLimitCap) {
 const catalog = ref<CatalogEntry[]>([])
 const catLoading = ref(false)
 const syncing = ref(false)
+const connRefreshing = ref(false)
 // 目录搜索关键字（与连接列表的 keyword 独立）
 const catKeyword = ref('')
 
@@ -970,6 +976,28 @@ async function syncCatalog() {
     ElMessage.error(`同步失败：${msg}`)
   } finally {
     syncing.value = false
+  }
+}
+
+/** 从已配置连接的 /v1/models 端点自动拉取模型列表 */
+async function refreshFromConnections() {
+  connRefreshing.value = true
+  try {
+    const r = await modelCatalogApi.refreshFromConnections()
+    const failed = r.results.filter((x) => x.error)
+    if (failed.length > 0) {
+      ElMessage.warning(
+        `${r.successConnections} 个连接成功拉取 ${r.totalModels} 条模型，${failed.length} 个连接失败`,
+      )
+    } else {
+      ElMessage.success(`${r.successConnections} 个连接成功拉取 ${r.totalModels} 条模型`)
+    }
+    await loadCatalog()
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '拉取失败'
+    ElMessage.error(`从连接拉取失败：${msg}`)
+  } finally {
+    connRefreshing.value = false
   }
 }
 

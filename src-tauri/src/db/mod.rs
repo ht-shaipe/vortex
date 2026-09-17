@@ -29,5 +29,9 @@ pub mod model_catalog;
 pub mod routing_profiles;
 /// ToS 合规审查 CRUD
 pub mod tos_review;
+/// 内容寻址回忆（压缩内容存储与检索）
+pub mod compressed_content;
+/// API Key 级别的模型访问控制权限
+pub mod key_permissions;
 /// AES-256-GCM 加密/解密、密钥派生与密钥生成
 pub mod encryption;
