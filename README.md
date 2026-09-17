@@ -12,6 +12,7 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 
 - **多家内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Qwen、MiniMax、Z.AI (GLM)、火山方舟、商汤日日新，以及自定义 OpenAI 兼容端点
 - **OpenAI / Anthropic 双协议入口** — `/v1/chat/completions` 与 `/v1/messages` 两套端点，无需修改客户端代码，直接替换 `base_url` 即可
+- **智能体一键接入** — 自动检测本机已安装的 AI 编程智能体（Claude Code、Codex、OpenCode、Qwen Code 等 12 种），预览将要写入的配置变更后一键接入 Vortex 网关；写入前自动备份，支持一键恢复到配置前状态
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 连接级与模型级双层熔断器 + 指数退避重试：连接连续失败 5 次熔断 60 秒，单个模型连续失败 3 次独立熔断（下线/无权限等确定性故障更快隔离）；熔断期间下游收到 503 与友好提示，冷却后自动探测恢复
 - **上游错误透传** — 上游返回 4xx/5xx 时原样透传状态码与错误响应体，客户端可直接看到上游真实报错，便于排查
@@ -19,7 +20,7 @@ Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应�
 - **模型自动归纳** — 按模型家族自动将同族模型（如 gpt-4o、gpt-4o-2024-08-06、glm-5.3-flash:free）归纳为虚拟名，单模型家族同样生成同名别名保证全覆盖；开启「隐藏已映射的真实模型」后 `/v1/models` 仅输出虚拟模型列表，减少使用者选择负担
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **访问令牌开箱即用** — 首次启动默认开启 Token 鉴权并自动生成访问令牌，接入指南页一键复制并代入示例代码；多数客户端要求 API Key 字段非空才能发起请求，无需额外配置即可接入
-- **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本；上游未返回用量时自动按文本长度估算（中文 1 字 ≈ 1 token，其他 4 字符 ≈ 1 token），日志中带 `≈` 标记区分估算值与真实值
+- **用量统计** — 按提供商、模型、时间维度记录请求数、Token 用量和成本；缓存创建/读取与推理 Token 从上游真实提取落库，不再恒为 0；上游未返回用量时自动按文本长度估算（中文 1 字 ≈ 1 token，其他 4 字符 ≈ 1 token），日志与统计中标记估算请求数，区分估算值与真实值
 - **免费 Token 目录** — 内置 43 个可申请免费额度的 AI 平台（国内 / 海外 / 本地部署），标注是否支持 API、是否需绑卡与实名，支持自行提交推荐并保存到本地
 - **内置对话** — 应用内直接对话测试，支持会话分支树、模型选择、流式输出，数据持久化到 localStorage
 - **模型选择对话框** — 获取远程模型后弹出对话框，checkbox 多选批量管理，支持搜索与全选
@@ -165,7 +166,7 @@ curl http://localhost:10168/v1/chat/completions \
 
 | 页面 | 路由 | 说明 |
 |------|------|------|
-| 接入指南 | `/guide` | 客户端接入示例与模型指定方式，展示访问令牌（可复制）并代入示例代码 |
+| 接入指南 | `/guide` | 客户端接入示例与模型指定方式，展示访问令牌（可复制）并代入示例代码；下方自动检测本机 AI 编程智能体并支持一键接入 / 恢复配置 |
 | 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
 | 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 自定义 / 编辑子页 |
 | 模型映射 | `/model-aliases` | 虚拟模型名与多目标故障转移配置 |
@@ -219,8 +220,7 @@ curl http://localhost:10168/v1/chat/completions \
 - Tauri 2 — 桌面应用框架
 - Actix-Web 4 — HTTP 服务器
 - rusqlite + r2d2 — SQLite 数据库（WAL 模式，连接池）
-- reqwest — HTTP 客户端（管理链路，native-tls + HTTP/2）
-- awc + openssl — 上游链路 HTTP 客户端（OpenSSL 3 指纹兼容）
+- awc + openssl — 统一 HTTP 客户端（管理链路与上游链路共用，OpenSSL 3 指纹兼容 + HTTP/2）
 - aes-gcm — API 密钥加密
 - tokio — 异步运行时
 - tauri-plugin-updater — 自动更新
@@ -255,6 +255,7 @@ vortex/
 ├── src-tauri/              # 后端源代码 (Rust + Tauri)
 │   └── src/
 │       ├── api/            # HTTP API 端点 (v1 OpenAI 兼容 + management 管理接口)
+│       ├── agent_integrations/ # 智能体检测与一键配置 (适配器 / 备份 / 安全写入)
 │       ├── db/             # 数据库操作与迁移
 │       ├── providers/      # 提供商注册表
 │       ├── proxy/          # 代理引擎 (engine / executor / retry / sse)

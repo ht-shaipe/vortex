@@ -43,8 +43,8 @@ Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使�
                           │  │free_token_sites (免费站点目录)            │  │
                           │  └───────────────────────────────────────────┘  │
                           │                                                 │
-                          │  ┌───────────────────────────────────────────┐  │
-                           │  │        Vue 3 管理界面 (14 个页面)         │  │
+                           │  ┌───────────────────────────────────────────┐  │
+                            │  │        Vue 3 管理界面 (11 个页面)         │  │
                            │  │接入指南 | 实时路由 | 订阅 | 模型映射       │  │
                            │  │免费 Token | 请求日志 | 统计 | 同步        │  │
                            │  │对话 | 设置 | 关于                        │  │
@@ -70,8 +70,7 @@ pub struct AppState {
     pub provider_registry: ProviderRegistry,     // 多家内置提供商定义
     pub proxy_engine: RwLock<ProxyEngine>,       // 代理引擎
     pub resilience_manager: ResilienceManager,   // 熔断器管理
-    pub http_client: reqwest::Client,            // 管理链路 HTTP 客户端 (native-tls + HTTP/2, 连接超时10s)
-    pub upstream_ssl: openssl::ssl::SslConnector, // 上游链路 TLS 连接器 (openssl)，按线程创建 awc::Client
+    pub upstream_ssl: openssl::ssl::SslConnector, // TLS 连接器 (openssl)，按线程创建 awc::Client —— 管理链路与上游链路统一使用 awc + openssl
     pub encryption_key: Vec<u8>,                 // AES-256-GCM 密钥
     pub proxy_handle: Mutex<Option<ServerHandle>>, // 网关服务器句柄，支持运行时启停
     pub proxy_port: u16,                         // 网关监听端口
@@ -118,6 +117,8 @@ pub struct AppState {
 - `stream_sse_response()` — 根据源格式分发
 - `stream_anthropic_as_openai()` — 转换 Anthropic 事件 (message_start, content_block_delta, message_delta)
 - `stream_gemini_as_openai()` — 转换 Gemini 流式 JSON
+
+流式用量通过 `StreamUsage` 结构捕获：流结束时由各解析器的 `usage()` 返回输入/输出 Token，并从 Anthropic `message_start` 提取 `cache_creation_input_tokens` / `cache_read_input_tokens`、从 OpenAI `completion_tokens_details` 提取 `reasoning_tokens`，由引擎回调写入 `usage_history`。上游未在流中返回 usage 时按累计输出文本估算并置 `estimated` 标志。非流式路径由 `extract_usage_from_response()` 返回等价的 `UsageExtract` 结构。
 
 ### 5. 弹性机制 (`routing/resilience.rs`)
 
@@ -271,7 +272,21 @@ pub struct ProviderDef {
 - `start_proxy`, `stop_proxy` — 运行时启停网关服务器
 - 托盘事件通过 `tray-action` 事件向前端广播（`start` / `stop`）
 
-### 11. Tauri 插件
+### 11. 智能体集成 (`agent_integrations/`)
+
+自动检测本机已安装的 AI 编程智能体（Claude Code、Codex、OpenCode、Qwen Code、Gemini CLI、Cursor Agent 等 12 种），并一键将 Vortex 网关配置写入其配置文件。设计原则：只修改受管的 Vortex 节点、写入前备份、不读取用户凭据、幂等操作。
+
+| 子模块 | 职责 |
+|--------|------|
+| `mod.rs` | `AgentKind` 枚举（serde 序列化为 snake_case，OpenCode 显式 rename 为 `opencode`）与适配器注册 |
+| `adapters/` | 每种智能体一个适配器（detect / preview / apply / restore），负责定位安装路径与配置文件、生成配置预览 |
+| `backup.rs` | `BackupManager`：写入前备份目标文件，支持按备份 ID 恢复 |
+| `detect.rs` | 在 `PATH` 中查找可执行文件、解析配置目录（支持 `*_HOME` 环境变量覆盖） |
+| `safe_write.rs` | 受管节点的安全 JSON 写入 |
+
+前端入口在「接入指南」页（`src/components/sync/AgentIntegration.vue`）：检测结果缓存 1 小时，已安装的排在最前并带标识；未安装的不显示配置按钮。配置流程为 检测 → 预览变更（含警告与重启提示）→ 确认写入 → 可恢复。
+
+### 12. Tauri 插件
 
 | 插件 | 用途 |
 |------|------|

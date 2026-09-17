@@ -175,116 +175,56 @@
     <div class="feat-grid" data-page-node-id="DfLg3pAYUYNm2YisyXchO6">
       <div class="card feat reveal" data-page-node-id="SpH8g3ssYTdBLkBzAay9YA">
         <span class="feat-ico" data-page-node-id="PAI85SYMGWWd7AvMa3SPPN"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="HGAKwF0ZPzBFG3H9DADfIO"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" data-page-node-id="I5HurvaQ3inwMK405nW9jS"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" data-page-node-id="umwj0wNGzQbMOOxVjNJ8Sj"/></svg></span>
-        <h3 data-page-node-id="SoBwr01ZO1vXcbI12h5dNX">多家上游开箱即用</h3>
-        <p data-page-node-id="OY7GEYsbArQiLZtCfWFpEN">内置预置注册表：云端官方接口、聚合中转平台、本机推理服务都在列，填个 Key 就能用，不必手写 base_url。</p>
+        <h3 data-page-node-id="SoBwr01ZO1vXcbI12h5dNX">多上游开箱即用</h3>
+        <p data-page-node-id="OY7GEYsbArQiLZtCfWFpEN">内置预置注册表：云端官方 API、聚合中转、本机推理、自定义端点都在列，填个 Key 就能用；行内健康测试与延迟一目了然。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="QRhXjMR95xjBGQlvLnvO7n">
         <span class="feat-ico" data-page-node-id="CodzNaDOJGeeqHhPmG7ik7"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="MgS0ehhavoajhNiU45Fu0f"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2" data-page-node-id="ZAuZBU48ChD3NT58mteBjk"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2" data-page-node-id="HeSOHVsW5Smqa8knwaYl47"/></svg></span>
-        <h3 data-page-node-id="RhP19n3jMjh5FZP1aJisso">OpenAI 兼容，改一行就走</h3>
-        <p data-page-node-id="wm0WvWZd1J7D0pUoPLPC83">把客户端的 <code data-page-node-id="6TZ9o4mUTBILnSBzPytZwd">base_url</code> 指向 <code data-page-node-id="PmqQscnjGpI6EYx4geLBUH">http://localhost:10168/v1</code>，其余代码零改动。</p>
+        <h3 data-page-node-id="RhP19n3jMjh5FZP1aJisso">OpenAI / Anthropic 双协议</h3>
+        <p data-page-node-id="wm0WvWZd1J7D0pUoPLPC83">改一行 <code data-page-node-id="6TZ9o4mUTBILnSBzPytZwd">base_url</code> 即接入，另有 Anthropic 兼容的 <code data-page-node-id="PmqQscnjGpI6EYx4geLBUH">/v1/messages</code>；跨协议请求与 SSE 流式响应自动互转，换上游无感知。</p>
       </div>
 
-      <div class="card feat reveal" data-page-node-id="jeWouF9BfkmqDjfLU4xCnv">
-        <span class="feat-ico" data-page-node-id="Gx1fUHggQefluviWzusKGD"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="2H1dg2EZB6AlqtGQCNXdqr"><path d="M4 8h11M4 8l3-3M4 8l3 3" data-page-node-id="xCkPhKHvcPRAaHlN1aieoj"/><path d="M20 16H9M20 16l-3-3M20 16l-3 3" data-page-node-id="66q3TOa7F2nDWLtFBYaKDL"/></svg></span>
-        <h3 data-page-node-id="WEGM0oD5CI9lgg0r4AxhR1">跨协议自动转换</h3>
-        <p data-page-node-id="OzcFTW3v85vLia604RVPMi">上游的非 OpenAI 原生格式与 OpenAI 格式互转，包含 SSE 流式响应 —— 换个上游，下游无感知。</p>
+      <div class="card feat reveal" data-page-node-id="featAgentCard">
+        <span class="feat-ico" data-page-node-id="featAgentIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featAgentSvg"><rect x="4" y="4" width="16" height="16" rx="2" data-page-node-id="featAgentRect"/><path d="M9 9h6M9 13h6M9 17h3" data-page-node-id="featAgentLines"/></svg></span>
+        <h3 data-page-node-id="featAgentTitle">智能体一键接入</h3>
+        <p data-page-node-id="featAgentDesc">自动检测本机已装的 AI 编程智能体（Claude Code、Codex、OpenCode 等），预览配置变更后一键写入，写入前自动备份、可随时恢复。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="featAliasCard">
+        <span class="feat-ico" data-page-node-id="featAliasIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featAliasSvg"><line x1="6" x2="6" y1="3" y2="15" data-page-node-id="featAliasL1"/><circle cx="18" cy="6" r="3" data-page-node-id="featAliasC1"/><circle cx="6" cy="18" r="3" data-page-node-id="featAliasC2"/><path d="M18 9a9 9 0 0 1-9 9" data-page-node-id="featAliasP1"/></svg></span>
+        <h3 data-page-node-id="featAliasTitle">模型映射 + 故障转移</h3>
+        <p data-page-node-id="featAliasDesc">多个真实模型挂在一个虚拟名下，按优先级依次尝试；同族模型（含 <code>:free</code>、日期变体）自动归纳，对外只暴露精简列表。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="irf1RNRZ3cz8xix26wbJy0">
         <span class="feat-ico" data-page-node-id="mD8sy1FABM6JuiHQ4Qjyb0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6nIjHtvUIr6AxLZFRdyvqS"><path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" data-page-node-id="SujP4OFgJRXsg9UZtergNK"/><path d="M9.5 12l1.8 1.8 3.4-3.6" data-page-node-id="LvkHTlNt8dwovGthzGVvSz"/></svg></span>
         <h3 data-page-node-id="iyJhFMrlGUiSXB4zsexi2X">熔断 + 指数退避重试</h3>
-        <p data-page-node-id="Ochrki34508dHD3nzDR1GW">连接与模型两级熔断：失败端点自动熔断、恢复后自动放量，单个模型下线也能秒级隔离，不影响同连接的其他模型。</p>
-      </div>
-
-      <div class="card feat reveal" data-page-node-id="oNUGS0yFXv5AxIoAieLS1i">
-        <span class="feat-ico" data-page-node-id="qMqUVf0Tqcckh3UmwNVGrQ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="qFe1W38Sdr9I13FwXimndf"><rect x="4" y="10" width="16" height="10" rx="2" data-page-node-id="mkHanwRuwn8FD8s7GaZAM1"/><path d="M8 10V7a4 4 0 0 1 8 0v3" data-page-node-id="e5Ade6AnJl8pFB4KXrEaAR"/></svg></span>
-        <h3 data-page-node-id="6BuwVn98X22PANlQyZ8nw9">密钥 AES-256-GCM 加密</h3>
-        <p data-page-node-id="K2hVEFZexz3tWpIfnDbi8q">所有 API Key 加密落盘在本地 SQLite，加密密钥由本机生成，不经过任何第三方服务器。</p>
+        <p data-page-node-id="Ochrki34508dHD3nzDR1GW">连接与模型两级熔断：失败端点自动熔断、恢复后自动放量，单个模型下线秒级隔离，不影响同连接的其他模型。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="PbJJZnOweSdlQ8xBDPWIj0">
         <span class="feat-ico" data-page-node-id="36Mc7zYLItQYtil9aJ5ahm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="2NJnA2ePYiHOWVQHKKLuYq"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" data-page-node-id="7dQrdVURboyKVVuK0rwuxB"/></svg></span>
         <h3 data-page-node-id="62V0PyEU12Hw2BQkPJhTuD">用量统计到每一 token</h3>
-        <p data-page-node-id="XOvrfaDCGB58aDjXeakR0v">按提供商、模型、时间维度记录请求数、Token 用量与成本；上游不回传统计量时自动估算并以 <code>≈</code> 标记，账目不断档。</p>
+        <p data-page-node-id="XOvrfaDCGB58aDjXeakR0v">按提供商、模型、时间维度计量，缓存与推理 Token 真实提取落库；上游不回传时自动估算并以 <code>≈</code> 标记，成败都留痕。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="nijqZnQ2nfLGsREBfeueS7">
         <span class="feat-ico" data-page-node-id="Tvudb4ZZWgJVqeL6qCl6xd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="6YmnwJnIUcomq2rZS3XQw9"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8L12 3z" data-page-node-id="3sfabEDziAK5Hi9kozocoF"/></svg></span>
         <h3 data-page-node-id="4UIMkCN71foAOEuey3NYFk">免费 Token 站点目录</h3>
-        <p data-page-node-id="3j1fMTaEhbo1ZX4HSJCC3P">内置 43 个可申请免费额度的 AI 平台，标注是否支持 API、是否需绑卡与实名，还能自己提交推荐。</p>
+        <p data-page-node-id="3j1fMTaEhbo1ZX4HSJCC3P">内置 43 个可申请免费额度的 AI 平台，标注是否支持 API、是否需绑卡与实名；新发现的站点经远程通知中心实时推送。</p>
       </div>
 
-      <div class="card feat reveal" data-page-node-id="AXcIqThUrq12DEZupkK2rp">
-        <span class="feat-ico" data-page-node-id="SWq45aFL7CDFTWZTi1bFxz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="r7h1xToOAOosE62Hl1MJ6I"><rect x="3" y="4" width="18" height="14" rx="2" data-page-node-id="6kC0s1H7GHFWSaQ44SZRlG"/><path d="M3 19h18M8 22h8" data-page-node-id="6BCLanm3KYrQGWEvatzsF0"/></svg></span>
-        <h3 data-page-node-id="O8HXramwrwXBAOyhuXGL1Z">桌面应用 + 托盘常驻</h3>
-        <p data-page-node-id="GQsRSnULLchLZfJiubm1oH">系统托盘一键启停代理，Vue 3 图形界面管理连接、日志、统计与配置，不必守着终端。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-        <h3>内置对话测试</h3>
-        <p>应用内直接对话，支持会话分支树、模型选择与流式输出；桌面端经原生 IPC 通道直达网关，无需外部客户端即可验证网关通路。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.6"/><path d="M21 3v6h-6"/></svg></span>
-        <h3>自动更新</h3>
-        <p>启动时静默检查 GitHub Releases，运行期间每 6 小时自动复查；发现新版本提醒一次，一键下载安装。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></span>
-        <h3>模型自动归纳</h3>
-        <p>按家族把同族模型（含 <code>:free</code>、日期等变体后缀）自动归纳成虚拟名，单模型也不遗漏；对外可仅暴露精简的虚拟模型列表。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-        <h3>访问令牌开箱即用</h3>
-        <p>首次启动默认开启 Token 鉴权并自动生成访问令牌，接入指南一键复制；要求 API Key 非空的客户端无需额外配置即可接入。</p>
-      </div>
-
-      <div class="card feat reveal" data-page-node-id="featSubCard">
-        <span class="feat-ico" data-page-node-id="featSubIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featSubSvg"><path d="M4 7h16M4 12h16M4 17h16" data-page-node-id="featSubPath1"/></svg></span>
-        <h3 data-page-node-id="featSubTitle">订阅管理</h3>
-        <p data-page-node-id="featSubDesc">每个提供商可绑定多模型并自定义别名，列表行内健康测试、延迟毫秒与最近通过时间一目了然。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
-        <h3>模型映射 + 故障转移</h3>
-        <p>给一组模型配一个虚拟名，客户端只认这个名字；网关按优先级依次尝试各目标，某个失败自动切换下一个。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3L4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg></span>
-        <h3>OpenAI + Anthropic 双协议入口</h3>
-        <p>既有 OpenAI 兼容端点，也提供 Anthropic Messages 兼容的 <code>POST /v1/messages</code>；Anthropic SDK 与 Claude Code 改个 base_url 就能接。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>
-        <h3>请求日志，成败都留痕</h3>
-        <p>每次网关请求记录状态、Token 输入输出与耗时；流式请求结束时回填真实用量，失败请求同样记入日志。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/><path d="M12 8v4l3 2"/></svg></span>
-        <h3>通知系统</h3>
-        <p>从远程通知中心拉取站内通知，未读消息弹出桌面提示，已读状态持久化到本地；免费 Token 信息实时推送。</p>
-      </div>
-
-      <div class="card feat reveal">
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9-9a9 9 0 0 0-9 9m9-9a9 9 0 0 1 9 9"/><path d="M8 8l-3 4 3 4M16 8l3 4-3 4"/></svg></span>
-        <h3>配置同步与迁移</h3>
-        <p>支持 cc-switch 配置迁移、本地配置导出与导入、WebDAV 云备份；换机或多设备协作不丢配置。</p>
+      <div class="card feat reveal" data-page-node-id="featDesktopCard">
+        <span class="feat-ico" data-page-node-id="featDesktopIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featDesktopSvg"><rect x="3" y="4" width="18" height="14" rx="2" data-page-node-id="featDesktopRect"/><path d="M3 19h18M8 22h8" data-page-node-id="featDesktopLines"/></svg></span>
+        <h3 data-page-node-id="featDesktopTitle">桌面应用 · 开箱集成</h3>
+        <p data-page-node-id="featDesktopDesc">托盘常驻一键启停，内置对话页直接验证网关通路；自动更新、站内通知与配置同步（cc-switch 迁移 / WebDAV / 导出导入）一应俱全。</p>
       </div>
 
       <div class="card feat reveal" style="background:linear-gradient(180deg,var(--accent-bg),var(--surface));border-color:var(--accent-line)" data-page-node-id="VGSQI0NN0ThtwiSa8RvzeC">
-        <span class="feat-ico" data-page-node-id="E5uepS3OEu4aDE0OTiwcIR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="XA0VYXIucaP54oynpwZPH6"><path d="M4 17l6-6-6-6" data-page-node-id="vM4ek57CpCS4fheIp2mMFC"/><path d="M12 19h8" data-page-node-id="7HeTRhoU4mEsiuj8ZidIei"/></svg></span>
-        <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">数据全在自己机器上</h3>
-        <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">请求日志、密钥、配置都存本地 SQLite。这是一个跑在你本机的进程，不是托管服务 —— 没有中间人。</p>
+        <span class="feat-ico" data-page-node-id="E5uepS3OEu4aDE0OTiwcIR"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="XA0VYXIucaP54oynpwZPH6"><rect x="3" y="11" width="18" height="11" rx="2" data-page-node-id="featSecRect"/><path d="M7 11V7a5 5 0 0 1 10 0v4" data-page-node-id="featSecPath"/></svg></span>
+        <h3 data-page-node-id="ifFD5dF4KdDrlf8JqDRzCW">安全与隐私</h3>
+        <p data-page-node-id="3unL2J2jJCaPaqx7CoEq7T">密钥 AES-256-GCM 加密落盘本地 SQLite；首次启动自动生成访问令牌，客户端零配置接入。请求、密钥、配置全在本机 —— 没有中间人。</p>
       </div>
     </div>
   </div>
@@ -682,31 +622,10 @@ for await (const chunk of stream) {
         </div>
       </details>
 
-      <details class="qa" data-page-node-id="tP3ZScMRGdCSWfvfIkexeE">
-        <summary data-page-node-id="PS9O8kEoPYN0bKNfHnAjFj">免费 Token 目录里的信息准确吗？</summary>
-        <div class="qa-body" data-page-node-id="MyO8HRkpavvEozFm1vWiOY">
-          目录汇总了各平台公开的免费额度政策，但平台政策会随时调整，页面内也标注了「请以各平台官网为准」。你也可以在应用内提交自己的推荐，数据仅保存在本地，不会上传。
-        </div>
-      </details>
-
       <details class="qa" data-page-node-id="QJzw3kGzreHzyn3CZNgrkS">
         <summary data-page-node-id="yRFv8uDf9Bk3kNZKEEVmYM">开源协议是什么？可以商用吗？</summary>
         <div class="qa-body" data-page-node-id="xgoOyDvsETUyKZ0SusJaHV">
           基于 <a href="https://github.com/ht-shaipe/vortex/blob/main/LICENSE" target="_blank" rel="noopener" data-page-node-id="HBNA8X2gQqzsT7FGSaca5u">MIT 许可证</a> 开源，可以自由使用、修改、分发与商用，只需保留版权声明与许可证文本。
-        </div>
-      </details>
-
-      <details class="qa">
-        <summary>有自动更新吗？</summary>
-        <div class="qa-body">
-          有。应用启动时会静默检查 GitHub Releases 是否有新版本，运行期间每 6 小时自动复查一次（同一版本只提醒一次），发现后弹出通知提示下载安装。你也可以在「关于」页手动检查更新。更新包由 GitHub Actions 在推送 <code>v*</code> tag 时自动构建。
-        </div>
-      </details>
-
-      <details class="qa">
-        <summary>能在应用内直接对话测试吗？</summary>
-        <div class="qa-body">
-          可以。内置「对话」页支持会话分支树、模型选择与流式输出；桌面端通过原生 IPC 通道直达网关，浏览器模式走 <code>POST /v1/chat/completions</code> SSE，无需外部客户端即可验证网关通路与上游连通性。
         </div>
       </details>
     </div>
