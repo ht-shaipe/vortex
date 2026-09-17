@@ -86,6 +86,7 @@ fn parse_chat_request(body: &serde_json::Value, req: &HttpRequest) -> crate::err
         max_tokens: body.get("max_tokens").and_then(|v| v.as_i64()),
         top_p: body.get("top_p").and_then(|v| v.as_f64()),
         api_key,
+        agent: super::detect_agent(req.headers()),
         source_format: "openai".to_string(), // 标记来源格式为 OpenAI
         extra: json!({}),
         saved_tokens: 0,

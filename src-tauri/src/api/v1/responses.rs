@@ -104,6 +104,7 @@ fn parse_responses_request(
         max_tokens: body.get("max_output_tokens").and_then(|v| v.as_i64()),
         top_p: body.get("top_p").and_then(|v| v.as_f64()),
         api_key,
+        agent: super::detect_agent(req.headers()),
         source_format: "responses".to_string(),
         extra: json!({
             "original_format": "responses",

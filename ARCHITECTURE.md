@@ -203,7 +203,7 @@ pub struct ProviderDef {
 |------|------|----------|
 | `provider_connections` | 提供商连接 | id, provider, name, api_key/access_token(加密), priority, is_active, test_status, backoff_level, rate_limited_until, consecutive_use_count |
 | `api_keys` | 网关 API 密钥 | id, name, key(唯一, `vx-{32位hex}`), allowed_models, allowed_connections, allowed_endpoints, no_log, auto_resolve, is_active, is_banned, rate_limits, usage_limits |
-| `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost, usage_estimated |
+| `usage_history` | 用量记录 | provider, model, connection_id, api_key_id, tokens_input/output/cache_read/cache_creation/reasoning, service_tier, status, success, latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, agent |
 | `key_value` | 键值存储(设置) | namespace, key, value(JSON) — `settings/general`（端口/UA/隐藏已映射模型等）与 `settings/security`（Token 鉴权、访问令牌、CORS）；首次启动自动写入安全默认值（Token 鉴权开启 + 自动生成访问令牌） |
 | `free_token_sites` | 免费额度站点目录 | id, name, home_url, apply_url, api_supported, api_base, api_format, free_quota, region(`cn`/`global`/`local`), requires_card, requires_verify, tags(JSON), note, provider_id, source(`builtin`/`user`), submitter, sort_order |
 | `model_aliases` | 模型别名（虚拟模型名映射） | id, alias, targets(JSON数组: provider, model, connection_id), created_at |
@@ -220,6 +220,14 @@ pub struct ProviderDef {
 | 006 | `006_model_aliases.sql` | model_aliases 建表（虚拟模型名 + 多目标故障转移） |
 | 007 | `007_model_alias_source.sql` | model_aliases 添加 source 列，区分自动归纳（auto）与手动创建（manual），重新归纳时仅替换 auto 记录 |
 | 008 | `008_usage_estimated.sql` | usage_history 添加 usage_estimated 列，标记 Token 用量为估算值（上游未返回 usage 时按文本长度估算） |
+| 009 | `009_rate_limits.sql` | 连接级速率限制表 |
+| 010 | `010_model_catalog.sql` | 模型目录表（自动拉取的模型列表与元信息） |
+| 011 | `011_routing_profiles.sql` | 命名路由配置（auto:profile 回退链） |
+| 012 | `012_tos_review.sql` | 服务条款审阅记录 |
+| 013 | `013_saved_tokens.sql` | usage_history 添加 saved_tokens 列，记录 Prompt 压缩节省的 Token 数 |
+| 014 | `014_compressed_content.sql` | 压缩内容寻址回忆表 |
+| 015 | `015_key_permissions.sql` | API Key 权限规则表 |
+| 016 | `016_usage_agent.sql` | usage_history 添加 agent 列，记录请求来源 Agent/终端标识 |
 
 > 迁移按版本号一次性应用并记录在 `_vortex_migrations` 中；已应用的版本不会重跑，新增内容一律追加新版本文件。
 
@@ -285,6 +293,8 @@ pub struct ProviderDef {
 | `safe_write.rs` | 受管节点的安全 JSON 写入 |
 
 前端入口在「接入指南」页（`src/components/sync/AgentIntegration.vue`）：检测结果缓存 1 小时，已安装的排在最前并带标识；未安装的不显示配置按钮。配置流程为 检测 → 预览变更（含警告与重启提示）→ 确认写入 → 可恢复。
+
+运行时通过 `api/v1/mod.rs::detect_agent()` 从请求头（User-Agent / originator）识别调用方 Agent，写入 `ProxyRequest.agent` 并随 `UsageEntry.agent` 落库到 `usage_history`，请求日志页面展示"来源"列。
 
 ### 12. Tauri 插件
 
@@ -401,19 +411,20 @@ AppLayout
 ```
 1. 请求到达 chat_completions()
 2. 解析 OpenAI 格式请求体
-3. 调用 ProxyEngine::handle_request()
-4.   ├── API Key 验证 (若 require_api_key=true)
-5.   ├── resolve_route()
-6.   │   └── ProviderRegistry::resolve_model_provider()
-7.   │       └── 查 provider_connections 表找活跃连接
-8.   └── handle_single_with_retry()
-9.       ├── 检查熔断器状态
-10.      ├── Executor::execute() → 上游 API 调用
-11.      ├── 成功: 提取用量 → 记录 → 返回
-12.      ├── 失败(5xx/429): 指数退避重试
-13.      └── 失败(其他): 记录熔断器失败 → 返回错误
-14. 记录 UsageEntry 到 usage_history
-15. 返回 OpenAI 格式响应
+3. detect_agent() 从 User-Agent/originator 头识别调用方 Agent
+4. 调用 ProxyEngine::handle_request()
+5.   ├── API Key 验证 (若 require_api_key=true)
+6.   ├── resolve_route()
+7.   │   └── ProviderRegistry::resolve_model_provider()
+8.   │       └── 查 provider_connections 表找活跃连接
+9.   └── handle_single_with_retry()
+10.      ├── 检查熔断器状态
+11.      ├── Executor::execute() → 上游 API 调用
+12.      ├── 成功: 提取用量 → 记录 → 返回
+13.      ├── 失败(5xx/429): 指数退避重试
+14.      └── 失败(其他): 记录熔断器失败 → 返回错误
+15. 记录 UsageEntry（含 agent 来源标识）到 usage_history
+16. 返回 OpenAI 格式响应
 ```
 
 ## 配置管理

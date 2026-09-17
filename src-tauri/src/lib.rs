@@ -42,6 +42,8 @@ pub struct AppState {
     pub rate_limiter: routing::rate_limiter::RateLimiter,
     /// Thompson 采样 bandit 路由评分器
     pub bandit_router: routing::bandit::BanditRouter,
+    /// 模型占用追踪器，auto 路由跨智能体软避让
+    pub occupancy: routing::occupancy::OccupancyTracker,
     /// 粘性会话管理器
     pub sticky_session: proxy::sticky_session::StickySessionManager,
     /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
@@ -133,6 +135,7 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
         resilience_manager,
         rate_limiter,
         bandit_router,
+        occupancy: routing::occupancy::OccupancyTracker::new(),
         sticky_session,
         encryption_key,
         proxy_handle: parking_lot::Mutex::new(None),

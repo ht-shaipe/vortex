@@ -243,6 +243,9 @@ pub struct UsageEntry {
     /// Prompt 压缩节省的 token 数
     #[serde(default)]
     pub saved_tokens: i64,
+    /// 调用方 Agent/终端标识（从 User-Agent 头识别）
+    #[serde(default)]
+    pub agent: Option<String>,
     /// 时间戳（RFC3339）
     pub timestamp: String,
 }
@@ -294,6 +297,9 @@ pub struct ProxyRequest {
     pub top_p: Option<f64>,
     /// 调用方 API Key
     pub api_key: Option<String>,
+    /// 调用方智能体标识（从 User-Agent/originator 头识别，如 claude_code/codex）
+    #[serde(default)]
+    pub agent: Option<String>,
     /// 源格式（如 `openai`、`anthropic`）
     pub source_format: String,
     /// 额外参数（JSON）

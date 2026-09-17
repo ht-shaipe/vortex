@@ -36,6 +36,7 @@ pub async fn playground(
         max_tokens: req.max_tokens,
         top_p: req.top_p,
         api_key: None,
+        agent: None, // 管理端调试请求，不参与避让
         source_format: "openai".to_string(),
         extra: req.extra.unwrap_or(json!({})),
         saved_tokens: 0,

@@ -21,8 +21,8 @@ pub fn record(conn: &rusqlite::Connection, entry: &UsageEntry) -> Result<()> {
          (provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, agent, timestamp) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         params![
             entry.provider, entry.model, entry.connection_id,
             entry.api_key_id, entry.api_key_name,
@@ -30,7 +30,7 @@ pub fn record(conn: &rusqlite::Connection, entry: &UsageEntry) -> Result<()> {
             entry.tokens_cache_creation, entry.tokens_reasoning,
             entry.service_tier, entry.status, entry.success as i32,
             entry.error_code, entry.latency_ms, entry.ttft_ms,
-            entry.cost, entry.usage_estimated as i32, entry.saved_tokens, entry.timestamp
+            entry.cost, entry.usage_estimated as i32, entry.saved_tokens, entry.agent, entry.timestamp
         ],
     )?;
     Ok(())
@@ -176,7 +176,7 @@ pub fn list_recent(conn: &rusqlite::Connection, limit: i64) -> Result<Vec<UsageE
         "SELECT id, provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp \
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, agent, timestamp \
          FROM usage_history ORDER BY timestamp DESC LIMIT ?1"
     )?;
     let rows = stmt.query_map(params![limit], |row| {
@@ -201,7 +201,8 @@ pub fn list_recent(conn: &rusqlite::Connection, limit: i64) -> Result<Vec<UsageE
             cost: row.get(17)?,
             usage_estimated: row.get::<_, i32>(18)? != 0,
             saved_tokens: row.get(19)?,
-            timestamp: row.get(20)?,
+            agent: row.get(20)?,
+            timestamp: row.get(21)?,
         })
     })?;
     let mut result = Vec::new();
@@ -226,7 +227,7 @@ pub fn list_paginated(conn: &rusqlite::Connection, page: i64, page_size: i64) ->
         "SELECT id, provider, model, connection_id, api_key_id, api_key_name, \
          tokens_input, tokens_output, tokens_cache_read, tokens_cache_creation, \
          tokens_reasoning, service_tier, status, success, error_code, \
-         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, timestamp \
+         latency_ms, ttft_ms, cost, usage_estimated, saved_tokens, agent, timestamp \
          FROM usage_history ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2"
     )?;
     let rows = stmt.query_map(params![page_size, offset], |row| {
@@ -251,7 +252,8 @@ pub fn list_paginated(conn: &rusqlite::Connection, page: i64, page_size: i64) ->
             cost: row.get(17)?,
             usage_estimated: row.get::<_, i32>(18)? != 0,
             saved_tokens: row.get(19)?,
-            timestamp: row.get(20)?,
+            agent: row.get(20)?,
+            timestamp: row.get(21)?,
         })
     })?;
     let mut result = Vec::new();

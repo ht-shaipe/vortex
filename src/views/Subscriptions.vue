@@ -111,7 +111,7 @@
             <!-- 提供商图标与名称 -->
             <td>
               <div class="prov-cell flex items-center gap-10px min-w-0 max-w-full">
-                <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :color="provColor(conn.provider)" :size="24" />
+                <ProviderLogo :name="conn.customProviderId || conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :color="provColor(conn.provider)" :size="24" />
                 <div class="prov-meta min-w-0 max-w-180px">
                   <div class="prov-name flex items-center gap-6px text-13px font-medium text-ink whitespace-nowrap overflow-hidden text-ellipsis" :title="conn.name">
                     <span class="overflow-hidden text-ellipsis">{{ conn.name }}</span>
@@ -122,8 +122,8 @@
                       >{{ tosLabel(tosProviderKey(conn)) }}</span>
                     </el-tooltip>
                   </div>
-                  <div class="prov-id mono text-11px text-ink-4 whitespace-nowrap overflow-hidden text-ellipsis" :title="conn.baseUrl || conn.provider">
-                    {{ conn.baseUrl || conn.provider }}
+                  <div class="prov-id mono text-11px text-ink-4 whitespace-nowrap overflow-hidden text-ellipsis" :title="conn.baseUrl || conn.customProviderId || conn.provider">
+                    {{ conn.baseUrl || conn.customProviderId || conn.provider }}
                   </div>
                 </div>
               </div>

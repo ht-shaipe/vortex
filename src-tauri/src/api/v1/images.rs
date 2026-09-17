@@ -4,7 +4,7 @@
 //! 请求中的模型名经注册表解析后替换为提供商侧真实模型 ID 再转发。
 //! 响应成功后记录用量条目（图像生成不统计 token，仅记录延迟）。
 
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use crate::db::{core as db_core, providers as db_providers};
 use crate::db::models::UsageEntry;
 use crate::AppState;
@@ -23,8 +23,11 @@ use std::time::Instant;
 /// - 返回值：提供商响应（原样透传）或错误 JSON
 pub async fn create_images(
     state: web::Data<Arc<AppState>>,
+    req: HttpRequest,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
+    // 提取调用方智能体标识（供用量记录与占用追踪）
+    let agent = super::detect_agent(req.headers());
     // 提取模型名，默认 dall-e-3
     let model = body.get("model")
         .and_then(|v| v.as_str())
@@ -101,7 +104,9 @@ pub async fn create_images(
                 tokens_cache_creation: 0, tokens_reasoning: 0,
                 service_tier: "standard".to_string(), status: "success".to_string(),
                 success: true, error_code: None, latency_ms: Some(latency), ttft_ms: None,
-                cost: 0.0, usage_estimated: false, saved_tokens: 0, timestamp: chrono::Utc::now().to_rfc3339(),
+                cost: 0.0, usage_estimated: false, saved_tokens: 0,
+                agent,
+                timestamp: chrono::Utc::now().to_rfc3339(),
             };
             // best-effort 写入用量记录，失败不影响响应
             let _ = db_core::get_conn(&state.db_pool).ok().and_then(|c| crate::db::usage::record(&c, &entry).ok());

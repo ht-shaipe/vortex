@@ -21,8 +21,43 @@ pub mod images;
 pub mod mcp;
 
 use actix_web::HttpResponse;
+use actix_web::http::header::HeaderMap;
 use crate::error::AppError;
 use serde_json::json;
+
+/// 从请求头识别调用方智能体（agent 指纹）。
+///
+/// 各 CLI 智能体在请求头中留有独特标识：Codex 带 `originator` 头，
+/// 其余靠 User-Agent 特征前缀。识别结果用于 auto 路由的跨智能体
+/// 模型占用避让；未识别时返回 None（不参与避让判定）。
+pub fn detect_agent(headers: &HeaderMap) -> Option<String> {
+    // Codex CLI 专有头：originator: codex_cli_rs
+    if let Some(originator) = headers.get("originator").and_then(|v| v.to_str().ok()) {
+        let o = originator.to_ascii_lowercase();
+        if o.contains("codex") {
+            return Some("codex".into());
+        }
+    }
+    let ua = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    // 按特异度从高到低匹配 UA 前缀/子串
+    if ua.starts_with("claude-cli") {
+        Some("claude_code".into())
+    } else if ua.contains("opencode") {
+        Some("opencode".into())
+    } else if ua.contains("qwen") {
+        Some("qwen_code".into())
+    } else if ua.contains("dsh") {
+        Some("dsh".into())
+    } else if ua.contains("codex") {
+        Some("codex".into())
+    } else {
+        None
+    }
+}
 
 /// 熔断错误对下游的友好提示文案。
 ///

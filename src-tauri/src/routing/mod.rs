@@ -8,3 +8,5 @@ pub mod resilience;
 pub mod rate_limiter;
 /// Thompson 采样 bandit 路由评分
 pub mod bandit;
+/// 模型占用追踪器，auto 路由跨智能体软避让
+pub mod occupancy;

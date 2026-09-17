@@ -54,8 +54,8 @@
                 <div class="setting-desc">底层服务识别符，由创建时决定，不可修改</div>
               </div>
               <div class="row flex items-center gap-8px">
-                <ProviderLogo :name="conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :size="20" />
-                <span class="mono">{{ conn.provider }}</span>
+                <ProviderLogo :name="conn.customProviderId || conn.provider" :hint="`${conn.name} ${conn.baseUrl || ''}`" :size="20" />
+                <span class="mono">{{ conn.customProviderId || conn.provider }}</span>
                 <span class="auth-tag text-11px text-ink-3 bg-surface-2 py-2px px-8px rounded-full border border-solid border-line">{{ authTypeLabel }}</span>
               </div>
             </div>

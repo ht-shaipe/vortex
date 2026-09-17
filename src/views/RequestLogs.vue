@@ -28,6 +28,7 @@
             <th style="width: 90px">状态</th>
             <th>提供商</th>
             <th>模型</th>
+            <th style="width: 90px">来源</th>
             <th class="num" style="width: 90px">Tokens 输入</th>
             <th class="num" style="width: 90px">Tokens 输出</th>
             <th class="num" style="width: 80px">耗时</th>
@@ -39,6 +40,7 @@
             <td><StatusBadge :tone="statusTone(r.status)" :label="statusLabel(r.status)" /></td>
             <td class="mono">{{ r.provider || '—' }}</td>
             <td class="mono">{{ r.model || '—' }}</td>
+            <td>{{ agentLabel(r.agent) }}</td>
             <td class="num" :title="tokenTitle(r, r.tokensInput)">{{ fmtToken(r.tokensInput, r.usageEstimated, isZeroUsage(r)) }}</td>
             <td class="num" :title="tokenTitle(r, r.tokensOutput)">{{ fmtToken(r.tokensOutput, r.usageEstimated, isZeroUsage(r)) }}</td>
             <td class="num">{{ r.latencyMs != null ? fmtLatency(r.latencyMs) : '—' }}</td>
@@ -78,6 +80,7 @@ interface Row {
   status?: string
   provider?: string
   model?: string
+  agent?: string
   tokensInput?: number
   tokensOutput?: number
   latencyMs?: number
@@ -159,6 +162,22 @@ function fmtLatency(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
+/** Agent 标识 → 友好名称 */
+const agentNames: Record<string, string> = {
+  claude_code: 'Claude Code',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+  qwen_code: 'Qwen Code',
+  dsh: 'DeepSeek',
+  gemini_cli: 'Gemini CLI',
+  cursor_agent: 'Cursor',
+  vortex_chat: '内置聊天',
+}
+function agentLabel(agent?: string): string {
+  if (!agent) return '—'
+  return agentNames[agent] ?? agent
+}
+
 /**
  * 加载指定页的请求日志。
  */
@@ -175,6 +194,7 @@ async function load() {
       status: o.status as string | undefined,
       provider: o.provider as string | undefined,
       model: o.model as string | undefined,
+      agent: o.agent as string | undefined,
       tokensInput: (o.tokens_input ?? o.input_tokens) as number | undefined,
       tokensOutput: (o.tokens_output ?? o.output_tokens) as number | undefined,
       latencyMs: o.latency_ms as number | undefined,

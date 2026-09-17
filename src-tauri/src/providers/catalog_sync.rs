@@ -236,8 +236,14 @@ pub async fn refresh_from_connections(
             format!("{}/v1/models", base_url)
         };
 
-        let provider = conn.provider.clone();
-        let is_anthropic = provider == "anthropic";
+        let provider = conn
+            .provider_specific_data
+            .get("customId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| conn.provider.clone());
+        let is_anthropic = conn.provider == "anthropic";
 
         log::info!("从连接 {} 拉取模型列表: {}", conn.name, models_url);
 

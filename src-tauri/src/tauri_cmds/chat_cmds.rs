@@ -115,6 +115,7 @@ pub async fn chat_completions_stream(
         top_p: None,
         // 桌面 IPC 直连引擎，不经网关鉴权
         api_key: None,
+        agent: Some("vortex_chat".to_string()), // 应用内置聊天窗口
         source_format: "openai".to_string(),
         extra: serde_json::Value::Null,
         saved_tokens: 0,

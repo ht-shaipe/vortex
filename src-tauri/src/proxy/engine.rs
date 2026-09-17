@@ -161,7 +161,7 @@ impl ProxyEngine {
                     };
                     if let Some(conn_obj) = connection {
                         let result = self
-                            .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &model, start)
+                            .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &model, start, None)
                             .await;
                         match &result {
                             Ok(_) => {
@@ -223,7 +223,7 @@ impl ProxyEngine {
 
                 log::info!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
                 let result = self
-                    .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
+                    .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start, None)
                     .await;
                 match result {
                     Ok(output) => {
@@ -255,6 +255,7 @@ impl ProxyEngine {
                             cost: 0.0,
                             usage_estimated: false,
                             saved_tokens: request.saved_tokens,
+                            agent: request.agent.clone(),
                             timestamp: chrono::Utc::now().to_rfc3339(),
                         };
                         let _ = db_usage::record(&conn, &entry);
@@ -314,7 +315,7 @@ impl ProxyEngine {
                     }
                     log::info!("配置 '{}' 尝试目标 {}/{}", profile.name, target.provider, target.model);
                     let result = self
-                        .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start)
+                        .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start, None)
                         .await;
                     match result {
                         Ok(output) => {
@@ -350,7 +351,7 @@ impl ProxyEngine {
         let conn_obj = connection.ok_or_else(|| AppError::Provider("No active connection".into()))?;
         // 带重试与熔断的上游执行
         let result = self
-            .handle_single_with_retry(state, client, &conn, &request, &provider_def, &conn_obj, &model, start)
+            .handle_single_with_retry(state, client, &conn, &request, &provider_def, &conn_obj, &model, start, None)
             .await;
 
         // 失败时记录错误用量
@@ -383,9 +384,30 @@ impl ProxyEngine {
                     cost: 0.0,
                     usage_estimated: false,
                     saved_tokens: request.saved_tokens,
+                    agent: request.agent.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = db_usage::record(&conn, &entry);
+            }
+        }
+
+        // 可转移错误：在 10 秒预算内后台寻找可用模型（紧急故障转移），
+        // 找到则直接返回结果；转移失败仍返回原始错误（比“所有候选失败”更有排查价值）
+        if let Err(ref e) = result
+            && Self::is_failoverable(e)
+        {
+            log::warn!(
+                "模型 {}/{} 上游失败（{}），启动紧急故障转移",
+                provider_def.id, model, e
+            );
+            if let Ok(output) = self
+                .handle_emergency_failover(
+                    state, client, &conn, &request, &provider_def, &conn_obj, &model,
+                    session_id.as_deref(), start,
+                )
+                .await
+            {
+                return Ok(output);
             }
         }
 
@@ -505,6 +527,15 @@ impl ProxyEngine {
                 let Some(provider_def) = state.provider_registry.get(&pconn.provider) else {
                     break;
                 };
+                // 粘性候选正被其他智能体占用时避让，回退 bandit 排序（软避让）
+                let occ_key = format!("{}:{}:{}", pconn.provider, pconn.id, model);
+                if state.occupancy.busy_by_others(&occ_key, request.agent.as_deref()) {
+                    log::info!(
+                        "auto 粘性：{}/{} 正被其他智能体使用，避让并回退 bandit 排序",
+                        last_provider, last_model
+                    );
+                    break;
+                }
                 let breaker_name = format!("{}:{}", provider_def.id, pconn.id);
                 let auto_model_breaker = format!("auto:{}:{}:{}", provider_def.id, pconn.id, model);
                 if !state.resilience_manager.is_available(&breaker_name)
@@ -516,7 +547,7 @@ impl ProxyEngine {
                 }
                 log::info!("auto 粘性：优先尝试上次成功的 {}/{}/{}", last_provider, pconn.name, last_model);
                 let result = self
-                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start)
+                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start, None)
                     .await;
                 match result {
                     Ok(output) => {
@@ -545,6 +576,22 @@ impl ProxyEngine {
             })
             .collect();
         let ranked_indices = state.bandit_router.rank_candidates(&bandit_keys);
+
+        // 跨智能体软避让：被其他智能体占用的候选稳定后移（保持 bandit 相对顺序），
+        // 全部被占用时仍按序尝试，不拒绝服务
+        let ranked_indices = if request.agent.is_some() {
+            let me = request.agent.as_deref();
+            let mut ordered = ranked_indices;
+            ordered.sort_by_key(|&idx| {
+                let (ci, model) = &candidates[idx];
+                let c = &all_connections[*ci];
+                let key = format!("{}:{}:{}", c.provider, c.id, model);
+                usize::from(state.occupancy.busy_by_others(&key, me))
+            });
+            ordered
+        } else {
+            ranked_indices
+        };
 
         let mut last_err: Option<AppError> = None;
         let mut last_circuit: Option<String> = None;
@@ -578,7 +625,7 @@ impl ProxyEngine {
                 provider_def.id, model, connection.name, connection.id, connection.priority);
 
             let result = self
-                .handle_single_with_retry(state, client, conn, request, provider_def, connection, model.as_str(), start)
+                .handle_single_with_retry(state, client, conn, request, provider_def, connection, model.as_str(), start, None)
                 .await;
 
             match result {
@@ -620,6 +667,7 @@ impl ProxyEngine {
                         cost: 0.0,
                         usage_estimated: false,
                         saved_tokens: request.saved_tokens,
+                        agent: request.agent.clone(),
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = db_usage::record(conn, &entry);
@@ -644,6 +692,151 @@ impl ProxyEngine {
         } else {
             AppError::Routing("All candidates failed for auto routing".into())
         })
+    }
+
+    /// 判断错误是否值得做紧急故障转移
+    ///
+    /// 上游错误（非 400 的 4xx 与 5xx）、网络错误、熔断、路由失败可转移；
+    /// 请求参数错误（换模型大概率同样失败）与网关鉴权失败（与上游无关）不转移。
+    fn is_failoverable(e: &AppError) -> bool {
+        match e {
+            AppError::Upstream { status, .. } => *status != 400,
+            AppError::Provider(_)
+            | AppError::Http(_)
+            | AppError::CircuitOpen(_)
+            | AppError::Routing(_) => true,
+            _ => false,
+        }
+    }
+
+    /// 显式模型失败后的紧急故障转移：在时间预算内自动寻找其他可用模型
+    ///
+    /// 与 auto 路由的区别：这是对"调用方显式指定模型"失败后的兜底——不再把
+    /// 上游错误直接抛回，而是后台遍历其余候选（bandit 排序 + 占用避让），
+    /// 成功后直接返回结果。10 秒预算耗尽或候选耗尽时放弃，由调用方返回
+    /// 原始错误（比"所有候选失败"更有排查价值）。
+    // 各参数承担独立职责（状态/客户端/连接/请求/失败目标/会话），拆分结构体收益有限。
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_emergency_failover(
+        &self,
+        state: &Arc<AppState>,
+        client: &awc::Client,
+        conn: &rusqlite::Connection,
+        request: &ProxyRequest,
+        failed_def: &crate::providers::types::ProviderDef,
+        failed_conn: &crate::db::models::ProviderConnection,
+        failed_model: &str,
+        session_id: Option<&str>,
+        start: Instant,
+    ) -> Result<ProxyOutput> {
+        const FAILOVER_BUDGET_SECS: u64 = 10;
+        // 预算剩余不足一次尝试的保底时间时不再启动新尝试
+        const MIN_ATTEMPT_SECS: u64 = 2;
+        let deadline = Instant::now() + std::time::Duration::from_secs(FAILOVER_BUDGET_SECS);
+
+        // 收集所有活跃连接的全部模型候选，排除刚失败过的组合
+        let all_connections = db_providers::list_all_active(conn, &state.encryption_key)?;
+        let mut candidates: Vec<(usize, String)> = Vec::new();
+        for (ci, connection) in all_connections.iter().enumerate() {
+            let models: Vec<String> = match &connection.models {
+                Some(list) if !list.is_empty() => list.iter().map(|m| m.id.clone()).collect(),
+                _ => connection.default_model.clone().map(|m| vec![m]).unwrap_or_default(),
+            };
+            for model in models {
+                if connection.id == failed_conn.id && model == failed_model {
+                    continue;
+                }
+                candidates.push((ci, model));
+            }
+        }
+        if candidates.is_empty() {
+            return Err(AppError::Routing("no failover candidates".into()));
+        }
+
+        // bandit 排序 + 占用避让（与 auto 路由相同的排序策略）
+        let bandit_keys: Vec<(String, String, Option<String>)> = candidates
+            .iter()
+            .map(|(ci, model)| {
+                let c = &all_connections[*ci];
+                (c.provider.clone(), model.clone(), Some(c.id.clone()))
+            })
+            .collect();
+        let mut ranked = state.bandit_router.rank_candidates(&bandit_keys);
+        if request.agent.is_some() {
+            let me = request.agent.as_deref();
+            ranked.sort_by_key(|&idx| {
+                let (ci, model) = &candidates[idx];
+                let c = &all_connections[*ci];
+                let key = format!("{}:{}:{}", c.provider, c.id, model);
+                usize::from(state.occupancy.busy_by_others(&key, me))
+            });
+        }
+
+        log::warn!(
+            "紧急故障转移：{}/{} 失败，预算 {}s，共 {} 个候选",
+            failed_def.id, failed_model, FAILOVER_BUDGET_SECS, ranked.len()
+        );
+
+        let mut tried = 0usize;
+        for &idx in &ranked {
+            let (ci, model) = &candidates[idx];
+            let connection = &all_connections[*ci];
+            // 预算检查：剩余时间不足一次尝试时放弃
+            if Instant::now() + std::time::Duration::from_secs(MIN_ATTEMPT_SECS) >= deadline {
+                log::warn!("紧急故障转移：预算即将耗尽（已尝试 {} 个候选），放弃", tried);
+                break;
+            }
+            let Some(provider_def) = state.provider_registry.get(&connection.provider) else {
+                continue;
+            };
+            let breaker_name = format!("{}:{}", provider_def.id, connection.id);
+            if !state.resilience_manager.is_available(&breaker_name) {
+                continue;
+            }
+            let model_breaker = format!("{}:{}:{}", provider_def.id, connection.id, model);
+            if !state.resilience_manager.is_available(&model_breaker) {
+                continue;
+            }
+
+            tried += 1;
+            log::info!(
+                "紧急故障转移：尝试 {}/{}/{}",
+                provider_def.id, model, connection.name
+            );
+            let result = self
+                .handle_single_with_retry(
+                    state, client, conn, request, provider_def, connection, model.as_str(), start,
+                    Some(deadline),
+                )
+                .await;
+            match result {
+                Ok(output) => {
+                    let latency_ms = start.elapsed().as_millis() as f64;
+                    state.bandit_router.record_success(
+                        &connection.provider, model.as_str(), Some(&connection.id), latency_ms,
+                    );
+                    if let Some(sid) = session_id {
+                        state.sticky_session.set(sid, &provider_def.id, model, Some(&connection.id));
+                    }
+                    log::info!(
+                        "紧急故障转移：成功切换到 {}/{}/{}",
+                        provider_def.id, model, connection.name
+                    );
+                    return Ok(output);
+                }
+                Err(e) => {
+                    state.bandit_router.record_failure(
+                        &connection.provider, model.as_str(), Some(&connection.id),
+                    );
+                    log::warn!("紧急故障转移：{}/{} 失败: {}", provider_def.id, model, e);
+                }
+            }
+        }
+
+        Err(AppError::Routing(format!(
+            "紧急故障转移失败（已尝试 {} 个候选）",
+            tried
+        )))
     }
 
     /// 带重试与熔断的单连接请求处理
@@ -674,7 +867,13 @@ impl ProxyEngine {
         connection: &crate::db::models::ProviderConnection,
         model: &str,
         start: Instant,
+        deadline: Option<Instant>,
     ) -> Result<ProxyOutput> {
+        // 记录智能体对该模型的占用（auto 路由据此做跨智能体软避让）
+        if let Some(ref agent) = request.agent {
+            let model_key = format!("{}:{}:{}", def.id, connection.id, model);
+            state.occupancy.touch(&model_key, agent);
+        }
         // 按提供商格式创建执行器
         let executor = self.executor_factory.create(def);
         let mut last_err = None;
@@ -688,6 +887,15 @@ impl ProxyEngine {
 
         // 重试循环
         for attempt in 0..=self.retry_policy.max_retries() {
+            // 故障转移时间预算耗尽：停止重试（紧急故障转移场景传入 deadline）
+            if let Some(d) = deadline
+                && Instant::now() >= d
+            {
+                if last_err.is_none() {
+                    last_err = Some(AppError::Routing("failover deadline exceeded".into()));
+                }
+                break;
+            }
             // 连接级熔断器打开时跳过执行（快速失败）
             if !state.resilience_manager.is_available(&breaker_name) {
                 last_err = Some(AppError::CircuitOpen(breaker_name.clone()));
@@ -726,6 +934,7 @@ impl ProxyEngine {
             // 请求体输入 token 估算值：上游未返回 usage 时回填输入侧
             let cb_req_input = estimate_request_tokens(&request.messages);
             let cb_saved_tokens = request.saved_tokens;
+            let cb_agent = request.agent.clone();
             let usage_cb: UsageCallback = Arc::new(move |usage: StreamUsage| {
                 let Ok(c) = db_core::get_conn(&cb_pool) else { return };
                 let latency = cb_start.elapsed().as_millis() as i64;
@@ -756,6 +965,7 @@ impl ProxyEngine {
                     cost: 0.0,
                     usage_estimated,
                     saved_tokens: cb_saved_tokens,
+                    agent: cb_agent.clone(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 let _ = db_usage::record(&c, &entry);
@@ -801,6 +1011,7 @@ impl ProxyEngine {
                         cost: extracted.cost,
                         usage_estimated: extracted.estimated,
                         saved_tokens: request.saved_tokens,
+                        agent: request.agent.clone(),
                         timestamp: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = db_usage::record(conn, &entry);

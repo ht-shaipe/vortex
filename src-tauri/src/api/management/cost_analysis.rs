@@ -32,11 +32,13 @@ pub async fn cost_analysis(
         ).unwrap_or(0);
 
         let mut by_model = Vec::new();
+        // 按使用量（输入+输出 Tokens）倒序，使用最多的模型排在最前；成本作次级排序
         let sql = format!(
             "SELECT model, COUNT(*) as cnt, COALESCE(SUM(cost), 0) as cost, \
              COALESCE(SUM(tokens_input), 0) as tin, COALESCE(SUM(tokens_output), 0) as tout, \
              COALESCE(SUM(saved_tokens), 0) as saved \
-             FROM usage_history {} GROUP BY model ORDER BY cost DESC",
+             FROM usage_history {} GROUP BY model \
+             ORDER BY (COALESCE(SUM(tokens_input), 0) + COALESCE(SUM(tokens_output), 0)) DESC, cost DESC",
             where_clause
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
