@@ -105,8 +105,8 @@ fn strip_one_suffix(s: &str) -> Option<String> {
     }
     // 固定字符串后缀（:free 为 OpenRouter 等平台的免费变体标记）
     for suffix in &["-latest", "-preview", "-free", ":free"] {
-        if s.ends_with(suffix) {
-            return Some(s[..s.len() - suffix.len()].to_string());
+        if let Some(stripped) = s.strip_suffix(suffix) {
+            return Some(stripped.to_string());
         }
     }
     // 上下文长度后缀：-\d+k 或 -\d+m (如 -16k, -32k, -128k, -1m)

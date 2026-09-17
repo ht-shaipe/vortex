@@ -282,18 +282,17 @@ impl ProviderRegistry {
     /// 解析成功时返回 `(提供商 ID, 提供商定义引用, 模型名)`，否则返回 `None`
     pub fn resolve_model_provider(&self, model_str: &str) -> Option<(String, &ProviderDef, String)> {
         // 优先尝试 "provider/model" 格式
-        if let Some((provider_id, model)) = model_str.split_once('/') {
-            if let Some(def) = self.providers.get(provider_id) {
+        if let Some((provider_id, model)) = model_str.split_once('/')
+            && let Some(def) = self.providers.get(provider_id) {
                 return Some((provider_id.to_string(), def, model.to_string()));
             }
-        }
 
         // 回退到别名/ID 前缀匹配
         let model_lower = model_str.to_lowercase();
         for (id, def) in &self.providers {
             if model_lower.starts_with(&format!("{}-", def.alias)) || model_lower.starts_with(&format!("{}-", id)) {
                 // 提取前缀后的模型名部分
-                let model = model_str.splitn(2, '-').nth(1).unwrap_or(model_str).to_string();
+                let model = model_str.split_once('-').map(|x| x.1).unwrap_or(model_str).to_string();
                 return Some((id.clone(), def, model));
             }
         }

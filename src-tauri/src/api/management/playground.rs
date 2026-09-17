@@ -41,9 +41,13 @@ pub async fn playground(
         saved_tokens: 0,
     };
 
-    let engine = state.proxy_engine.read();
+    // 引擎无内部可变性，直接借用处理请求（避免锁守卫跨 await）
     let upstream_client = crate::create_awc_client();
-    match engine.handle_request(&state, &upstream_client, request).await {
+    match state
+        .proxy_engine
+        .handle_request(&state, &upstream_client, request)
+        .await
+    {
         Ok(crate::proxy::engine::ProxyOutput::Response(body)) => HttpResponse::Ok().json(body),
         Ok(crate::proxy::engine::ProxyOutput::Stream(stream)) => {
             crate::proxy::sse::sse_http_response(stream)

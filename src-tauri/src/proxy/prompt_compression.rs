@@ -9,20 +9,17 @@ use serde_json::Value;
 /// 压缩级别
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum CompressionLevel {
     /// 不压缩
     None,
     /// 最小压缩：去重 system + 裁剪 tool 输出 + 截断长 user/assistant content
+    #[default]
     Minimal,
     /// 激进压缩：minimal + 裁剪陈旧上下文 + 裁剪所有超长 content
     Aggressive,
 }
 
-impl Default for CompressionLevel {
-    fn default() -> Self {
-        Self::Minimal
-    }
-}
 
 /// 压缩配置
 #[derive(Clone, Debug)]
@@ -93,19 +90,18 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
         let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("").to_string();
 
         // 去重连续相同角色的消息
-        if config.dedup_consecutive && config.level != CompressionLevel::None {
-            if Some(&role) == last_role.as_ref() && role == "system" {
+        if config.dedup_consecutive && config.level != CompressionLevel::None
+            && Some(&role) == last_role.as_ref() && role == "system" {
                 continue;
             }
-        }
         last_role = Some(role.clone());
 
         let mut msg = msg.clone();
 
         // 裁剪 tool 输出
-        if config.trim_tool_output && role == "tool" {
-            if let Some(content) = msg.get_mut("content") {
-                if let Some(s) = content.as_str() {
+        if config.trim_tool_output && role == "tool"
+            && let Some(content) = msg.get_mut("content")
+                && let Some(s) = content.as_str() {
                     let lines: Vec<&str> = s.lines().collect();
                     if lines.len() > config.tool_output_lines {
                         let trimmed = lines[lines.len() - config.tool_output_lines..].join("\n");
@@ -116,16 +112,13 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
                         ));
                     }
                 }
-            }
-        }
 
         // Minimal 模式：对长 user/assistant content 做头尾保留截断
         if config.level == CompressionLevel::Minimal
             && (role == "user" || role == "assistant")
-        {
-            if let Some(content) = msg.get_mut("content") {
-                if let Some(s) = content.as_str() {
-                    if s.len() > config.minimal_content_chars {
+            && let Some(content) = msg.get_mut("content")
+                && let Some(s) = content.as_str()
+                    && s.len() > config.minimal_content_chars {
                         let head = config.minimal_content_chars / 2;
                         let tail = config.minimal_content_chars / 4;
                         let truncated = format!(
@@ -136,15 +129,12 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
                         );
                         *content = Value::String(truncated);
                     }
-                }
-            }
-        }
 
         // 激进模式：裁剪超长 content 字符串
-        if config.level == CompressionLevel::Aggressive {
-            if let Some(content) = msg.get_mut("content") {
-                if let Some(s) = content.as_str() {
-                    if s.len() > config.max_content_chars {
+        if config.level == CompressionLevel::Aggressive
+            && let Some(content) = msg.get_mut("content")
+                && let Some(s) = content.as_str()
+                    && s.len() > config.max_content_chars {
                         let kept = &s[..config.max_content_chars];
                         *content = Value::String(format!(
                             "{}\n[...truncated {} chars...]",
@@ -152,9 +142,6 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
                             s.len() - config.max_content_chars
                         ));
                     }
-                }
-            }
-        }
 
         compressed.push(msg);
     }
@@ -177,7 +164,6 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
 
     let compressed_val = Value::Array(compressed);
     let original_tokens = estimate_tokens(messages) as i64;
-    let compressed_tokens = estimate_tokens(&compressed_val) as i64;
 
     // Never-Worse 保护
     let final_val = never_worse(messages, &compressed_val);

@@ -81,7 +81,7 @@ impl AgentAdapter for OpenCodeAdapter {
         AgentKind::OpenCode
     }
 
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String> {
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String> {
         // 检测 opencode 可执行文件
         let install_path = detect::find_in_path("opencode");
         let installed = install_path.is_some();
@@ -122,8 +122,8 @@ impl AgentAdapter for OpenCodeAdapter {
 
     fn preview(
         &self,
-        home: &PathBuf,
-        config: &VortexGatewayConfig,
+        home: &Path,
+        _config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String> {
         let opencode_home = Self::get_opencode_home(home);
         let settings_path = opencode_home.join("opencode.json");
@@ -159,9 +159,9 @@ impl AgentAdapter for OpenCodeAdapter {
 
     fn apply(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<ConfigResult, String> {
         let opencode_home = Self::get_opencode_home(home);
         let settings_path = opencode_home.join("opencode.json");
@@ -171,7 +171,7 @@ impl AgentAdapter for OpenCodeAdapter {
             .map_err(|e| format!("创建 OpenCode 目录失败: {}", e))?;
 
         // 创建备份管理器
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
 
         // 准备要备份的文件
         let mut files_to_backup = Vec::new();
@@ -225,11 +225,11 @@ impl AgentAdapter for OpenCodeAdapter {
 
     fn restore(
         &self,
-        home: &PathBuf,
+        _home: &Path,
         backup_id: &str,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<RestoreResult, String> {
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
         let manifest = backup_manager.load_manifest(backup_id)?;
 
         if !backup_manager.verify_backup(backup_id)? {

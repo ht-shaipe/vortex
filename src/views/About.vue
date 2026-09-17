@@ -73,7 +73,10 @@
         <!-- 出错态 -->
         <template v-else-if="status === 'error'">
           <p class="para error-text text-13px text-ink-2 leading-[1.75] m-0 mb-10px text-err">{{ errorMsg || '检查更新失败' }}</p>
-          <button type="button" class="btn primary" @click="checkForUpdate()">重试</button>
+          <div class="btn-row flex gap-8px">
+            <button type="button" class="btn primary" @click="checkForUpdate()">重试</button>
+            <button type="button" class="btn" @click="openReleases()">手动升级</button>
+          </div>
         </template>
       </div>
     </div>
@@ -119,6 +122,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useUpdater } from '@/composables/useUpdater'
 import { useNotifications } from '@/composables/useNotifications'
+import { runtime } from '@/lib/runtime'
 
 // 解构更新器状态与方法
 const {
@@ -169,4 +173,21 @@ onMounted(() => {
     checkForUpdate(true) // true 表示静默检查
   }
 })
+
+/**
+ * 打开 GitHub Releases 页面供用户手动下载升级。
+ */
+async function openReleases(): Promise<void> {
+  const url = 'https://github.com/ht-shaipe/vortex/releases/latest'
+  if (runtime.kind === 'desktop') {
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell')
+      await open(url)
+    } catch {
+      window.open(url, '_blank')
+    }
+  } else {
+    window.open(url, '_blank')
+  }
+}
 </script>

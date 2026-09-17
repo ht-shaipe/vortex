@@ -124,7 +124,7 @@ pub async fn list_providers(
             }));
         }
 
-        let masked_connections: Vec<_> = connections.iter().map(|c| mask_connection(c)).collect();
+        let masked_connections: Vec<_> = connections.iter().map(mask_connection).collect();
         Ok(json!({"providers": result, "connections": masked_connections}))
     })
     .await;
@@ -455,11 +455,10 @@ async fn test_connection(
             "Content-Type",
             "application/json",
         ));
-        if let Some(ref api_key) = connection.api_key {
-            if !api_key.trim().is_empty() {
+        if let Some(ref api_key) = connection.api_key
+            && !api_key.trim().is_empty() {
                 req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
             }
-        }
         req = req.insert_header(("Content-Type", "application/json"));
 
         return match tokio::time::timeout(std::time::Duration::from_secs(15), req.send_body(payload)).await {
@@ -504,8 +503,8 @@ async fn test_connection(
     let mut req = client.get(&url);
 
     // 根据提供商类型设置鉴权
-    if let Some(ref api_key) = connection.api_key {
-        if !api_key.trim().is_empty() {
+    if let Some(ref api_key) = connection.api_key
+        && !api_key.trim().is_empty() {
             if def.id == "anthropic" {
                 req = req.insert_header(("x-api-key", api_key.as_str()));
                 req = req.insert_header(("anthropic-version", "2023-06-01"));
@@ -515,7 +514,6 @@ async fn test_connection(
                 req = req.insert_header(("Authorization", format!("Bearer {}", api_key)));
             }
         }
-    }
 
     let start = std::time::Instant::now();
 
@@ -675,8 +673,8 @@ pub async fn preview_models(
     log::info!("[preview-models] provider={} url={} auth={}", body.provider, models_url, auth_kind);
     let client = crate::create_awc_client();
     let mut req = client.get(&models_url);
-    if let Some(ref key) = body.api_key {
-        if !key.trim().is_empty() {
+    if let Some(ref key) = body.api_key
+        && !key.trim().is_empty() {
             match auth_kind {
                 "x-api-key" => {
                     req = req.insert_header(("x-api-key", key.as_str()));
@@ -690,7 +688,6 @@ pub async fn preview_models(
                 }
             }
         }
-    }
 
     // 发送请求并处理响应（15 秒超时）
     match tokio::time::timeout(std::time::Duration::from_secs(15), req.send()).await {
@@ -764,16 +761,14 @@ fn extract_upstream_error(body: &str) -> Option<String> {
         .or_else(|| v.get("detail").and_then(|d| d.get("error")).cloned());
     let mut parts: Vec<String> = Vec::new();
     if let Some(err) = err {
-        if let Some(m) = err.get("message").and_then(|x| x.as_str()) {
-            if !m.is_empty() {
+        if let Some(m) = err.get("message").and_then(|x| x.as_str())
+            && !m.is_empty() {
                 parts.push(m.to_string());
             }
-        }
-        if let Some(c) = err.get("code").and_then(|x| x.as_str()) {
-            if !c.is_empty() {
+        if let Some(c) = err.get("code").and_then(|x| x.as_str())
+            && !c.is_empty() {
                 parts.push(format!("[{}]", c));
             }
-        }
     } else if let Some(d) = v.get("detail").and_then(|x| x.as_str()) {
         // detail 为纯文本的情况（如 FastAPI 默认错误）
         if !d.is_empty() {

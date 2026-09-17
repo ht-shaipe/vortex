@@ -24,13 +24,11 @@ pub fn rescue_tool_calls(content: &str) -> Option<Value> {
     }
 
     let trimmed = content.trim();
-    if trimmed.starts_with('{') && trimmed.ends_with('}') {
-        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-            if parsed.get("name").is_some() && (parsed.get("arguments").is_some() || parsed.get("parameters").is_some()) {
+    if trimmed.starts_with('{') && trimmed.ends_with('}')
+        && let Ok(parsed) = serde_json::from_str::<Value>(trimmed)
+            && parsed.get("name").is_some() && (parsed.get("arguments").is_some() || parsed.get("parameters").is_some()) {
                 return convert_to_tool_calls(&parsed);
             }
-        }
-    }
 
     None
 }
@@ -82,11 +80,10 @@ pub fn rescue_from_response(body: &mut Value) -> bool {
 
         if let Some(tool_calls) = rescue_tool_calls(&content) {
             if let Some(existing) = message.get_mut("tool_calls") {
-                if let Some(arr) = existing.as_array_mut() {
-                    if let Some(new_arr) = tool_calls.as_array() {
+                if let Some(arr) = existing.as_array_mut()
+                    && let Some(new_arr) = tool_calls.as_array() {
                         arr.extend(new_arr.iter().cloned());
                     }
-                }
             } else {
                 message["tool_calls"] = tool_calls;
             }

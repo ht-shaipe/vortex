@@ -61,10 +61,7 @@ pub async fn create_embeddings(
     };
 
     // 查询该提供商的连接列表
-    let connections = match db_providers::list_by_provider(&conn, &provider_id, &state.encryption_key) {
-        Ok(c) => c,
-        Err(_) => vec![],
-    };
+    let connections = db_providers::list_by_provider(&conn, &provider_id, &state.encryption_key).unwrap_or_default();
 
     // 选取第一个连接
     let connection = match connections.into_iter().next() {

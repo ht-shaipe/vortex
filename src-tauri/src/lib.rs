@@ -34,8 +34,8 @@ pub struct AppState {
     pub config: config::AppConfig,
     /// AI 提供商注册表，管理已配置的提供商实例。
     pub provider_registry: providers::ProviderRegistry,
-    /// 代理引擎，处理请求的代理转发逻辑（读写锁保护，允许多读单写）。
-    pub proxy_engine: parking_lot::RwLock<proxy::engine::ProxyEngine>,
+    /// 代理引擎，处理请求的代理转发逻辑（无内部可变性，启动后只读共享）。
+    pub proxy_engine: proxy::engine::ProxyEngine,
     /// 路由弹性管理器，负责故障转移、负载均衡等路由策略。
     pub resilience_manager: routing::resilience::ResilienceManager,
     /// 内存速率限制器，滑动窗口 RPM/RPD/TPM/TPD 计数
@@ -129,7 +129,7 @@ pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> 
         db_pool,
         config: cfg,
         provider_registry,
-        proxy_engine: parking_lot::RwLock::new(proxy_engine),
+        proxy_engine,
         resilience_manager,
         rate_limiter,
         bandit_router,

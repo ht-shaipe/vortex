@@ -21,6 +21,9 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("010", include_str!("migrations/010_model_catalog.sql")),
     ("011", include_str!("migrations/011_routing_profiles.sql")),
     ("012", include_str!("migrations/012_tos_review.sql")),
+    ("013", include_str!("migrations/013_saved_tokens.sql")),
+    ("014", include_str!("migrations/014_compressed_content.sql")),
+    ("015", include_str!("migrations/015_key_permissions.sql")),
 ];
 
 /// 执行数据库迁移。
@@ -64,4 +67,47 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归防护：migrations 目录下的每个 .sql 文件都必须注册到 MIGRATIONS，
+    /// 否则老用户升级后不会执行新增的建表/加列，导致日志与统计查询失败。
+    #[test]
+    fn all_migration_files_are_registered() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/db/migrations");
+        let mut files: Vec<String> = std::fs::read_dir(&dir)
+            .expect("读取 migrations 目录失败")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".sql"))
+            .collect();
+        files.sort();
+
+        let registered: Vec<&str> = MIGRATIONS.iter().map(|(v, _)| *v).collect();
+        for file in &files {
+            // 文件名约定：{版本号}_{名称}.sql，如 013_saved_tokens.sql → 版本号 013
+            let stem = file.trim_end_matches(".sql");
+            let version = stem.split('_').next().unwrap_or(stem);
+            assert!(
+                registered.contains(&version),
+                "迁移文件 {file} 未注册到 MIGRATIONS，老用户升级后将缺少对应 schema"
+            );
+        }
+        assert_eq!(files.len(), registered.len(), "MIGRATIONS 中存在指向不存在文件的注册项");
+    }
+
+    /// 迁移幂等性：对同一个内存库重复执行不报错、版本记录不重复。
+    #[test]
+    fn run_migrations_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        run_migrations(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM _vortex_migrations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count as usize, MIGRATIONS.len());
+    }
 }

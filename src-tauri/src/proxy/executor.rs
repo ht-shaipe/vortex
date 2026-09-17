@@ -332,13 +332,13 @@ impl ProviderExecutor for AnthropicExecutor {
         if let Some(tools) = request
             .messages
             .get("tools")
-            .and_then(|t| crate::translator::openai_tools_to_anthropic(t))
+            .and_then(crate::translator::openai_tools_to_anthropic)
         {
             body["tools"] = tools;
             if let Some(tc) = request
                 .messages
                 .get("tool_choice")
-                .and_then(|t| crate::translator::openai_tool_choice_to_anthropic(t))
+                .and_then(crate::translator::openai_tool_choice_to_anthropic)
             {
                 body["tool_choice"] = tc;
             }
@@ -418,8 +418,8 @@ impl ProviderExecutor for GeminiExecutor {
         let mut contents = vec![];
 
         // 转换 OpenAI 消息为 Gemini contents 格式
-        if let Some(obj) = request.messages.as_object() {
-            if let Some(msgs) = obj.get("messages").and_then(|m| m.as_array()) {
+        if let Some(obj) = request.messages.as_object()
+            && let Some(msgs) = obj.get("messages").and_then(|m| m.as_array()) {
                 for msg in msgs {
                     let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                     let content_str = crate::translator::extract_text_content(msg.get("content"));
@@ -437,7 +437,6 @@ impl ProviderExecutor for GeminiExecutor {
                     }
                 }
             }
-        }
 
         // 构建生成配置
         let mut generation_config = json!({

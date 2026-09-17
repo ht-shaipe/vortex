@@ -112,13 +112,12 @@ fn upstream_passthrough_response(e: &AppError) -> HttpResponse {
     let status_code = actix_web::http::StatusCode::from_u16(*status)
         .unwrap_or(actix_web::http::StatusCode::BAD_GATEWAY);
     // 尝试按 JSON 原样透传
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
-        if v.is_object() {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body)
+        && v.is_object() {
             return HttpResponse::build(status_code)
                 .content_type("application/json")
                 .body(body.clone());
         }
-    }
     // 非 JSON 响应体：包装为 OpenAI 风格错误
     HttpResponse::build(status_code).json(json!({
         "error": {

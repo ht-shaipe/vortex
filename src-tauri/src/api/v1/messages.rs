@@ -54,10 +54,13 @@ pub async fn anthropic_messages(
         Err(e) => return super::anthropic_error_response(&e),
     };
 
-    // 获取代理引擎读锁，处理请求
-    let engine = state.proxy_engine.read();
+    // 引擎无内部可变性，直接借用处理请求（避免锁守卫跨 await）
     let upstream_client = crate::create_awc_client();
-    match engine.handle_request(&state, &upstream_client, request).await {
+    match state
+        .proxy_engine
+        .handle_request(&state, &upstream_client, request)
+        .await
+    {
         Ok(ProxyOutput::Response(body)) => {
             // 非流式：上游 OpenAI JSON → Anthropic Messages 响应
             HttpResponse::Ok().json(
@@ -320,8 +323,8 @@ impl OpenAiToAnthropic {
     /// - 返回值：转换后的 Anthropic SSE 事件字符串（可能为空）
     fn handle_chunk(&mut self, v: &Value) -> String {
         // 流内错误 → Anthropic error 事件
-        if let Some(err) = v.get("error") {
-            if !err.is_null() {
+        if let Some(err) = v.get("error")
+            && !err.is_null() {
                 self.errored = true;
                 let msg = err
                     .get("message")
@@ -329,7 +332,6 @@ impl OpenAiToAnthropic {
                     .unwrap_or("unknown upstream error");
                 return anthropic_error_event(&format!("上游流内错误: {}", msg));
             }
-        }
 
         // usage（stream_options include_usage 的收尾块）
         if let Some(u) = v.get("usage").and_then(|u| u.as_object()) {
@@ -359,11 +361,10 @@ impl OpenAiToAnthropic {
                 uuid::Uuid::new_v4().to_string().replace("-", "")
             );
             // 从 chunk 中更新模型名（若存在且非空）
-            if let Some(m) = v.get("model").and_then(|m| m.as_str()) {
-                if !m.is_empty() {
+            if let Some(m) = v.get("model").and_then(|m| m.as_str())
+                && !m.is_empty() {
                     self.model = m.to_string();
                 }
-            }
             out.push_str(&sse_event(
                 "message_start",
                 json!({
@@ -384,8 +385,8 @@ impl OpenAiToAnthropic {
 
         if let Some(delta) = choice.get("delta") {
             // 文本增量 → text 块
-            if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
-                if !text.is_empty() {
+            if let Some(text) = delta.get("content").and_then(|c| c.as_str())
+                && !text.is_empty() {
                     self.saw_content = true;
                     // 若当前无打开的文本块，则开启新块
                     if self.open_block.is_none() {
@@ -411,7 +412,6 @@ impl OpenAiToAnthropic {
                         }),
                     ));
                 }
-            }
 
             // 工具调用增量 → tool_use 块
             if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
@@ -420,8 +420,8 @@ impl OpenAiToAnthropic {
                     let func = tc.get("function").cloned().unwrap_or(json!({}));
 
                     // 新工具（携带 id）：开新块
-                    if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
-                        if !id.is_empty() && !self.tool_blocks.contains_key(&ti) {
+                    if let Some(id) = tc.get("id").and_then(|i| i.as_str())
+                        && !id.is_empty() && !self.tool_blocks.contains_key(&ti) {
                             // 关闭当前打开的块
                             if let Some(ob) = self.open_block.take() {
                                 out.push_str(&sse_event(
@@ -448,12 +448,11 @@ impl OpenAiToAnthropic {
                             ));
                             self.open_block = Some(idx);
                         }
-                    }
 
                     // 参数分片 → input_json_delta
-                    if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                        if !args.is_empty() {
-                            if let Some(&idx) = self.tool_blocks.get(&ti) {
+                    if let Some(args) = func.get("arguments").and_then(|a| a.as_str())
+                        && !args.is_empty()
+                            && let Some(&idx) = self.tool_blocks.get(&ti) {
                                 // 若当前打开的块不是目标块，先切换
                                 if self.open_block != Some(idx) {
                                     if let Some(ob) = self.open_block.take() {
@@ -474,8 +473,6 @@ impl OpenAiToAnthropic {
                                     }),
                                 ));
                             }
-                        }
-                    }
                 }
             }
         }

@@ -391,13 +391,12 @@ pub fn openai_messages_to_anthropic(body: &Value) -> (Option<Value>, Vec<Value>)
 
 /// 追加消息，连续同角色时合并 content
 fn push_merge(out: &mut Vec<Value>, role: &str, content: Value) {
-    if let Some(last) = out.last_mut() {
-        if last.get("role").and_then(|r| r.as_str()) == Some(role) {
+    if let Some(last) = out.last_mut()
+        && last.get("role").and_then(|r| r.as_str()) == Some(role) {
             let merged = merge_content(last.get("content"), &content);
             last["content"] = merged;
             return;
         }
-    }
     out.push(json!({"role": role, "content": content}));
 }
 

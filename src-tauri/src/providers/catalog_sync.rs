@@ -124,7 +124,7 @@ async fn save_entries(
     })
     .await
     .map_err(|e| crate::error::AppError::Internal(format!("Sync task failed: {}", e)))?
-    .map_err(|e| crate::error::AppError::Internal(e))?;
+    .map_err(crate::error::AppError::Internal)?;
 
     Ok(count)
 }

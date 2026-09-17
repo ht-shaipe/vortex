@@ -36,11 +36,14 @@ pub async fn responses(
         Err(e) => return super::openai_error_response(&e),
     };
 
-    // 获取代理引擎处理请求
-    let engine = state.proxy_engine.read();
+    // 引擎无内部可变性，直接借用处理请求（避免锁守卫跨 await）
     let upstream_client = crate::create_awc_client();
 
-    match engine.handle_request(&state, &upstream_client, request).await {
+    match state
+        .proxy_engine
+        .handle_request(&state, &upstream_client, request)
+        .await
+    {
         Ok(crate::proxy::engine::ProxyOutput::Response(body)) => {
             // 非流式：转换为 Responses API 格式
             match convert_to_responses_format(&body, &body_inner) {
@@ -403,7 +406,7 @@ fn convert_to_responses_stream(
                     }
                     Ok(Bytes::new())
                 }
-                Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+                Err(e) => Err(std::io::Error::other(e.to_string())),
             }
         }));
 
@@ -420,8 +423,8 @@ fn convert_chat_chunk_to_responses(
     let delta = choice.get("delta")?;
 
     // 检查是否有内容增量
-    if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
-        if !content.is_empty() {
+    if let Some(content) = delta.get("content").and_then(|c| c.as_str())
+        && !content.is_empty() {
             return Some(format!(
                 "event: response.output_text.delta\ndata: {}\n\n",
                 json!({
@@ -430,14 +433,13 @@ fn convert_chat_chunk_to_responses(
                 })
             ));
         }
-    }
 
     // 检查是否有工具调用增量
     if let Some(tool_calls) = delta.get("tool_calls").and_then(|t| t.as_array()) {
         for call in tool_calls {
-            if let Some(function) = call.get("function") {
-                if let Some(arguments) = function.get("arguments").and_then(|a| a.as_str()) {
-                    if !arguments.is_empty() {
+            if let Some(function) = call.get("function")
+                && let Some(arguments) = function.get("arguments").and_then(|a| a.as_str())
+                    && !arguments.is_empty() {
                         return Some(format!(
                             "event: response.function_call_arguments.delta\ndata: {}\n\n",
                             json!({
@@ -446,8 +448,6 @@ fn convert_chat_chunk_to_responses(
                             })
                         ));
                     }
-                }
-            }
         }
     }
 

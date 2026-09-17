@@ -58,15 +58,14 @@ fn extract_sites(value: &serde_json::Value) -> Vec<serde_json::Value> {
 /// - `value`：远程响应 JSON
 /// - 返回值：失败时携带 `message` 的错误
 fn check_remote_code(value: &serde_json::Value) -> Result<(), String> {
-    if let Some(code) = value.get("code").and_then(|c| c.as_i64()) {
-        if code != 0 && code != 200 {
+    if let Some(code) = value.get("code").and_then(|c| c.as_i64())
+        && code != 0 && code != 200 {
             let msg = value
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("远程接口返回业务错误");
             return Err(format!("{} (code {})", msg, code));
         }
-    }
     Ok(())
 }
 
@@ -154,11 +153,10 @@ fn site_from_remote_or_request(
             }
         });
 
-    if let Some(obj) = candidate {
-        if obj.is_object() {
+    if let Some(obj) = candidate
+        && obj.is_object() {
             return obj.clone();
         }
-    }
 
     // 远端未返回可用对象时，用请求体 + 本地生成 id 兜底，保证前端能立即展示
     json!({
@@ -189,11 +187,10 @@ fn site_from_remote_or_request(
 /// - `pool`：数据库连接池
 /// - `req`：创建站点的请求体
 fn save_local_copy(pool: &crate::db::core::DbPool, req: &CreateFreeTokenSiteRequest) {
-    if let Ok(conn) = db_core::get_conn(pool) {
-        if let Err(e) = db_free_tokens::create(&conn, req) {
+    if let Ok(conn) = db_core::get_conn(pool)
+        && let Err(e) = db_free_tokens::create(&conn, req) {
             log::warn!("[FREE-TOKENS] 本地副本写入失败(已忽略): {}", e);
         }
-    }
 }
 
 /// 辅助：把 `Option<String>` 中空字符串视为 `None`，便于远程接口识别。

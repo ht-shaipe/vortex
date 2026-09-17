@@ -3,7 +3,7 @@
 //! 提供带备份、原子替换和锁机制的安全文件写入功能。
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
@@ -11,6 +11,9 @@ use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
 /// 文件锁守卫
+///
+/// 预留：多进程并发写同一配置文件时的互斥保护，当前原子写入已覆盖主流程。
+#[allow(dead_code)]
 pub struct FileLock {
     file: File,
     path: PathBuf,
@@ -18,6 +21,7 @@ pub struct FileLock {
 
 impl FileLock {
     /// 获取文件锁
+    #[allow(dead_code)]
     pub fn acquire(path: &Path) -> Result<Self, String> {
         let lock_path = path.with_extension("lock");
 
@@ -30,6 +34,7 @@ impl FileLock {
         let file = OpenOptions::new()
             .create(true)
             .write(true)
+            .truncate(false) // 锁文件只作锁载体，不截断已有内容
             .open(&lock_path)
             .map_err(|e| format!("创建锁文件失败: {}", e))?;
 
@@ -166,11 +171,13 @@ struct BackupEntry {
 
 impl WriteTransaction {
     /// 创建新事务
-    pub fn new(backup_dir: PathBuf) -> Self {
+    ///
+    /// 接受任意可转为路径的类型（`PathBuf`/`&Path` 等），调用方无需关心所有权。
+    pub fn new<P: AsRef<Path>>(backup_dir: P) -> Self {
         Self {
             operations: Vec::new(),
             backups: Vec::new(),
-            backup_dir,
+            backup_dir: backup_dir.as_ref().to_path_buf(),
         }
     }
 
@@ -239,6 +246,9 @@ impl WriteTransaction {
 }
 
 /// 检查路径是否为符号链接
+///
+/// 预留：写入前的路径安全检查辅助函数。
+#[allow(dead_code)]
 pub fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path)
         .map(|m| m.file_type().is_symlink())
@@ -246,6 +256,9 @@ pub fn is_symlink(path: &Path) -> bool {
 }
 
 /// 检查路径是否在用户目录内（安全检查）
+///
+/// 预留：写入前的路径安全检查辅助函数。
+#[allow(dead_code)]
 pub fn is_within_user_dir(path: &Path, home: &Path) -> bool {
     // 规范化路径
     let canonical_path = match fs::canonicalize(path) {

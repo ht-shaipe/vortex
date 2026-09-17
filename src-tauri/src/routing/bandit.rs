@@ -108,7 +108,7 @@ impl BanditRouter {
     /// 自调优探索常数 C：每 50 轮根据整体成功率调整
     fn auto_tune(&self) {
         let rounds = *self.rounds.read();
-        if rounds == 0 || rounds % 50 != 0 {
+        if rounds == 0 || !rounds.is_multiple_of(50) {
             return;
         }
         let arms = self.arms.read();

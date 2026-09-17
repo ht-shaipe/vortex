@@ -19,7 +19,7 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 智能体枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -88,6 +88,9 @@ impl AgentKind {
     }
 
     /// 是否支持自动配置
+    ///
+    /// 仅在测试断言中使用（非 test 构建下标记 dead_code 抑制告警）。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn supports_auto_config(&self) -> bool {
         matches!(
             self,
@@ -223,6 +226,9 @@ pub struct RestoreResult {
 #[derive(Debug, Clone)]
 pub struct VortexGatewayConfig {
     /// 网关端口
+    ///
+    /// 预留：部分智能体需要独立的主机+端口拼接（非完整 base URL）。
+    #[allow(dead_code)]
     pub port: u16,
     /// 访问令牌
     pub token: String,
@@ -231,6 +237,9 @@ pub struct VortexGatewayConfig {
     /// OpenAI 兼容基础 URL
     pub openai_base_url: String,
     /// Anthropic 兼容基础 URL
+    ///
+    /// 预留：走 Anthropic 原生协议的智能体（如 Claude Code）后续切换用。
+    #[allow(dead_code)]
     pub anthropic_base_url: String,
 }
 
@@ -265,32 +274,35 @@ impl VortexGatewayConfig {
 /// 智能体适配器特征
 pub trait AgentAdapter: Send + Sync {
     /// 获取智能体类型
+    ///
+    /// 预留：供后续泛型遍历/日志场景使用；当前注册表以 key 定位适配器。
+    #[allow(dead_code)]
     fn kind(&self) -> AgentKind;
 
     /// 检测智能体是否已安装
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String>;
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String>;
 
     /// 生成配置预览
     fn preview(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String>;
 
     /// 应用配置
     fn apply(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<ConfigResult, String>;
 
     /// 恢复配置
     fn restore(
         &self,
-        home: &PathBuf,
+        home: &Path,
         backup_id: &str,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<RestoreResult, String>;
 }
 
@@ -377,13 +389,8 @@ impl AdapterRegistry {
         self.adapters.get(&kind).map(|a| a.as_ref())
     }
 
-    /// 获取所有适配器
-    pub fn all(&self) -> impl Iterator<Item = &dyn AgentAdapter> {
-        self.adapters.values().map(|a| a.as_ref())
-    }
-
     /// 检测所有智能体
-    pub fn detect_all(&self, home: &PathBuf) -> Vec<DetectedAgent> {
+    pub fn detect_all(&self, home: &Path) -> Vec<DetectedAgent> {
         AgentKind::ALL
             .iter()
             .filter_map(|kind| {

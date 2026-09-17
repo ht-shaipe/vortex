@@ -347,12 +347,11 @@ impl SseParser for OpenAiPassthrough {
                 }
                 if let Some(delta) = choice.get("delta") {
                     // 累计输出文本（content 与 reasoning_content 都计入）
-                    if let Some(c) = delta.get("content").and_then(|c| c.as_str()) {
-                        if !c.is_empty() {
+                    if let Some(c) = delta.get("content").and_then(|c| c.as_str())
+                        && !c.is_empty() {
                             self.saw_content = true;
                             self.content_text.push_str(c);
                         }
-                    }
                     if let Some(c) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
                         self.content_text.push_str(c);
                     }
@@ -757,7 +756,7 @@ impl GeminiToOpenai {
             buffer: String::new(),
             id: format!(
                 "chatcmpl-gemini-{}",
-                uuid::Uuid::new_v4().to_string().replace("-", "")[..8].to_string()
+                &uuid::Uuid::new_v4().to_string().replace("-", "")[..8]
             ),
             model: "gemini".to_string(),
             started: false,
@@ -812,13 +811,12 @@ impl SseParser for GeminiToOpenai {
             };
 
             // 检查流内错误
-            if let Some(err) = event.get("error") {
-                if !err.is_null() {
+            if let Some(err) = event.get("error")
+                && !err.is_null() {
                     let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or(&json_str);
                     out.push_str(&error_event(&format!("上游流内错误: {}", msg)));
                     continue;
                 }
-            }
 
             // 首个事件：发送 assistant 角色 chunk，提取模型版本
             if !self.started {
@@ -857,13 +855,12 @@ impl SseParser for GeminiToOpenai {
                     .and_then(|p| p.as_array())
                 {
                     for part in parts {
-                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                            if !text.is_empty() {
+                        if let Some(text) = part.get("text").and_then(|t| t.as_str())
+                            && !text.is_empty() {
                                 self.saw_content = true;
                                 self.content_text.push_str(text);
                                 out.push_str(&self.chunk(json!({"content": text}), None));
                             }
-                        }
                     }
                 }
 

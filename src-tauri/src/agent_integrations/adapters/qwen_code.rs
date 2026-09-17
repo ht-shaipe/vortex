@@ -91,7 +91,7 @@ impl AgentAdapter for QwenCodeAdapter {
         AgentKind::QwenCode
     }
 
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String> {
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String> {
         // 检测 qwen-code 可执行文件
         let install_path = detect::find_in_path("qwen-code");
         let installed = install_path.is_some();
@@ -132,8 +132,8 @@ impl AgentAdapter for QwenCodeAdapter {
 
     fn preview(
         &self,
-        home: &PathBuf,
-        config: &VortexGatewayConfig,
+        home: &Path,
+        _config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String> {
         let qwen_home = Self::get_qwen_home(home);
         let settings_path = qwen_home.join("settings.json");
@@ -184,9 +184,9 @@ impl AgentAdapter for QwenCodeAdapter {
 
     fn apply(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<ConfigResult, String> {
         let qwen_home = Self::get_qwen_home(home);
         let settings_path = qwen_home.join("settings.json");
@@ -197,7 +197,7 @@ impl AgentAdapter for QwenCodeAdapter {
             .map_err(|e| format!("创建 Qwen 目录失败: {}", e))?;
 
         // 创建备份管理器
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
 
         // 准备要备份的文件
         let mut files_to_backup = Vec::new();
@@ -254,7 +254,7 @@ impl AgentAdapter for QwenCodeAdapter {
             .map_err(|e| format!("序列化 JSON 失败: {}", e))?;
 
         // 使用事务写入
-        let mut tx = safe_write::WriteTransaction::new(backup_dir.clone());
+        let mut tx = safe_write::WriteTransaction::new(backup_dir);
         tx.add_write(settings_path, settings_content.into_bytes());
         tx.add_write(env_path, env_content.into_bytes());
 
@@ -271,11 +271,11 @@ impl AgentAdapter for QwenCodeAdapter {
 
     fn restore(
         &self,
-        home: &PathBuf,
+        _home: &Path,
         backup_id: &str,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<RestoreResult, String> {
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
         let manifest = backup_manager.load_manifest(backup_id)?;
 
         if !backup_manager.verify_backup(backup_id)? {

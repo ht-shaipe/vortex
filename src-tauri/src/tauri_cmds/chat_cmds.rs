@@ -77,6 +77,8 @@ fn take_cancelled(request_id: &str) -> bool {
 /// - `stream`：是否流式（默认 true）
 /// - `temperature` / `max_tokens`：可选采样参数
 #[tauri::command]
+// 参数由前端逐一传入（Tauri command 约定），数量为预期行为。
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_completions_stream(
     state: State<'_, std::sync::Arc<AppState>>,
     on_event: Channel<ChatStreamEvent>,
@@ -88,8 +90,7 @@ pub async fn chat_completions_stream(
     max_tokens: Option<i64>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    // 把引擎克隆出读锁（守卫非 Send，不能跨 await 持有）
-    let engine = app_state.proxy_engine.read().clone();
+    let engine = app_state.proxy_engine.clone();
 
     // ProxyRequest.messages 约定携带完整 OpenAI 请求体对象（内含 messages 数组），
     // executor 在其上注入 model/stream 等字段。兼容两种传参：

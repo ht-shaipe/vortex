@@ -2,7 +2,7 @@
 //!
 //! 用于暂不支持自动配置的智能体，只提供检测功能。
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::agent_integrations::{
     AgentAdapter, AgentKind, ConfigPreview, ConfigResult, DetectedAgent,
@@ -23,15 +23,15 @@ impl DetectOnlyAdapter {
     }
 
     /// GitHub Copilot 特殊检测：检查 VS Code / Cursor 扩展目录
-    fn detect_copilot(&self, home: &PathBuf) -> DetectedAgent {
+    fn detect_copilot(&self, home: &Path) -> DetectedAgent {
         let extension_dirs = [
             home.join(".vscode/extensions"),
             home.join(".cursor/extensions"),
         ];
         let mut found_path = None;
         for dir in &extension_dirs {
-            if dir.exists() {
-                if let Ok(entries) = std::fs::read_dir(dir) {
+            if dir.exists()
+                && let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().to_string();
                         if name.starts_with("github.copilot") {
@@ -40,7 +40,6 @@ impl DetectOnlyAdapter {
                         }
                     }
                 }
-            }
             if found_path.is_some() {
                 break;
             }
@@ -69,7 +68,7 @@ impl AgentAdapter for DetectOnlyAdapter {
         self.kind
     }
 
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String> {
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String> {
         // 根据智能体类型确定可执行文件名
         let exe_name = match self.kind {
             AgentKind::GeminiCli => "gemini",
@@ -118,7 +117,7 @@ impl AgentAdapter for DetectOnlyAdapter {
 
     fn preview(
         &self,
-        _home: &PathBuf,
+        _home: &Path,
         _config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String> {
         Err(format!(
@@ -130,9 +129,9 @@ impl AgentAdapter for DetectOnlyAdapter {
 
     fn apply(
         &self,
-        _home: &PathBuf,
+        _home: &Path,
         _config: &VortexGatewayConfig,
-        _backup_dir: &PathBuf,
+        _backup_dir: &Path,
     ) -> Result<ConfigResult, String> {
         Err(format!(
             "{} 暂不支持自动配置: {}",
@@ -143,9 +142,9 @@ impl AgentAdapter for DetectOnlyAdapter {
 
     fn restore(
         &self,
-        _home: &PathBuf,
+        _home: &Path,
         _backup_id: &str,
-        _backup_dir: &PathBuf,
+        _backup_dir: &Path,
     ) -> Result<RestoreResult, String> {
         Err(format!(
             "{} 暂不支持自动配置: {}",

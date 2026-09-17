@@ -41,21 +41,19 @@ impl CodexAdapter {
             .map_err(|e| format!("解析 TOML 失败: {}", e))?;
 
         // 检查是否有 [provider.vortex] 或 [provider.custom.vortex]
-        if let Some(provider) = doc.get("provider") {
-            if let Some(provider_table) = provider.as_table() {
+        if let Some(provider) = doc.get("provider")
+            && let Some(provider_table) = provider.as_table() {
                 // 检查直接子项
                 if provider_table.contains_key("vortex") {
                     return Ok(true);
                 }
 
                 // 检查 custom 子表
-                if let Some(custom) = provider_table.get("custom").and_then(|c| c.as_table()) {
-                    if custom.contains_key("vortex") {
+                if let Some(custom) = provider_table.get("custom").and_then(|c| c.as_table())
+                    && custom.contains_key("vortex") {
                         return Ok(true);
                     }
-                }
             }
-        }
 
         Ok(false)
     }
@@ -66,7 +64,7 @@ impl AgentAdapter for CodexAdapter {
         AgentKind::Codex
     }
 
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String> {
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String> {
         // 检测 codex 可执行文件
         let install_path = detect::find_in_path("codex");
         let installed = install_path.is_some();
@@ -107,8 +105,8 @@ impl AgentAdapter for CodexAdapter {
 
     fn preview(
         &self,
-        home: &PathBuf,
-        config: &VortexGatewayConfig,
+        home: &Path,
+        _config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String> {
         let codex_home = Self::get_codex_home(home);
         let config_path = codex_home.join("config.toml");
@@ -143,9 +141,9 @@ impl AgentAdapter for CodexAdapter {
 
     fn apply(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<ConfigResult, String> {
         let codex_home = Self::get_codex_home(home);
         let config_path = codex_home.join("config.toml");
@@ -155,7 +153,7 @@ impl AgentAdapter for CodexAdapter {
             .map_err(|e| format!("创建 Codex 目录失败: {}", e))?;
 
         // 创建备份管理器
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
 
         // 准备要备份的文件
         let mut files_to_backup = Vec::new();
@@ -206,11 +204,10 @@ impl AgentAdapter for CodexAdapter {
         custom["vortex"] = Item::Table(vortex_table);
 
         // 设置默认模型（如果未设置）
-        if let Some(first_model) = config.models.first() {
-            if provider.get("model").is_none() {
+        if let Some(first_model) = config.models.first()
+            && provider.get("model").is_none() {
                 provider["model"] = value(first_model.id.as_str());
             }
-        }
 
         // 写入配置文件
         let new_content = doc.to_string();
@@ -228,11 +225,11 @@ impl AgentAdapter for CodexAdapter {
 
     fn restore(
         &self,
-        home: &PathBuf,
+        _home: &Path,
         backup_id: &str,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<RestoreResult, String> {
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
         let manifest = backup_manager.load_manifest(backup_id)?;
 
         if !backup_manager.verify_backup(backup_id)? {

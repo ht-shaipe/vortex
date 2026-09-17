@@ -25,10 +25,8 @@ pub async fn latency_stats(
         );
         let mut stmt = conn.prepare(&lat_query).map_err(|e| e.to_string())?;
         let lat_iter = stmt.query_map([], |row| row.get::<_, f64>(0)).map_err(|e| e.to_string())?;
-        for lat in lat_iter {
-            if let Ok(v) = lat {
-                latencies.push(v);
-            }
+        for v in lat_iter.flatten() {
+            latencies.push(v);
         }
 
         let mut ttfts: Vec<f64> = Vec::new();
@@ -38,10 +36,8 @@ pub async fn latency_stats(
         );
         let mut stmt2 = conn.prepare(&ttft_query).map_err(|e| e.to_string())?;
         let ttft_iter = stmt2.query_map([], |row| row.get::<_, f64>(0)).map_err(|e| e.to_string())?;
-        for ttft in ttft_iter {
-            if let Ok(v) = ttft {
-                ttfts.push(v);
-            }
+        for v in ttft_iter.flatten() {
+            ttfts.push(v);
         }
 
         let lat_stats = compute_stats(&latencies);

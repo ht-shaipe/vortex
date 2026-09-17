@@ -44,11 +44,18 @@ pub struct BackupManager {
 
 impl BackupManager {
     /// 创建新的备份管理器
-    pub fn new(backup_dir: PathBuf) -> Self {
-        Self { backup_dir }
+    ///
+    /// 接受任意可转为路径的类型（`PathBuf`/`&Path` 等），调用方无需关心所有权。
+    pub fn new<P: AsRef<Path>>(backup_dir: P) -> Self {
+        Self {
+            backup_dir: backup_dir.as_ref().to_path_buf(),
+        }
     }
 
     /// 获取备份目录
+    ///
+    /// 预留：备份管理 UI 展示备份位置用。
+    #[allow(dead_code)]
     pub fn backup_dir(&self) -> &Path {
         &self.backup_dir
     }
@@ -176,15 +183,14 @@ impl BackupManager {
             let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
             let path = entry.path();
 
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(manifest) = self.load_manifest(
+            if path.extension().and_then(|e| e.to_str()) == Some("json")
+                && let Ok(manifest) = self.load_manifest(
                     path.file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or(""),
                 ) {
                     manifests.push(manifest);
                 }
-            }
         }
 
         // 按创建时间倒序排列
@@ -194,6 +200,9 @@ impl BackupManager {
     }
 
     /// 删除备份
+    ///
+    /// 预留：备份管理 UI 删除操作用；cleanup_old_backups 内部也依赖。
+    #[allow(dead_code)]
     pub fn delete_backup(&self, backup_id: &str) -> Result<(), String> {
         let manifest = self.load_manifest(backup_id)?;
 
@@ -237,6 +246,9 @@ impl BackupManager {
     }
 
     /// 获取智能体的最新备份
+    ///
+    /// 预留：配置状态页展示最近备份用。
+    #[allow(dead_code)]
     pub fn get_latest_backup(&self, agent: AgentKind) -> Result<Option<BackupManifest>, String> {
         let backups = self.list_backups()?;
 
@@ -246,6 +258,9 @@ impl BackupManager {
     }
 
     /// 清理旧备份（保留每个智能体最近的 N 个）
+    ///
+    /// 预留：备份保留策略（如启动时/定时清理）接入用。
+    #[allow(dead_code)]
     pub fn cleanup_old_backups(&self, keep_count: usize) -> Result<usize, String> {
         let backups = self.list_backups()?;
 
@@ -274,6 +289,9 @@ impl BackupManager {
 }
 
 /// 加密备份内容（用于敏感数据）
+///
+/// 预留：备份文件静态加密（当前备份存 ~/.vortex，权限 0600）。
+#[allow(dead_code)]
 pub fn encrypt_backup_content(content: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     use crate::db::encryption;
     let plaintext = String::from_utf8_lossy(content).to_string();
@@ -283,6 +301,9 @@ pub fn encrypt_backup_content(content: &[u8], key: &[u8]) -> Result<Vec<u8>, Str
 }
 
 /// 解密备份内容
+///
+/// 预留：与 encrypt_backup_content 配套使用。
+#[allow(dead_code)]
 pub fn decrypt_backup_content(content: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
     use crate::db::encryption;
     let encrypted = String::from_utf8_lossy(content).to_string();
@@ -299,7 +320,7 @@ mod tests {
     #[test]
     fn test_backup_manager() {
         let temp_dir = tempdir().unwrap();
-        let manager = BackupManager::new(temp_dir.path().to_path_buf());
+        let manager = BackupManager::new(temp_dir.path());
 
         // 应该可以列出空备份
         let backups = manager.list_backups().unwrap();

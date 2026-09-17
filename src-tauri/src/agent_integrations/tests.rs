@@ -2,12 +2,10 @@
 //!
 //! 测试智能体检测、配置合并、备份恢复等功能。
 
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 use crate::agent_integrations::{
-    AdapterRegistry, AgentKind, DetectedAgent, VortexConfigStatus, VortexGatewayConfig,
-    ModelInfo,
+    AdapterRegistry, AgentKind, VortexGatewayConfig, ModelInfo,
 };
 
 /// 创建测试用的网关配置

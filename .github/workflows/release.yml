@@ -171,7 +171,7 @@ jobs:
           gh release upload "$TAG" "${FILES[@]}" --clobber --repo "${{ github.repository }}"
           echo "✓ Upload complete"
 
-      - name: Generate & upload latest.json (updater manifest)
+      - name: Upload updater manifest fragment
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -182,7 +182,6 @@ jobs:
           REPO="${{ github.repository }}"
           BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
 
-          # 1. target → Tauri updater platform key
           case "$TARGET" in
             x86_64-unknown-linux-gnu)   PLATFORM_KEY="linux-x86_64" ;;
             aarch64-apple-darwin)       PLATFORM_KEY="darwin-aarch64" ;;
@@ -191,7 +190,6 @@ jobs:
             *) echo "::error::Unknown target $TARGET"; exit 1 ;;
           esac
 
-          # 2. 找到 .sig 文件（Tauri CLI 在 createUpdaterArtifacts=true 时生成）
           SIG_FILE=$(find "$BUNDLE_DIR" -name "*.sig" -type f | head -1)
           if [ -z "$SIG_FILE" ]; then
             echo "::error::No .sig file found in $BUNDLE_DIR"
@@ -200,51 +198,30 @@ jobs:
           fi
           SIGNATURE=$(cat "$SIG_FILE")
 
-          # 3. 对应的下载 URL（.tar.gz 去掉 .sig 后缀）
-          SIG_BASENAME=$(basename "$SIG_FILE")            # e.g. Vortex.app.tar.gz.sig
-          ARCHIVE_NAME="${SIG_BASENAME%.sig}"              # e.g. Vortex.app.tar.gz
+          SIG_BASENAME=$(basename "$SIG_FILE")
+          ARCHIVE_NAME="${SIG_BASENAME%.sig}"
           DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
 
           echo "Platform:  $PLATFORM_KEY"
           echo "Signature: ${SIGNATURE:0:20}..."
           echo "URL:       $DOWNLOAD_URL"
 
-          # 4. 下载已有 latest.json（如果其他平台已上传过），合并当前平台
-          EXISTING="{}"
-          if gh release view "$TAG" --repo "$REPO" | grep -q "latest.json"; then
-            TMP=$(mktemp)
-            gh release download "$TAG" --repo "$REPO" --pattern "latest.json" --output "$TMP" 2>/dev/null && \
-              EXISTING=$(cat "$TMP") || true
-            rm -f "$TMP"
-          fi
-
-          # 5. 用 Node.js 合并并写入（export 使 Node.js 能读取）
-          export PLATFORM_KEY SIGNATURE DOWNLOAD_URL VERSION EXISTING
+          export PLATFORM_KEY SIGNATURE DOWNLOAD_URL VERSION
           node -e "
-            const existing = JSON.parse(process.env.EXISTING || '{}');
-            const entry = {
-              signature: process.env.SIGNATURE,
-              url: process.env.DOWNLOAD_URL
+            const fragment = {
+              version: process.env.VERSION,
+              platforms: {
+                [process.env.PLATFORM_KEY]: {
+                  signature: process.env.SIGNATURE,
+                  url: process.env.DOWNLOAD_URL
+                }
+              }
             };
-            if (!existing.platforms) existing.platforms = {};
-            existing.platforms[process.env.PLATFORM_KEY] = entry;
-            existing.version    = process.env.VERSION;
-            existing.pub_date   = new Date().toISOString();
-            existing.notes      = existing.notes || 'See the assets below to download and install this version.';
-            console.log(JSON.stringify(existing, null, 2));
-          " > latest.json
+            console.log(JSON.stringify(fragment, null, 2));
+          " > "fragment-${PLATFORM_KEY}.json"
 
-          echo "--- latest.json ---"
-          cat latest.json
-          echo "--------------------"
-
-          # 6. 上传（带重试，处理多平台并发写入冲突）
-          for i in 1 2 3; do
-            gh release upload "$TAG" latest.json --clobber --repo "$REPO" && break
-            echo "Upload attempt $i failed, retrying in 5s..."
-            sleep 5
-          done
-          echo "✓ latest.json uploaded for $PLATFORM_KEY"
+          gh release upload "$TAG" "fragment-${PLATFORM_KEY}.json" --clobber --repo "$REPO"
+          echo "✓ Fragment uploaded for $PLATFORM_KEY"
 
       - name: Inject usage notes into macOS DMG
         if: runner.os == 'macOS'
@@ -267,3 +244,81 @@ jobs:
           rm -f "$SHADOW"
           gh release upload "v${{ steps.ver.outputs.version }}" "$DMG" --clobber --repo "${{ github.repository }}"
           echo "✓ 使用说明已注入 DMG 并覆盖上传"
+  merge-manifest:
+    needs: publish
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Determine version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          VERSION=$(printf '%s' "$VERSION" | sed 's/^v//' | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Merge fragments into latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+          REPO="${{ github.repository }}"
+
+          mkdir -p fragments
+          gh release download "$TAG" --repo "$REPO" --pattern "fragment-*.json" --dir fragments 2>/dev/null || true
+
+          FRAGMENT_COUNT=$(find fragments -name "fragment-*.json" | wc -l)
+          echo "Found $FRAGMENT_COUNT fragment(s)"
+          if [ "$FRAGMENT_COUNT" -eq 0 ]; then
+            echo "::error::No fragment files found"
+            exit 1
+          fi
+
+          export VERSION
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const version = process.env.VERSION;
+            const platforms = {};
+            for (const f of fs.readdirSync('fragments')) {
+              if (!f.startsWith('fragment-')) continue;
+              const frag = JSON.parse(fs.readFileSync(path.join('fragments', f)));
+              Object.assign(platforms, frag.platforms);
+              console.log('  merged:', f);
+            }
+            const manifest = {
+              version,
+              pub_date: new Date().toISOString(),
+              notes: 'See the assets below to download and install this version.',
+              platforms
+            };
+            fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2));
+            console.log('--- latest.json ---');
+            console.log(JSON.stringify(manifest, null, 2));
+          "
+
+          gh release upload "$TAG" latest.json --clobber --repo "$REPO"
+          echo "✓ latest.json uploaded"
+
+          # Clean up fragment files from release
+          for f in fragments/fragment-*.json; do
+            [ -f "$f" ] || continue
+            BASENAME=$(basename "$f")
+            ASSET_ID=$(gh api repos/${REPO}/releases --jq ".[] | select(.tag_name==\"$TAG\") | .assets[] | select(.name==\"$BASENAME\") | .id" 2>/dev/null)
+            [ -n "$ASSET_ID" ] && gh api --method DELETE repos/${REPO}/releases/assets/$ASSET_ID 2>/dev/null || true
+          done
+          echo "✓ Fragment files cleaned up"

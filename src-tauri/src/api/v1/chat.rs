@@ -32,10 +32,13 @@ pub async fn chat_completions(
         Err(e) => return super::openai_error_response(&e),
     };
 
-    // 获取代理引擎读锁，处理请求
-    let engine = state.proxy_engine.read();
+    // 引擎无内部可变性，直接借用处理请求（避免锁守卫跨 await）
     let upstream_client = crate::create_awc_client();
-    match engine.handle_request(&state, &upstream_client, request).await {
+    match state
+        .proxy_engine
+        .handle_request(&state, &upstream_client, request)
+        .await
+    {
         // 非流式响应：包装为 JSON HTTP 响应
         Ok(crate::proxy::engine::ProxyOutput::Response(body)) => HttpResponse::Ok().json(body),
         // 流式响应：包装为 SSE HTTP 响应

@@ -26,7 +26,7 @@ pub fn list(conn: &rusqlite::Connection) -> Result<Vec<ApiKey>> {
         "SELECT {} FROM api_keys ORDER BY created_at DESC",
         SELECT_COLS
     ))?;
-    let rows = stmt.query_map([], |row| row_to_key(row))?;
+    let rows = stmt.query_map([], row_to_key)?;
     let mut result = Vec::new();
     for row in rows {
         result.push(row?);
@@ -47,7 +47,7 @@ pub fn get_by_id(conn: &rusqlite::Connection, id: &str) -> Result<Option<ApiKey>
         "SELECT {} FROM api_keys WHERE id = ?1",
         SELECT_COLS
     ))?;
-    let mut rows = stmt.query_map(params![id], |row| row_to_key(row))?;
+    let mut rows = stmt.query_map(params![id], row_to_key)?;
     match rows.next() {
         Some(row) => Ok(Some(row?)),
         None => Ok(None),
@@ -69,7 +69,7 @@ pub fn get_by_key(conn: &rusqlite::Connection, key: &str) -> Result<Option<ApiKe
         "SELECT {} FROM api_keys WHERE key = ?1 AND is_active = 1 AND is_banned = 0",
         SELECT_COLS
     ))?;
-    let mut rows = stmt.query_map(params![key], |row| row_to_key(row))?;
+    let mut rows = stmt.query_map(params![key], row_to_key)?;
     match rows.next() {
         Some(row) => Ok(Some(row?)),
         None => Ok(None),

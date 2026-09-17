@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 #[serde(rename_all = "camelCase")]
 pub struct CompressedContent {
     pub hash: String,
-    #[serde(skip_serializing)]
+    /// 原始内容：列表接口传空串，详情接口返回完整原文（前端依赖该字段展示）
     pub original_content: String,
     pub content_size: i64,
     pub saved_tokens: i64,

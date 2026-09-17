@@ -53,16 +53,14 @@ impl RateCounter {
 
     /// 检查是否允许请求通过
     fn check(&self, estimated_tokens: i64) -> bool {
-        if let Some(cap) = self.rpm_cap {
-            if self.rpm_window.len() as i64 >= cap {
+        if let Some(cap) = self.rpm_cap
+            && self.rpm_window.len() as i64 >= cap {
                 return false;
             }
-        }
-        if let Some(cap) = self.rpd_cap {
-            if self.rpd_window.len() as i64 >= cap {
+        if let Some(cap) = self.rpd_cap
+            && self.rpd_window.len() as i64 >= cap {
                 return false;
             }
-        }
         if let Some(cap) = self.tpm_cap {
             let current: i64 = self.tpm_window.iter().map(|(_, t)| t).sum();
             if current + estimated_tokens > cap {
@@ -131,6 +129,9 @@ impl RateLimiter {
     }
 
     /// 更新限额配置
+    ///
+    /// 四类限额（RPM/RPD/TPM/TPD）语义独立，逐项传递最清晰，参数数量为预期行为。
+    #[allow(clippy::too_many_arguments)]
     pub fn set_cap(
         &self,
         provider: &str,

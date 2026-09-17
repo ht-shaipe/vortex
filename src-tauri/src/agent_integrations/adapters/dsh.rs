@@ -75,7 +75,7 @@ impl AgentAdapter for DshAdapter {
         AgentKind::Dsh
     }
 
-    fn detect(&self, home: &PathBuf) -> Result<DetectedAgent, String> {
+    fn detect(&self, home: &Path) -> Result<DetectedAgent, String> {
         // 检测 dsh 可执行文件
         let install_path = detect::find_in_path("dsh");
         let installed = install_path.is_some();
@@ -116,8 +116,8 @@ impl AgentAdapter for DshAdapter {
 
     fn preview(
         &self,
-        home: &PathBuf,
-        config: &VortexGatewayConfig,
+        home: &Path,
+        _config: &VortexGatewayConfig,
     ) -> Result<ConfigPreview, String> {
         let dsh_home = Self::get_dsh_home(home);
         let settings_path = dsh_home.join("settings.yaml");
@@ -172,9 +172,9 @@ impl AgentAdapter for DshAdapter {
 
     fn apply(
         &self,
-        home: &PathBuf,
+        home: &Path,
         config: &VortexGatewayConfig,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<ConfigResult, String> {
         let dsh_home = Self::get_dsh_home(home);
         let settings_path = dsh_home.join("settings.yaml");
@@ -185,7 +185,7 @@ impl AgentAdapter for DshAdapter {
             .map_err(|e| format!("创建 DSH 目录失败: {}", e))?;
 
         // 创建备份管理器
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
 
         // 准备要备份的文件
         let mut files_to_backup = Vec::new();
@@ -222,7 +222,7 @@ impl AgentAdapter for DshAdapter {
         };
 
         // 使用事务写入
-        let mut tx = safe_write::WriteTransaction::new(backup_dir.clone());
+        let mut tx = safe_write::WriteTransaction::new(backup_dir);
         tx.add_write(settings_path, settings_content.into_bytes());
         tx.add_write(credentials_path, credentials_content.into_bytes());
 
@@ -239,11 +239,11 @@ impl AgentAdapter for DshAdapter {
 
     fn restore(
         &self,
-        home: &PathBuf,
+        _home: &Path,
         backup_id: &str,
-        backup_dir: &PathBuf,
+        backup_dir: &Path,
     ) -> Result<RestoreResult, String> {
-        let backup_manager = BackupManager::new(backup_dir.clone());
+        let backup_manager = BackupManager::new(backup_dir);
         let manifest = backup_manager.load_manifest(backup_id)?;
 
         // 验证备份完整性

@@ -4,7 +4,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 
 /// 检测可执行文件是否在 PATH 中
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
@@ -25,8 +24,8 @@ pub fn find_in_path(name: &str) -> Option<PathBuf> {
 
         // nvm 版本目录
         let nvm_dir = h.join(".nvm/versions/node");
-        if nvm_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+        if nvm_dir.exists()
+            && let Ok(entries) = std::fs::read_dir(&nvm_dir) {
                 for entry in entries.flatten() {
                     let bin_dir = entry.path().join("bin");
                     if bin_dir.exists() {
@@ -34,7 +33,6 @@ pub fn find_in_path(name: &str) -> Option<PathBuf> {
                     }
                 }
             }
-        }
     }
 
     // 合并搜索路径
@@ -119,17 +117,12 @@ fn extract_version_from_output(output: &str) -> Option<String> {
     None
 }
 
-/// 检查配置文件是否存在
-pub fn config_exists(home: &Path, relative_path: &str) -> bool {
-    home.join(relative_path).exists()
-}
-
 /// 获取用户主目录
 pub fn get_home_dir() -> Option<PathBuf> {
     std::env::var("HOME")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| {
+        .or({
             #[cfg(target_os = "windows")]
             {
                 std::env::var("USERPROFILE").ok().map(PathBuf::from)
@@ -151,23 +144,6 @@ pub fn resolve_agent_home(env_var: &str, default_relative: &str) -> Option<PathB
 
     // 回退到默认路径
     get_home_dir().map(|h| h.join(default_relative))
-}
-
-/// 带超时的版本检测
-pub fn get_version_with_timeout(path: &Path, args: &[&str], timeout_ms: u64) -> Option<String> {
-    // 使用 tokio 的超时机制在同步上下文中不可行
-    // 这里使用简单的 Command 输出，依赖操作系统的超时
-    let output = Command::new(path)
-        .args(args)
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    extract_version_from_output(&stdout)
 }
 
 #[cfg(test)]

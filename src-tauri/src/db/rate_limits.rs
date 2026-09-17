@@ -213,26 +213,22 @@ pub fn check_rate_limit(conn: &Connection, provider: &str, model: &str, connecti
         _ => return Ok(true),
     };
     let snapshot = get_usage_snapshot(conn, provider, model, connection_id)?;
-    if let Some(rpm) = cap.rpm {
-        if snapshot.current_rpm >= rpm {
+    if let Some(rpm) = cap.rpm
+        && snapshot.current_rpm >= rpm {
             return Ok(false);
         }
-    }
-    if let Some(rpd) = cap.rpd {
-        if snapshot.current_rpd >= rpd {
+    if let Some(rpd) = cap.rpd
+        && snapshot.current_rpd >= rpd {
             return Ok(false);
         }
-    }
-    if let Some(tpm) = cap.tpm {
-        if snapshot.current_tpm + estimated_tokens > tpm {
+    if let Some(tpm) = cap.tpm
+        && snapshot.current_tpm + estimated_tokens > tpm {
             return Ok(false);
         }
-    }
-    if let Some(tpd) = cap.tpd {
-        if snapshot.current_tpd + estimated_tokens > tpd {
+    if let Some(tpd) = cap.tpd
+        && snapshot.current_tpd + estimated_tokens > tpd {
             return Ok(false);
         }
-    }
     Ok(true)
 }
 

@@ -85,8 +85,8 @@ impl ProxyEngine {
                     ));
                 }
                 // 校验 API Key 的模型白名单
-                if let Some(allowed) = key_obj.allowed_models.as_array() {
-                    if !allowed.is_empty() {
+                if let Some(allowed) = key_obj.allowed_models.as_array()
+                    && !allowed.is_empty() {
                         let model_allowed = allowed.iter().any(|m| {
                             m.as_str().map(|s| request.model.starts_with(s)).unwrap_or(false)
                         });
@@ -94,7 +94,6 @@ impl ProxyEngine {
                             return Err(AppError::Unauthorized("Model not allowed for this API key".into()));
                         }
                     }
-                }
             } else {
                 return Err(AppError::Unauthorized("API key required".into()));
             }
@@ -147,8 +146,8 @@ impl ProxyEngine {
 
         // 粘性会话：若请求携带 session_id 且有有效绑定，直接使用绑定的模型
         let session_id = request.extra.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-        if let Some(ref sid) = session_id {
-            if let Some((provider, model, connection_id)) = state.sticky_session.get(sid) {
+        if let Some(ref sid) = session_id
+            && let Some((provider, model, connection_id)) = state.sticky_session.get(sid) {
                 log::info!("粘性会话 '{}' 命中：{}/{}/{:?}", sid, provider, model, connection_id);
                 if let Some(def) = state.provider_registry.get(&provider) {
                     let connection = if let Some(ref cid) = connection_id {
@@ -179,7 +178,6 @@ impl ProxyEngine {
                     }
                 }
             }
-        }
 
         // 虚拟模型别名：检查请求模型是否匹配某个别名，若匹配则按 targets 顺序故障转移
         if let Some(alias) = db_aliases::get_by_alias(&conn, &request.model)? {
@@ -285,8 +283,8 @@ impl ProxyEngine {
         }
 
         // 路由配置 profile：auto:<profile_name> 使用命名回退链
-        if let Some(profile_name) = request.model.strip_prefix("auto:") {
-            if let Some(profile) = db_routing_profiles::get_by_name(&conn, profile_name)? {
+        if let Some(profile_name) = request.model.strip_prefix("auto:")
+            && let Some(profile) = db_routing_profiles::get_by_name(&conn, profile_name)? {
                 log::info!("路由配置 '{}' 命中，共 {} 个目标", profile.name, profile.targets.len());
                 let mut last_err: Option<AppError> = None;
                 let mut last_circuit: Option<String> = None;
@@ -344,7 +342,6 @@ impl ProxyEngine {
                     AppError::Routing(format!("All targets failed for profile '{}'", profile.name))
                 });
             }
-        }
 
         // 路由解析：找到提供商定义、活跃连接与实际模型名
         let (provider_def, connection, model) =
@@ -501,11 +498,10 @@ impl ProxyEngine {
                 if pconn.provider != last_provider || model != &last_model {
                     continue;
                 }
-                if let Some(ref cid) = last_conn_id {
-                    if &pconn.id != cid {
+                if let Some(ref cid) = last_conn_id
+                    && &pconn.id != cid {
                         continue;
                     }
-                }
                 let Some(provider_def) = state.provider_registry.get(&pconn.provider) else {
                     break;
                 };
@@ -666,6 +662,8 @@ impl ProxyEngine {
     ///
     /// # 返回
     /// 成功时返回 `ProxyOutput`，失败时返回 `AppError`
+    // 各参数承担独立职责（状态/客户端/连接/请求/路由目标），拆分结构体收益有限。
+    #[allow(clippy::too_many_arguments)]
     async fn handle_single_with_retry(
         &self,
         state: &Arc<AppState>,
