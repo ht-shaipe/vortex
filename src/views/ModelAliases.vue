@@ -30,20 +30,10 @@
           <el-icon :size="14" class="text-ink-4"><Guide /></el-icon>
           <span class="text-13px font-medium text-ink-2">auto 路由策略</span>
         </div>
-        <div class="flex items-center gap-4px">
-          <button
-            type="button"
-            class="strategy-btn py-4px px-12px rounded-md text-12px transition-colors border border-solid"
-            :class="autoRouteStrategy === 'model-first' ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-ink-3 border-line'"
-            @click="setAutoRouteStrategy('model-first')"
-          >模型优先</button>
-          <button
-            type="button"
-            class="strategy-btn py-4px px-12px rounded-md text-12px transition-colors border border-solid"
-            :class="autoRouteStrategy === 'provider-first' ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-ink-3 border-line'"
-            @click="setAutoRouteStrategy('provider-first')"
-          >提供方优先</button>
-        </div>
+        <el-radio-group :model-value="autoRouteStrategy" @change="(v: string) => setAutoRouteStrategy(v as 'model-first' | 'provider-first')">
+          <el-radio-button value="model-first">模型优先</el-radio-button>
+          <el-radio-button value="provider-first">提供方优先</el-radio-button>
+        </el-radio-group>
         <span class="text-12px text-ink-4 leading-[1.6]">
           {{ autoRouteStrategy === 'model-first' ? '按模型映射中的目标顺序依次尝试，同模型内按连接优先级选择提供方' : '按连接优先级遍历提供方，每个提供方内依次尝试其模型' }}
         </span>
@@ -60,7 +50,8 @@
       <p class="text-12px text-ink-4 mt-4px">创建虚拟模型名后，客户端用该名称请求，网关按优先级依次尝试映射的真实模型</p>
     </div>
 
-    <div v-else class="aliases-list flex flex-col gap-12px" @dragstart.prevent>
+    <!-- 模型优先视图：按虚拟模型名分组，目标列表默认折叠 -->
+    <div v-else-if="autoRouteStrategy === 'model-first'" class="aliases-list flex flex-col gap-12px" @dragstart.prevent>
       <div v-for="(a, idx) in aliases" :key="a.id" class="card py-16px px-20px"
         :class="{
           'card-dragging': cardDrag && cardDrag.started && cardDrag.fromIdx === idx,
@@ -68,20 +59,23 @@
           'drop-after': cardDropIdx !== null && cardDropIdx === aliases.length && idx === aliases.length - 1,
         }">
         <div class="alias-head flex items-center justify-between">
-          <div class="flex items-center gap-10px">
-            <span class="cursor-grab text-ink-4 hover:text-ink-2 shrink-0 touch-action-none select-none" title="按住拖拽调整列表顺序"
-              @pointerdown="onCardHandleDown($event, idx)"
-              @pointermove="onCardHandleMove($event)"
-              @pointerup="onCardHandleUp($event)"
-              @pointercancel="onCardHandleCancel">
-              <el-icon :size="14"><Rank /></el-icon>
-            </span>
+          <div class="flex items-center gap-10px cursor-pointer select-none" @click="toggleAliasFold(a.id)">
+            <el-icon :size="12" class="text-ink-4 shrink-0 transition-transform">
+              <CaretBottom v-if="aliasExpanded.has(a.id)" /><CaretRight v-else />
+            </el-icon>
             <span class="alias-name font-mono text-15px font-semibold">{{ a.alias }}</span>
             <span class="pill" :class="a.is_active ? 'ok' : 'neutral'">{{ a.is_active ? '启用' : '停用' }}</span>
             <span class="pill" :class="a.source === 'auto' ? 'info' : 'neutral'">{{ a.source === 'auto' ? '自动' : '手动' }}</span>
             <span class="text-12px text-ink-4">{{ a.targets.length }} 个目标</span>
           </div>
           <div class="flex items-center gap-8px">
+            <span class="cursor-move text-ink-4 hover:text-ink-2 shrink-0 touch-action-none select-none" title="按住拖拽调整列表顺序"
+              @pointerdown="onCardHandleDown($event, idx)"
+              @pointermove="onCardHandleMove($event)"
+              @pointerup="onCardHandleUp($event)"
+              @pointercancel="onCardHandleCancel">
+              <el-icon :size="14"><Rank /></el-icon>
+            </span>
             <button class="btn sm ghost" :disabled="idx === 0" @click="moveAlias(idx, -1)" title="上移（列表顺序）">
               <el-icon :size="13"><ArrowUp /></el-icon>
             </button>
@@ -97,9 +91,9 @@
             </button>
           </div>
         </div>
-        <div class="alias-targets mt-12px">
+        <div v-show="aliasExpanded.has(a.id)" class="alias-targets mt-12px">
           <div v-for="(t, i) in a.targets" :key="i"
-            class="target-row flex items-center gap-8px py-4px text-13px cursor-grab"
+            class="target-row flex items-center gap-8px py-4px text-13px cursor-move"
             :data-alias="a.id"
             :class="{
               'row-dragging': rowDrag && rowDrag.started && rowDrag.aliasId === a.id && rowDrag.fromIdx === i,
@@ -123,6 +117,54 @@
                 <el-icon :size="12"><ArrowDown /></el-icon>
               </button>
             </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提供方优先视图：按提供方分组，模型列表默认折叠 -->
+    <div v-else class="provider-list flex flex-col gap-12px" @dragstart.prevent>
+      <div v-for="(g, idx) in providerGroups" :key="g.key" class="card py-16px px-20px"
+        :class="{
+          'card-dragging': providerDrag && providerDrag.started && providerDrag.fromIdx === idx,
+          'drop-before': providerDropIdx !== null && providerDropIdx === idx,
+          'drop-after': providerDropIdx !== null && providerDropIdx === providerGroups.length && idx === providerGroups.length - 1,
+        }">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-10px cursor-pointer select-none" @click="toggleProviderFold(g.key)">
+            <el-icon :size="12" class="text-ink-4 shrink-0 transition-transform">
+              <CaretBottom v-if="providerExpanded.has(g.key)" /><CaretRight v-else />
+            </el-icon>
+            <ProviderLogo :name="g.provider" :size="18" class="shrink-0" />
+            <span class="font-mono text-15px font-semibold">{{ g.name }}</span>
+            <span class="pill" :class="g.isActive ? 'ok' : 'neutral'">{{ g.isActive ? '启用' : '停用' }}</span>
+            <span class="text-12px text-ink-4">{{ g.entries.length }} 个模型</span>
+          </div>
+          <div class="flex items-center gap-8px">
+            <span class="cursor-move text-ink-4 hover:text-ink-2 shrink-0 touch-action-none select-none" title="按住拖拽调整优先级"
+              @pointerdown="onProviderHandleDown($event, idx)"
+              @pointermove="onProviderHandleMove($event)"
+              @pointerup="onProviderHandleUp($event)"
+              @pointercancel="onProviderHandleCancel">
+              <el-icon :size="14"><Rank /></el-icon>
+            </span>
+            <button class="btn sm ghost" :disabled="idx === 0" @click="moveProviderGroup(idx, -1)" title="上移（提高优先级）">
+              <el-icon :size="13"><ArrowUp /></el-icon>
+            </button>
+            <button class="btn sm ghost" :disabled="idx === providerGroups.length - 1" @click="moveProviderGroup(idx, 1)" title="下移（降低优先级）">
+              <el-icon :size="13"><ArrowDown /></el-icon>
+            </button>
+            <el-switch :model-value="g.isActive" @change="() => toggleProviderActive(g)" />
+          </div>
+        </div>
+        <div v-show="providerExpanded.has(g.key)" class="mt-12px">
+          <div v-for="(e, i) in g.entries" :key="i" class="flex items-center gap-8px py-4px text-13px">
+            <span class="pill" :class="e.is_active ? 'ok' : 'neutral'">{{ e.is_active ? '启用' : '停用' }}</span>
+            <span class="pill" :class="e.source === 'auto' ? 'info' : 'neutral'">{{ e.source === 'auto' ? '自动' : '手动' }}</span>
+            <span class="font-mono text-13px text-ink-2">{{ e.alias }}</span>
+            <span class="text-ink-4">→</span>
+            <span class="font-mono text-13px text-ink-2">{{ e.model }}</span>
+            <span v-if="e.connection_id" class="text-11px text-ink-4">· {{ connNameMap[e.connection_id] ?? e.connection_id.slice(0, 8) }}</span>
           </div>
         </div>
       </div>
@@ -299,13 +341,13 @@
  * 模型映射页面。
  * 管理虚拟模型别名，配置到真实模型的映射关系与故障转移优先级。
  */
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown, ArrowRight, InfoFilled, MagicStick, Guide, Rank } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Loading, Connection, ArrowUp, ArrowDown, ArrowRight, InfoFilled, MagicStick, Guide, Rank, CaretBottom, CaretRight } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import { listAliases, createAlias, updateAlias, deleteAlias, autoGenerate, reorderAliases, type ModelAlias, type ModelAliasTarget } from '@/api/modelAliases'
-import { listProviders } from '@/api/providers'
+import { listProviders, updateProvider, type ProviderConnection } from '@/api/providers'
 import { routingProfilesApi, type RoutingProfile, type ProfileTarget } from '@/api/routingProfiles'
 import { getSettings, updateSettings } from '@/api/settings'
 
@@ -333,9 +375,59 @@ const dialogOpen = ref(false)
 const editing = ref<string | null>(null)
 const modelOptions = ref<ModelOption[]>([])
 const connNameMap = ref<Record<string, string>>({})
+const connections = ref<ProviderConnection[]>([])
 const autoGenerating = ref(false)
 const tab = ref<'aliases' | 'profiles'>('aliases')
 const autoRouteStrategy = ref<'model-first' | 'provider-first'>('provider-first')
+
+// ── 折叠/展开状态（默认全部折叠）──
+const aliasExpanded = ref(new Set<string>())
+const providerExpanded = ref(new Set<string>())
+
+function toggleAliasFold(id: string) {
+  const s = new Set(aliasExpanded.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  aliasExpanded.value = s
+}
+function toggleProviderFold(provider: string) {
+  const s = new Set(providerExpanded.value)
+  s.has(provider) ? s.delete(provider) : s.add(provider)
+  providerExpanded.value = s
+}
+
+// ── 提供方优先视图：按提供方分组 ──
+interface ProviderGroupEntry {
+  aliasId: string
+  alias: string
+  model: string
+  connection_id?: string
+  is_active: boolean
+  source: string
+}
+const providerGroups = computed(() => {
+  const map = new Map<string, { name: string; provider: string; connectionId?: string; priority: number; isActive: boolean; entries: ProviderGroupEntry[] }>()
+  for (const a of aliases.value) {
+    for (const t of a.targets) {
+      const key = t.connection_id || t.provider
+      const conn = t.connection_id ? connections.value.find((c) => c.id === t.connection_id) : undefined
+      const name = conn?.name ?? t.provider
+      const priority = conn?.priority ?? 0
+      const isActive = conn?.isActive ?? true
+      if (!map.has(key)) map.set(key, { name, provider: t.provider, connectionId: t.connection_id, priority, isActive, entries: [] })
+      map.get(key)!.entries.push({
+        aliasId: a.id,
+        alias: a.alias,
+        model: t.model,
+        connection_id: t.connection_id,
+        is_active: a.is_active,
+        source: a.source,
+      })
+    }
+  }
+  return [...map.entries()]
+    .map(([key, val]) => ({ key, ...val }))
+    .sort((a, b) => b.priority - a.priority)
+})
 
 
 // ── 排序：↑↓ 按钮 + pointer 拖拽（不依赖 HTML5 DnD：WKWebView 对其支持不完整）──
@@ -473,7 +565,7 @@ function onRowPointerMove(e: PointerEvent, a: ModelAlias) {
     if (Math.abs(e.clientY - st.startY) < DRAG_THRESHOLD) return
     st.started = true
     document.body.style.userSelect = 'none'
-    document.body.style.cursor = 'grabbing'
+    document.body.style.cursor = 'move'
     const rows = rowElsOf(a.id)
     st.ghost = makeRowGhost(rows[st.fromIdx] ?? (e.currentTarget as HTMLElement))
   }
@@ -534,7 +626,7 @@ function onCardHandleMove(e: PointerEvent) {
     if (Math.abs(e.clientY - st.startY) < DRAG_THRESHOLD) return
     st.started = true
     document.body.style.userSelect = 'none'
-    document.body.style.cursor = 'grabbing'
+    document.body.style.cursor = 'move'
     const cards = cardEls()
     st.ghost = makeBarGhost(cards[st.fromIdx]?.querySelector('.alias-name')?.textContent ?? '移动映射')
   }
@@ -567,6 +659,106 @@ function cleanupCardDrag() {
 
 function onCardHandleCancel() {
   cleanupCardDrag()
+}
+
+// ── 提供方优先视图：连接优先级操作 ──
+
+/** 切换连接启停。 */
+async function toggleProviderActive(g: { connectionId?: string; isActive: boolean }) {
+  if (!g.connectionId) return
+  try {
+    await updateProvider(g.connectionId, { isActive: !g.isActive })
+    await loadModelOptions()
+  } catch {
+    ElMessage.error('切换失败')
+  }
+}
+
+/** 持久化提供方顺序：from → to。 */
+async function persistProviderMove(from: number, to: number) {
+  const groups = providerGroups.value
+  if (to < 0 || to >= groups.length || from === to) return
+  const arr = [...groups]
+  const [moved] = arr.splice(from, 1)
+  arr.splice(to, 0, moved)
+  try {
+    for (let i = 0; i < arr.length; i++) {
+      const g = arr[i]
+      if (g.connectionId) {
+        await updateProvider(g.connectionId, { priority: arr.length - i })
+      }
+    }
+    await loadModelOptions()
+  } catch {
+    ElMessage.error('调整优先级失败')
+    await loadModelOptions()
+  }
+}
+
+/** 提供方卡片上移/下移（按钮）。 */
+function moveProviderGroup(idx: number, dir: number) {
+  void persistProviderMove(idx, idx + dir)
+}
+
+// ── 提供方卡片拖拽 ──
+
+const providerDrag = ref<{ fromIdx: number; ghost: HTMLElement | null; startY: number; started: boolean; pointerId: number } | null>(null)
+const providerDropIdx = ref<number | null>(null)
+
+function providerCardEls(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('.provider-list > .card')]
+}
+
+function onProviderHandleDown(e: PointerEvent, idx: number) {
+  if (e.button !== 0) return
+  providerDrag.value = { fromIdx: idx, ghost: null, startY: e.clientY, started: false, pointerId: e.pointerId }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+}
+
+function onProviderHandleMove(e: PointerEvent) {
+  const st = providerDrag.value
+  if (!st || e.pointerId !== st.pointerId) return
+  if (!st.started) {
+    if (Math.abs(e.clientY - st.startY) < DRAG_THRESHOLD) return
+    st.started = true
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'move'
+    const cards = providerCardEls()
+    st.ghost = makeBarGhost(cards[st.fromIdx]?.querySelector('.font-semibold')?.textContent ?? '移动提供方')
+  }
+  if (st.ghost) st.ghost.style.top = `${e.clientY - 16}px`
+  providerDropIdx.value = calcDropIdx(
+    providerCardEls().map((c) => c.getBoundingClientRect()),
+    e.clientY,
+  )
+}
+
+async function onProviderHandleUp(e: PointerEvent) {
+  const st = providerDrag.value
+  if (!st || e.pointerId !== st.pointerId) return
+  const dropIdx = providerDropIdx.value
+  const started = st.started
+  const fromIdx = st.fromIdx
+  cleanupProviderDrag()
+  if (!started || dropIdx === null || dropIdx === fromIdx) return
+  const to = dropIdx > fromIdx ? dropIdx - 1 : dropIdx
+  await persistProviderMove(fromIdx, to)
+}
+
+function cleanupProviderDrag() {
+  providerDrag.value?.ghost?.remove()
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  providerDrag.value = null
+  providerDropIdx.value = null
+}
+
+function onProviderHandleCancel() {
+  cleanupProviderDrag()
 }
 const profiles = ref<RoutingProfile[]>([])
 const profilesLoading = ref(false)
@@ -601,11 +793,12 @@ async function load() {
 async function loadModelOptions() {
   try {
     const data = await listProviders()
+    connections.value = data.connections ?? []
     const opts: ModelOption[] = []
     const nameMap: Record<string, string> = {}
-    for (const c of data.connections ?? []) {
-      if (!c.isActive) continue
+    for (const c of connections.value) {
       nameMap[c.id] = c.name
+      if (!c.isActive) continue
       for (const m of c.models ?? []) {
         const label = `${c.name} · ${m.name || m.id}`
         opts.push({
