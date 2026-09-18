@@ -140,8 +140,31 @@ jobs:
           FILES=()
 
           # macOS: .app.tar.gz + .sig, .dmg
+          # 两个 macOS target（aarch64/x86_64）生成的 .app.tar.gz 同名，
+          # 必须按架构重命名避免互相覆盖
           if [ "${{ runner.os }}" = "macOS" ]; then
-            for f in "$BUNDLE_DIR"/macos/*.tar.gz "$BUNDLE_DIR"/macos/*.tar.gz.sig "$BUNDLE_DIR"/dmg/*.dmg; do
+            ARCH_SUFFIX=""
+            case "$TARGET" in
+              aarch64-apple-darwin) ARCH_SUFFIX="-aarch64" ;;
+              x86_64-apple-darwin)  ARCH_SUFFIX="-x86_64" ;;
+            esac
+            for f in "$BUNDLE_DIR"/macos/*.tar.gz "$BUNDLE_DIR"/macos/*.tar.gz.sig; do
+              if [ -f "$f" ]; then
+                BASENAME=$(basename "$f")
+                # 在扩展名前插入架构后缀：Vortex.app.tar.gz → Vortex-aarch64.app.tar.gz
+                if [[ "$BASENAME" == *.sig ]]; then
+                  ROOT="${BASENAME%.sig}"
+                  ROOTNAME="${ROOT%.app.tar.gz}"
+                  NEWNAME="${ROOTNAME}${ARCH_SUFFIX}.app.tar.gz.sig"
+                else
+                  ROOTNAME="${BASENAME%.app.tar.gz}"
+                  NEWNAME="${ROOTNAME}${ARCH_SUFFIX}.app.tar.gz"
+                fi
+                cp "$f" "/tmp/$NEWNAME"
+                FILES+=("/tmp/$NEWNAME")
+              fi
+            done
+            for f in "$BUNDLE_DIR"/dmg/*.dmg; do
               [ -f "$f" ] && FILES+=("$f")
             done
           fi
@@ -200,6 +223,11 @@ jobs:
 
           SIG_BASENAME=$(basename "$SIG_FILE")
           ARCHIVE_NAME="${SIG_BASENAME%.sig}"
+          # macOS 两个 target 上传时按架构重命名了，url 也要指向重命名后的文件
+          case "$TARGET" in
+            aarch64-apple-darwin) ARCHIVE_NAME="${ARCHIVE_NAME%.app.tar.gz}-aarch64.app.tar.gz" ;;
+            x86_64-apple-darwin)  ARCHIVE_NAME="${ARCHIVE_NAME%.app.tar.gz}-x86_64.app.tar.gz" ;;
+          esac
           DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
 
           echo "Platform:  $PLATFORM_KEY"
