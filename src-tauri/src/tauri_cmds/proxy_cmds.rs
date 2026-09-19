@@ -4,7 +4,7 @@
 //! - [`start_proxy`]：启动本地代理服务器
 //! - [`stop_proxy`]：停止本地代理服务器
 
-use crate::AppState;
+use vortex_gateway::AppState;
 use std::sync::Arc;
 
 /// 启动本地代理服务器。
@@ -30,7 +30,7 @@ pub async fn start_proxy(state: tauri::State<'_, Arc<AppState>>) -> Result<(), S
         return Err("代理已在运行".into());
     }
     // 启动 API 服务器，传入应用状态克隆和代理端口
-    let handle = crate::start_api_server(state.inner().clone(), state.proxy_port);
+    let handle = vortex_gateway::start_api_server(state.inner().clone(), state.proxy_port);
     // 保存服务器句柄以便后续停止
     *guard = Some(handle);
     Ok(())

@@ -16,8 +16,8 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::proxy::engine::ProxyOutput;
-use crate::AppState;
+use vortex_router::proxy::engine::ProxyOutput;
+use vortex_gateway::AppState;
 
 /// IPC 流式对话事件，序列化为 `{ "type": "...", "data": {...} }` 形式下发前端。
 #[derive(Clone, Serialize)]
@@ -106,7 +106,7 @@ pub async fn chat_completions_stream(
         }
     };
 
-    let request = crate::db::models::ProxyRequest {
+    let request = vortex_store::db::models::ProxyRequest {
         model,
         messages: body,
         stream: stream.unwrap_or(true),
@@ -127,8 +127,8 @@ pub async fn chat_completions_stream(
     tauri::async_runtime::spawn_blocking(move || {
         let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
         rt.block_on(async {
-                let upstream_client = crate::create_awc_client();
-                let output = engine.handle_request(&app_state, &upstream_client, request).await;
+                let upstream_client = vortex_gateway::create_awc_client();
+                let output = engine.handle_request(&*app_state, &upstream_client, request).await;
                 match output {
                     Ok(ProxyOutput::Stream(mut sse)) => {
                         while let Some(chunk) = sse.next().await {

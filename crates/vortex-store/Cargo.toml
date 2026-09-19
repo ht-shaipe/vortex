@@ -1,0 +1,36 @@
+[package]
+name = "vortex-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# 错误处理
+thiserror = "1"
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 数据库
+rusqlite = { version = "0.31", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+# 加密
+aes-gcm = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+# 时间/ID
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+# 日志
+log = "0.4"
+# 并发
+parking_lot = "0.12"
+# URL 解析
+url = "2"
+# 随机数（encryption.rs 密钥生成）
+rand = "0.8"
+# HTTP（error.rs 中 AppError 需要 awc::error::SendRequestError 和 actix-web::ResponseError）
+awc = { version = "3", features = ["rustls"] }
+actix-web = "4"

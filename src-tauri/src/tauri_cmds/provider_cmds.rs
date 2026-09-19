@@ -5,9 +5,9 @@
 //! - [`add_provider`]：新增一个提供商连接
 //! - [`test_provider`]：测试指定提供商连接的可用性
 
-use crate::db::{core as db_core, providers as db_providers};
-use crate::db::models::CreateProviderRequest;
-use crate::AppState;
+use vortex_store::db::{core as db_core, providers as db_providers};
+use vortex_store::db::models::CreateProviderRequest;
+use vortex_gateway::AppState;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -166,7 +166,7 @@ pub async fn test_provider(
                             // 拼接模型列表端点完整 URL
                             let url = format!("{}{}", base_url, d.models_path);
 
-                            let client = crate::create_awc_client();
+                            let client = vortex_gateway::create_awc_client();
                             // 构造 GET 请求
                             let mut req = client.get(&url);
 

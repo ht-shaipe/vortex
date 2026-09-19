@@ -4,8 +4,8 @@
 //! - [`get_settings`]：读取当前应用设置
 //! - [`update_settings`]：更新应用设置
 
-use crate::db::{core as db_core, settings as db_settings};
-use crate::AppState;
+use vortex_store::db::{core as db_core, settings as db_settings};
+use vortex_gateway::AppState;
 use std::sync::Arc;
 
 /// 读取当前应用设置。

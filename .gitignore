@@ -24,6 +24,7 @@ dist-ssr
 !.env.example
 
 # Rust / Tauri
+target/
 src-tauri/target/
 src-tauri/gen/
 

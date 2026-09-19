@@ -8,15 +8,15 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::agent_integrations::{
+use vortex_gateway::agent_integrations::{
     AdapterRegistry, AgentKind, ConfigPreview, ConfigResult, DetectedAgent,
     RestoreResult, VortexGatewayConfig,
 };
-use crate::agent_integrations::backup::BackupManager;
-use crate::agent_integrations::detect;
-use crate::agent_integrations::ModelInfo;
-use crate::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, settings as db_settings};
-use crate::AppState;
+use vortex_gateway::agent_integrations::backup::BackupManager;
+use vortex_gateway::agent_integrations::detect;
+use vortex_gateway::agent_integrations::ModelInfo;
+use vortex_store::db::{core as db_core, model_aliases as db_aliases, providers as db_providers, settings as db_settings};
+use vortex_gateway::AppState;
 
 /// 智能体检测响应
 #[derive(Debug, Serialize, Deserialize)]

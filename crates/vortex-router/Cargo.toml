@@ -1,0 +1,36 @@
+[package]
+name = "vortex-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+vortex-store = { path = "../vortex-store" }
+# 数据库类型（engine.rs 方法签名中 rusqlite::Connection）
+rusqlite = { version = "0.31", features = ["bundled"] }
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+# HTTP 客户端
+awc = { version = "3", features = ["rustls"] }
+actix-web = "4"
+actix-rt = "2"
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 日志
+log = "0.4"
+# 并发
+parking_lot = "0.12"
+# 随机数
+rand = "0.8"
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+# UUID
+uuid = { version = "1", features = ["v4"] }
+# URL
+url = "2"
+# bytes
+bytes = "1.12.1"

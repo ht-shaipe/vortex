@@ -4,7 +4,7 @@
 //! - [`get_system_status`]：获取当前系统的完整运行状态（代理状态、端口、版本、
 //!   数据库状态、提供商连接数、API Key 数、今日请求量等），供托盘状态面板展示。
 
-use crate::AppState;
+use vortex_gateway::AppState;
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -56,7 +56,7 @@ pub async fn get_system_status(state: tauri::State<'_, Arc<AppState>>) -> Result
     let version = env!("CARGO_PKG_VERSION").to_string();
 
     // 获取数据库连接
-    let conn = match crate::db::core::get_conn(&state.db_pool) {
+    let conn = match vortex_store::db::core::get_conn(&state.db_pool) {
         Ok(c) => c,
         Err(_) => {
             // 数据库不可用时返回降级状态
@@ -82,7 +82,7 @@ pub async fn get_system_status(state: tauri::State<'_, Arc<AppState>>) -> Result
         .is_ok();
 
     // 提供商连接统计
-    let (provider_count, active_provider_count) = match crate::db::providers::list(&conn, &state.encryption_key) {
+    let (provider_count, active_provider_count) = match vortex_store::db::providers::list(&conn, &state.encryption_key) {
         Ok(list) => {
             let active = list.iter().filter(|p| p.is_active).count();
             (list.len(), active)
@@ -91,7 +91,7 @@ pub async fn get_system_status(state: tauri::State<'_, Arc<AppState>>) -> Result
     };
 
     // API Key 统计
-    let (api_key_count, active_api_key_count) = match crate::db::api_keys::list(&conn) {
+    let (api_key_count, active_api_key_count) = match vortex_store::db::api_keys::list(&conn) {
         Ok(list) => {
             let active = list.iter().filter(|k| k.is_active && !k.is_banned).count();
             (list.len(), active)
@@ -102,7 +102,7 @@ pub async fn get_system_status(state: tauri::State<'_, Arc<AppState>>) -> Result
     // 今日用量统计
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let (today_requests, today_tokens_input, today_tokens_output) =
-        match crate::db::usage::get_stats(&conn, Some(&today)) {
+        match vortex_store::db::usage::get_stats(&conn, Some(&today)) {
             Ok(stats) => (stats.total_requests, stats.total_tokens_input, stats.total_tokens_output),
             Err(_) => (0, 0, 0),
         };

@@ -1,317 +1,12 @@
-//! Vortex AI Gateway 核心库模块。
+//! Vortex AI Gateway 桌面应用入口。
 //!
-//! 本文件是整个应用的核心入口，负责：
-//! - 声明各子模块（数据库、配置、错误处理、提供商、路由、代理、翻译、API、Tauri 命令等）
-//! - 定义应用全局状态 [`AppState`]
-//! - 提供状态初始化函数 [`create_app_state`]
-//! - 提供内嵌 HTTP API 服务器启动函数 [`start_api_server`]
-//! - 提供主入口函数 [`run`]：加载配置 → 创建状态 → 启动 API → 启动 Tauri 桌面应用（含系统托盘）
+//! 负责加载配置、创建应用状态、启动 HTTP API 服务器，
+//! 并构建 Tauri 桌面应用（含系统托盘、窗口管理、IPC 命令注册）。
 
-mod db;
-mod error;
-mod config;
-mod providers;
-mod routing;
-mod proxy;
-mod remote_proxy;
-mod translator;
-mod api;
 mod tauri_cmds;
-mod agent_integrations;
 
-use actix_cors::Cors;
-use actix_web::{dev::ServerHandle, web, App, HttpServer, middleware as actix_mw};
-use std::sync::{mpsc, Arc};
-
-/// 应用全局状态。
-///
-/// 该结构体在应用启动时创建一次，通过 `Arc` 在多个线程与 Tauri 命令之间共享。
-/// 包含数据库连接池、配置、提供商注册表、代理引擎、弹性路由管理器、HTTP 客户端等核心组件。
-pub struct AppState {
-    /// SQLite 数据库连接池。
-    pub db_pool: db::core::DbPool,
-    /// 应用运行时配置。
-    pub config: config::AppConfig,
-    /// AI 提供商注册表，管理已配置的提供商实例。
-    pub provider_registry: providers::ProviderRegistry,
-    /// 代理引擎，处理请求的代理转发逻辑（无内部可变性，启动后只读共享）。
-    pub proxy_engine: proxy::engine::ProxyEngine,
-    /// 路由弹性管理器，负责故障转移、负载均衡等路由策略。
-    pub resilience_manager: routing::resilience::ResilienceManager,
-    /// 内存速率限制器，滑动窗口 RPM/RPD/TPM/TPD 计数
-    pub rate_limiter: routing::rate_limiter::RateLimiter,
-    /// Thompson 采样 bandit 路由评分器
-    pub bandit_router: routing::bandit::BanditRouter,
-    /// 模型占用追踪器，auto 路由跨智能体软避让
-    pub occupancy: routing::occupancy::OccupancyTracker,
-    /// 粘性会话管理器
-    pub sticky_session: proxy::sticky_session::StickySessionManager,
-    /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
-    pub encryption_key: Vec<u8>,
-    /// 代理服务器的句柄，存储在互斥锁中以便启停控制。
-    pub proxy_handle: parking_lot::Mutex<Option<ServerHandle>>,
-    /// 代理服务器监听端口。
-    pub proxy_port: u16,
-}
-
-/// 创建 HTTP 客户端（awc + rustls）。
-///
-/// 必须在 actix runtime 上下文中调用（awc 依赖 actix arbiter 驱动内部任务）。
-/// 每次调用创建新客户端，不共享连接池——对桌面应用低并发场景可接受。
-/// 上游链路（AI 提供商）与管理链路（hub.htui.cc）共用此客户端。
-/// 使用 rustls 纯 Rust 实现，避免 Windows 上 OpenSSL 构建问题。
-pub fn create_awc_client() -> awc::Client {
-    let awc_connector = awc::Connector::new()
-        .timeout(std::time::Duration::from_secs(10));
-    // rustls 通过 awc 的 "rustls" feature 自动启用，无需额外配置
-
-    awc::Client::builder()
-        .connector(awc_connector)
-        .timeout(std::time::Duration::from_secs(300))
-        .add_default_header(("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"))
-        .add_default_header(("Accept", "application/json"))
-        .finish()
-}
-
-/// 创建应用全局状态。
-///
-/// 执行以下初始化步骤：
-/// 1. 初始化 SQLite 数据库连接池
-/// 2. 运行数据库迁移
-/// 3. 创建提供商注册表、代理引擎、弹性路由管理器
-/// 4. 构建共享 HTTP 客户端（配置连接超时与连接池参数）
-/// 5. 派生加密密钥字节序列
-///
-/// # 参数
-///
-/// - `cfg`：已加载的应用配置。
-///
-/// # 返回值
-///
-/// 返回包装在 `Arc` 中的 [`AppState`]，以便多线程共享；若初始化失败则返回 [`error::AppError`]。
-pub fn create_app_state(cfg: config::AppConfig) -> error::Result<Arc<AppState>> {
-    // 初始化 SQLite 数据库连接池
-    let db_pool = db::core::init_pool(&cfg.data_dir, cfg.encryption_key.clone())?;
-    // 运行数据库迁移
-    db::core::run_migrations(&db_pool)?;
-    // 首次启动时为安全设置写入默认值（默认开启 Token 鉴权并自动生成访问令牌）
-    {
-        let conn = db::core::get_conn(&db_pool)?;
-        db::settings::ensure_security_defaults(&conn)?;
-    }
-
-
-    // 创建提供商注册表
-    let provider_registry = providers::ProviderRegistry::new();
-    // 创建代理引擎
-    let proxy_engine = proxy::engine::ProxyEngine::new();
-    // 创建弹性路由管理器
-    let resilience_manager = routing::resilience::ResilienceManager::new();
-    // 创建内存速率限制器
-    let rate_limiter = routing::rate_limiter::RateLimiter::new();
-    // 创建 bandit 路由评分器
-    let bandit_router = routing::bandit::BanditRouter::new();
-    // 创建粘性会话管理器
-    let sticky_session = proxy::sticky_session::StickySessionManager::new();
-    // 不设全局总超时：超时保护改为多级：
-    //   - 连接超时 10s（create_awc_client 内）
-    //   - 流式首字节 60s / 非流式整体 300s（executor.rs 按请求应用）
-    //   - 流式逐块 120s（sse.rs 按次计时）
-    // http2_prior_knowledge() 不用 — 用 ALPN 协商让服务端选择 h2 或 http/1.1。
-    // 部分上游（如 z.ai）要求 HTTP/2，ALPN 中无 h2 时 TLS 握手被服务端直接关闭（eof）。
-
-    // 派生加密密钥字节序列
-    let encryption_key = cfg.encryption_key_bytes();
-
-    // 记录代理端口
-    let proxy_port = cfg.port;
-
-    // 组装并返回应用状态
-    Ok(Arc::new(AppState {
-        db_pool,
-        config: cfg,
-        provider_registry,
-        proxy_engine,
-        resilience_manager,
-        rate_limiter,
-        bandit_router,
-        occupancy: routing::occupancy::OccupancyTracker::new(),
-        sticky_session,
-        encryption_key,
-        proxy_handle: parking_lot::Mutex::new(None),
-        proxy_port,
-    }))
-}
-
-/// 启动内嵌的 HTTP API 服务器。
-///
-/// 在独立线程中创建 Actix 运行时并启动 HTTP 服务器，注册两组路由：
-/// - `/v1/*`：OpenAI / Anthropic 兼容的代理 API（聊天、消息、模型、嵌入、图像）
-/// - `/api/*`：管理 API（提供商、密钥、用量、设置、免费 Token、健康检查）
-///
-/// 服务器绑定到 `0.0.0.0:{port}`，启用 CORS（允许任意来源/方法/头）与请求日志中间件。
-///
-/// # 参数
-///
-/// - `state`：应用全局状态的共享引用。
-/// - `port`：服务器监听端口。
-///
-/// # 返回值
-///
-/// 返回 [`ServerHandle`]，可用于后续停止服务器。
-pub fn start_api_server(
-    state: Arc<AppState>,
-    port: u16,
-) -> ServerHandle {
-    // 创建通道用于在线程间传递服务器句柄
-    let (handle_tx, handle_rx) = mpsc::channel();
-
-    // 在独立线程中启动 Actix 运行时与 HTTP 服务器
-    std::thread::spawn(move || {
-        let rt = actix_rt::Runtime::new().expect("Failed to create Actix runtime");
-        rt.block_on(async move {
-            let state_clone = state.clone();
-            let server = HttpServer::new(move || {
-                // 配置 CORS：允许任意来源、方法、头，预检缓存 1 小时
-                let cors = Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
-                    .max_age(3600);
-
-                App::new()
-                    .wrap(cors)
-                    .wrap(actix_mw::Logger::default())
-                    // 注入应用全局状态
-                    .app_data(web::Data::new(state_clone.clone()))
-                    // /v1/* 代理 API 路由组
-                    .service(
-                        web::scope("/v1")
-                            .route("/chat/completions", web::post().to(api::v1::chat::chat_completions))
-                            .route("/messages", web::post().to(api::v1::messages::anthropic_messages))
-                            .route("/responses", web::post().to(api::v1::responses::responses))
-                            .route("/models", web::get().to(api::v1::models::list_models))
-                            .route("/embeddings", web::post().to(api::v1::embeddings::create_embeddings))
-                            .route("/images/generations", web::post().to(api::v1::images::create_images))
-                            .route("/mcp/tools", web::get().to(api::v1::mcp::mcp_tools))
-                            .route("/mcp/call", web::post().to(api::v1::mcp::mcp_call))
-                    )
-                    // /api/* 管理 API 路由组
-                    .service(
-                        web::scope("/api")
-                            .route("/providers", web::get().to(api::management::providers::list_providers))
-                            .route("/providers", web::post().to(api::management::providers::create_provider))
-                            .route("/providers/{id}", web::get().to(api::management::providers::get_provider))
-                            .route("/providers/{id}", web::patch().to(api::management::providers::update_provider))
-                            .route("/providers/{id}", web::delete().to(api::management::providers::delete_provider))
-                            .route("/providers/{id}/test", web::post().to(api::management::providers::test_provider))
-                            .route("/providers/{id}/apikey", web::get().to(api::management::providers::get_api_key))
-                            .route("/providers/preview-models", web::post().to(api::management::providers::preview_models))
-                            .route("/keys", web::get().to(api::management::keys::list_keys))
-                            .route("/keys", web::post().to(api::management::keys::create_key))
-                            .route("/keys/{id}", web::get().to(api::management::keys::get_key))
-                            .route("/keys/{id}", web::delete().to(api::management::keys::delete_key))
-                            .route("/usage", web::get().to(api::management::usage::get_usage))
-                            .route("/usage/stats", web::get().to(api::management::usage::get_stats))
-                            .route("/settings", web::get().to(api::management::settings::get_settings))
-                            .route("/settings", web::patch().to(api::management::settings::update_settings))
-                            .route("/free-tokens", web::get().to(api::management::free_tokens::list_sites))
-                            .route("/free-tokens", web::post().to(api::management::free_tokens::create_site))
-                            .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
-                            .route("/model-aliases", web::get().to(api::management::model_aliases::list_aliases))
-                            .route("/model-aliases", web::post().to(api::management::model_aliases::create_alias))
-                            .route("/model-aliases/auto-generate", web::post().to(api::management::model_aliases::auto_generate))
-                            .route("/model-aliases/reorder", web::post().to(api::management::model_aliases::reorder_aliases))
-                            .route("/model-aliases/{id}", web::patch().to(api::management::model_aliases::update_alias))
-                            .route("/model-aliases/{id}", web::delete().to(api::management::model_aliases::delete_alias))
-                            .route("/rate-limits", web::get().to(api::management::rate_limits::list_rate_limits))
-                            .route("/rate-limits", web::post().to(api::management::rate_limits::upsert_rate_limit))
-                            .route("/rate-limits/{id}", web::delete().to(api::management::rate_limits::delete_rate_limit))
-                            .route("/rate-limits/usage", web::get().to(api::management::rate_limits::list_usage))
-                            .route("/rate-limits/cleanup", web::post().to(api::management::rate_limits::cleanup_usage))
-                            .route("/bulk-keys/import", web::post().to(api::management::bulk_keys::bulk_import))
-                            .route("/bulk-keys/export", web::post().to(api::management::bulk_keys::bulk_export))
-                            .route("/routing-profiles", web::get().to(api::management::routing_profiles::list_profiles))
-                            .route("/routing-profiles", web::post().to(api::management::routing_profiles::create_profile))
-                            .route("/routing-profiles/{id}", web::delete().to(api::management::routing_profiles::delete_profile))
-                            .route("/tos-reviews", web::get().to(api::management::tos_review::list_tos_reviews))
-                            .route("/backups", web::get().to(api::management::backup::list_backups))
-                            .route("/backups", web::post().to(api::management::backup::create_backup))
-                            .route("/model-catalog", web::get().to(api::management::model_catalog::list_catalog))
-                            .route("/model-catalog/refresh-from-connections", web::post().to(api::management::model_catalog::refresh_from_connections_handler))
-                            .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
-                            .route("/playground", web::post().to(api::management::playground::playground))
-                            .route("/cost-analysis", web::get().to(api::management::cost_analysis::cost_analysis))
-                            .route("/recommendations", web::get().to(api::management::recommendations::recommendations))
-                            .route("/compressed-content", web::get().to(api::management::compressed_content::list_compressed_content))
-                            .route("/compressed-content/{hash}", web::get().to(api::management::compressed_content::get_compressed_content))
-                            .route("/key-permissions", web::get().to(api::management::key_permissions::list_permissions))
-                            .route("/key-permissions", web::post().to(api::management::key_permissions::create_permission))
-                            .route("/key-permissions/{id}", web::delete().to(api::management::key_permissions::delete_permission))
-                            .route("/health", web::get().to(api::management::health::health_check))
-                    )
-            })
-            .bind(format!("0.0.0.0:{}", port))
-            .expect("Failed to bind server");
-
-            // 启动服务器并获取句柄
-            let srv = server.run();
-            let handle = srv.handle();
-            // 通过通道将句柄发送给主线程
-            let _ = handle_tx.send(handle);
-
-            // 启动后自动从已配置连接拉取最新模型列表（延迟 10 秒，等待连接就绪），并每 12 小时定期拉取
-            {
-                let pool = state.db_pool.clone();
-                let enc_key = state.encryption_key.clone();
-                let provider_defaults: std::collections::HashMap<String, (String, String)> = state
-                    .provider_registry
-                    .list()
-                    .into_iter()
-                    .map(|d| (d.id.clone(), (d.base_url.clone(), d.models_path.clone())))
-                    .collect();
-                actix_rt::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                    loop {
-                        match crate::providers::catalog_sync::refresh_from_connections(&pool, &enc_key, &provider_defaults).await {
-                            Ok((s, t, _)) => {
-                                if s > 0 {
-                                    log::info!("从连接拉取模型目录完成: {} 个连接, {} 条模型", s, t);
-                                }
-                            }
-                            Err(e) => log::warn!("从连接拉取模型目录失败: {}", e),
-                        }
-                        tokio::time::sleep(std::time::Duration::from_secs(43200)).await;
-                    }
-                });
-            }
-
-            // 定期清理过期压缩内容（每 24 小时）
-            {
-                let pool = state.db_pool.clone();
-                actix_rt::spawn(async move {
-                    loop {
-                        tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
-                        let pool_clone = pool.clone();
-                        let _ = tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
-                            let conn = crate::db::core::get_conn(&pool_clone).map_err(|e| e.to_string())?;
-                            let n = crate::db::compressed_content::cleanup_expired(&conn).map_err(|e| e.to_string())?;
-                            if n > 0 { log::info!("清理过期压缩内容: {} 条", n); }
-                            Ok(())
-                        }).await;
-                    }
-                });
-            }
-
-            // 阻塞等待服务器运行结束
-            srv.await.expect("Server error");
-        });
-    });
-
-    // 接收并返回服务器句柄
-    handle_rx.recv().expect("Failed to receive server handle")
-}
-
+use std::sync::Arc;
+use vortex_gateway::AppState;
 
 /// 应用主入口函数。
 ///
@@ -320,27 +15,18 @@ pub fn start_api_server(
 /// 2. 创建应用全局状态（初始化数据库、HTTP 客户端等）
 /// 3. 启动内嵌 HTTP API 服务器
 /// 4. 启动 Tauri 桌面应用，注册插件、命令处理器与系统托盘
-///
-/// 该函数同时作为桌面端入口和移动端入口（通过 `#[cfg_attr(mobile, tauri::mobile_entry_point)]`）。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 初始化日志：默认 info 级别，可通过 RUST_LOG 环境变量覆盖。
-    // 未初始化时所有 log:: 调用都会被丢弃，路由回退、上游错误等关键信息不可见。
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).try_init();
 
-    // 加载应用配置
-    let cfg = config::AppConfig::load();
-    // 创建应用全局状态
-    let state = create_app_state(cfg.clone()).expect("Failed to initialize app state");
+    let cfg = vortex_store::config::AppConfig::load();
+    let state = vortex_gateway::create_app_state(cfg.clone()).expect("Failed to initialize app state");
 
-    // 启动 HTTP API 服务器并保存句柄到全局状态
     let port = cfg.port;
-    let handle = start_api_server(state.clone(), port);
+    let handle = vortex_gateway::start_api_server(state.clone(), port);
     *state.proxy_handle.lock() = Some(handle);
 
-    // 构建 Tauri 桌面应用
     tauri::Builder::default()
-        // 注册 Tauri 插件
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -348,9 +34,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        // 注入应用全局状态
         .manage(state)
-        // 注册 Tauri 命令处理器
         .invoke_handler(tauri::generate_handler![
             tauri_cmds::provider_cmds::list_providers,
             tauri_cmds::provider_cmds::add_provider,
@@ -368,7 +52,6 @@ pub fn run() {
             tauri_cmds::agent_cmds::agent_restore_config,
             tauri_cmds::agent_cmds::agent_list_backups,
         ])
-        // 应用初始化回调：创建系统托盘
         .setup(|app| {
             use tauri::Emitter;
             use tauri::Manager;
@@ -376,7 +59,6 @@ pub fn run() {
             use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
             use tauri::WindowEvent;
 
-            // 状态面板窗口失焦时自动隐藏
             if let Some(panel) = app.get_webview_window("status-panel") {
                 let panel_clone = panel.clone();
                 panel.on_window_event(move |event| {
@@ -386,9 +68,6 @@ pub fn run() {
                 });
             }
 
-            // 终端终止信号兜底：tauri dev 下 Ctrl+C（SIGINT）、kill（SIGTERM）、
-            // 关闭终端（SIGHUP）时确保应用连同内嵌网关一起完全退出，
-            // 避免孤儿进程继续驻留托盘并占用网关端口
             #[cfg(unix)]
             {
                 let signal_handle = app.handle().clone();
@@ -416,48 +95,38 @@ pub fn run() {
                 });
             }
 
-            // 主窗口关闭时隐藏到托盘：不退出应用，网关与托盘保持运行
             if let Some(main) = app.get_webview_window("main") {
                 let main_clone = main.clone();
                 let app_handle = app.handle().clone();
                 main.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        // 阻止默认关闭（退出应用），改为隐藏
                         api.prevent_close();
                         let _ = main_clone.hide();
-                        // macOS：切换为 Accessory 应用，从 Dock 移除图标，仅保留托盘
                         #[cfg(target_os = "macos")]
                         let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
                     }
                 });
             }
 
-            // 构建托盘菜单项（含启动和停止两项，按状态动态启用/禁用）
             let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
             let start_item = MenuItemBuilder::with_id("start_proxy", "启动代理").build(app)?;
             let stop_item = MenuItemBuilder::with_id("stop_proxy", "停止代理").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
-            // 组装托盘菜单
             let menu = MenuBuilder::new(app)
                 .item(&show)
                 .item(&start_item)
                 .item(&stop_item)
                 .item(&quit)
                 .build()?;
-            // 菜单延迟挂载：构建时不附菜单，右键首次点击时才 set_menu
             let menu_cell = std::sync::Mutex::new(Some(menu));
-            // 克隆菜单项引用给 on_menu_event 闭包，用于启停后主动更新状态
             let start_item_for_menu = start_item.clone();
             let stop_item_for_menu = stop_item.clone();
 
-            // 构建系统托盘图标
             let mut builder = TrayIconBuilder::new()
                 .tooltip("Vortex AI Gateway")
-                // 托盘菜单事件处理
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "quit" => app.exit(0),
                     "show" => {
-                        // 恢复 Dock 图标并显示、聚焦主窗口
                         #[cfg(target_os = "macos")]
                         let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                         if let Some(w) = app.get_webview_window("main") {
@@ -467,17 +136,15 @@ pub fn run() {
                         }
                     }
                     "start_proxy" => {
-                        // 直接在后端启动代理
                         let app_handle = app.clone();
                         let si = start_item_for_menu.clone();
                         let spi = stop_item_for_menu.clone();
                         tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            let state = app_handle.state::<Arc<AppState>>();
                             let mut guard = state.proxy_handle.lock();
                             if guard.is_none() {
-                                let handle = crate::start_api_server(state.inner().clone(), state.proxy_port);
+                                let handle = vortex_gateway::start_api_server(state.inner().clone(), state.proxy_port);
                                 *guard = Some(handle);
-                                // 主动更新菜单项状态
                                 let _ = si.set_enabled(false);
                                 let _ = spi.set_enabled(true);
                                 let _ = app_handle.emit("tray-action", "started");
@@ -485,16 +152,14 @@ pub fn run() {
                         });
                     }
                     "stop_proxy" => {
-                        // 直接在后端停止代理
                         let app_handle = app.clone();
                         let si = start_item_for_menu.clone();
                         let spi = stop_item_for_menu.clone();
                         tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            let state = app_handle.state::<Arc<AppState>>();
                             let handle = { state.proxy_handle.lock().take() };
                             if let Some(handle) = handle {
                                 handle.stop(true).await;
-                                // 主动更新菜单项状态
                                 let _ = si.set_enabled(true);
                                 let _ = spi.set_enabled(false);
                                 let _ = app_handle.emit("tray-action", "stopped");
@@ -503,10 +168,8 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                // 托盘图标点击事件处理
                 .on_tray_icon_event(move |tray, event| {
                     match event {
-                        // 左键点击：显示并聚焦主窗口
                         TrayIconEvent::Click {
                             button: MouseButton::Left,
                             button_state: MouseButtonState::Up,
@@ -521,20 +184,17 @@ pub fn run() {
                                 let _ = w.set_focus();
                             }
                         }
-                        // 右键点击：首次挂载菜单，每次按状态切换菜单项启用/禁用
                         TrayIconEvent::Click {
                             button: MouseButton::Right,
                             button_state: MouseButtonState::Up,
                             ..
                         } => {
-                            // 首次右键点击：挂载菜单
                             if let Some(menu) = menu_cell.lock().unwrap().take() {
                                 let _ = tray.set_menu(Some(menu));
                                 let _ = tray.set_show_menu_on_left_click(false);
                             }
-                            // 根据网关状态启用/禁用菜单项
                             let app = tray.app_handle();
-                            let state = app.state::<std::sync::Arc<AppState>>();
+                            let state = app.state::<Arc<AppState>>();
                             let is_running = state.proxy_handle.lock().is_some();
                             let _ = start_item.set_enabled(!is_running);
                             let _ = stop_item.set_enabled(is_running);
@@ -543,16 +203,12 @@ pub fn run() {
                     }
                 });
 
-            // 设置托盘图标：单色模板图（黑剪影 + 透明背景）
-            // macOS 菜单栏约定：template 模式下系统只取 alpha 通道，
-            // 浅色栏渲染为黑色、深色栏渲染为白色，与应用原生托盘观感一致
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
                 .expect("failed to load tray template icon");
             builder = builder
                 .icon(tray_icon)
                 .icon_as_template(true);
 
-            // 构建托盘图标
             let _tray = builder.build(app)?;
 
             Ok(())
