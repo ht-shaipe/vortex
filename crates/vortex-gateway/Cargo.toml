@@ -40,3 +40,9 @@ yaml-edit = "0.2"
 fs2 = "0.4"
 tempfile = "3"
 sha2 = "0.10"
+# 日志初始化（vortex-server binary）
+env_logger = "0.11"
+
+[[bin]]
+name = "vortex-server"
+path = "src/bin/vortex-server.rs"

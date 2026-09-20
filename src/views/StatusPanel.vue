@@ -139,31 +139,16 @@
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-
-/** 系统运行状态（与 Rust 端 SystemStatus 结构体对应） */
-interface SystemStatus {
-  proxy_running: boolean
-  proxy_port: number
-  version: string
-  database_ok: boolean
-  provider_count: number
-  active_provider_count: number
-  api_key_count: number
-  active_api_key_count: number
-  today_requests: number
-  today_tokens_input: number
-  today_tokens_output: number
-}
+import { getSystemStatus, startProxy, stopProxy, type SystemStatus } from '@/api/system'
 
 const status = ref<SystemStatus | null>(null)
 const busy = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
-/** 调用 Tauri 命令获取系统状态 */
+/** 获取系统状态 */
 async function fetchStatus(): Promise<void> {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    status.value = await invoke<SystemStatus>('get_system_status')
+    status.value = await getSystemStatus()
   } catch {
     /* 静默失败，保持上次数据 */
   }
@@ -174,12 +159,11 @@ async function toggleProxy(): Promise<void> {
   if (busy.value) return
   busy.value = true
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     if (status.value?.proxy_running) {
-      await invoke('stop_proxy')
+      await stopProxy()
       ElMessage.success('代理已停止')
     } else {
-      await invoke('start_proxy')
+      await startProxy()
       ElMessage.success('代理已启动')
     }
     await fetchStatus()

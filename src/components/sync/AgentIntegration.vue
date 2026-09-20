@@ -190,7 +190,6 @@
  * 缓存策略：检测结果缓存 1 小时，过期后自动重新检测。
  */
 import { ref, computed, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
 import { Refresh, Loading, Monitor, Document, WarningFilled, InfoFilled, Clock, Setting, RefreshLeft } from '@element-plus/icons-vue'
 import logoDeepseek from '@/images/llm/deepseek.svg?url'
@@ -205,28 +204,20 @@ import logoCopilot from '@/images/llm/copilot.svg?url'
 import logoAider from '@/images/llm/aider.svg?url'
 import logoZed from '@/images/llm/zed.svg?url'
 import logoAmp from '@/images/llm/amp.svg?url'
-
-// ─── 类型定义 ───
-
-type AgentKind = 'dsh' | 'claude_code' | 'opencode' | 'codex' | 'qwen_code' | 'gemini_cli' | 'cursor_agent' | 'windsurf' | 'copilot' | 'aider' | 'zed' | 'amp'
-type VortexConfigStatus = 'not_configured' | 'configured' | 'needs_update' | 'conflict' | 'failed'
-type FileOperation = 'create' | 'modify' | 'delete'
-
-interface DetectedAgent {
-  kind: AgentKind
-  installed: boolean
-  install_path: string | null
-  version: string | null
-  config_exists: boolean
-  config_path: string | null
-  supports_auto_config: boolean
-  unsupported_reason: string | null
-  vortex_status: VortexConfigStatus
-}
-
-interface FileChange { path: string; operation: FileOperation; summary: string }
-interface ConfigPreview { agent: AgentKind; files_to_modify: FileChange[]; requires_restart: boolean; warnings: string[] }
-interface ConfigResult { agent: AgentKind; success: boolean; error: string | null; backup_id: string | null; requires_restart: boolean }
+import {
+  detectAgents as apiDetectAgents,
+  previewConfig as apiPreviewConfig,
+  applyConfig as apiApplyConfig,
+  restoreConfig as apiRestoreConfig,
+  listBackups as apiListBackups,
+  type AgentKind,
+  type VortexConfigStatus,
+  type FileOperation,
+  type DetectedAgent,
+  type FileChange,
+  type ConfigPreview,
+  type ConfigResult,
+} from '@/api/agents'
 
 // ─── 缓存 ───
 
@@ -420,7 +411,7 @@ async function detectAgents(force = false) {
 
   detecting.value = true
   try {
-    const result = await invoke<{ agents: DetectedAgent[]; elapsed_ms: number }>('agent_detect')
+    const result = await apiDetectAgents()
     agents.value = sortAgents(result.agents)
     lastDetected.value = Date.now()
     saveCache(result.agents)
@@ -434,10 +425,7 @@ async function detectAgents(force = false) {
 async function previewConfig(agent: DetectedAgent) {
   configuring.value = agent.kind
   try {
-    const result = await invoke<{ preview: ConfigPreview; warnings: string[] }>(
-      'agent_preview_config',
-      { agent: agent.kind }
-    )
+    const result = await apiPreviewConfig(agent.kind)
     preview.value = result.preview
     showPreview.value = true
   } catch (e) {
@@ -451,9 +439,7 @@ async function applyConfig() {
   if (!preview.value) return
   applying.value = true
   try {
-    const result = await invoke<{ result: ConfigResult }>('agent_apply_config', {
-      request: { agent: preview.value.agent, confirmed: true },
-    })
+    const result = await apiApplyConfig(preview.value.agent, true)
     if (result.result.success) {
       const agent = agents.value.find((a) => a.kind === preview.value!.agent)
       if (agent) agent.vortex_status = 'configured'
@@ -479,15 +465,13 @@ async function restoreConfig() {
   if (!restoreAgent.value || restoring.value) return
   restoring.value = true
   try {
-    const backups = await invoke<{ backups: Array<{ id: string; agent: AgentKind }> }>('agent_list_backups')
+    const backups = await apiListBackups()
     const latestBackup = backups.backups.find((b) => b.agent === restoreAgent.value!.kind)
     if (!latestBackup) {
       ElMessage.warning('未找到可恢复的备份')
       return
     }
-    await invoke('agent_restore_config', {
-      request: { agent: restoreAgent.value.kind, backup_id: latestBackup.id },
-    })
+    await apiRestoreConfig(restoreAgent.value.kind, latestBackup.id)
     restoreAgent.value.vortex_status = 'not_configured'
     showRestoreDialog.value = false
     saveCache(agents.value)

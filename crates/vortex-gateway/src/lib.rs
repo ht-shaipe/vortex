@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod agent_integrations;
+pub mod services;
 
 use actix_cors::Cors;
 use actix_web::{dev::ServerHandle, web, App, HttpServer, middleware as actix_mw};
@@ -214,6 +215,15 @@ pub fn start_api_server(
                             .route("/key-permissions", web::post().to(api::management::key_permissions::create_permission))
                             .route("/key-permissions/{id}", web::delete().to(api::management::key_permissions::delete_permission))
                             .route("/health", web::get().to(api::management::health::health_check))
+                            .route("/system/status", web::get().to(api::management::system::get_system_status))
+                            .route("/system/proxy/start", web::post().to(api::management::system::start_proxy))
+                            .route("/system/proxy/stop", web::post().to(api::management::system::stop_proxy))
+                            .route("/agents/detect", web::get().to(api::management::agents::detect_agents))
+                            .route("/agents/preview", web::post().to(api::management::agents::preview_config))
+                            .route("/agents/apply", web::post().to(api::management::agents::apply_config))
+                            .route("/agents/restore", web::post().to(api::management::agents::restore_config))
+                            .route("/agents/backups", web::get().to(api::management::agents::list_backups))
+                            .route("/chat/cancel", web::post().to(api::management::chat::cancel_chat_stream))
                     )
             })
             .bind(format!("0.0.0.0:{}", port))

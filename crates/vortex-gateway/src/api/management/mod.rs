@@ -46,3 +46,9 @@ pub mod recommendations;
 pub mod compressed_content;
 /// API Key 权限管理端点
 pub mod key_permissions;
+/// 系统状态与代理控制端点
+pub mod system;
+/// 智能体集成端点
+pub mod agents;
+/// 对话控制端点
+pub mod chat;
