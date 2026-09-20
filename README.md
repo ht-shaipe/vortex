@@ -4,9 +4,13 @@
 
 # Vortex AI Gateway
 
-> 统一的 AI 网关桌面应用 — 将多家 AI 提供商聚合为 OpenAI / Anthropic 兼容 API
+> 统一的 AI 网关 — 将多家 AI 提供商聚合为 OpenAI / Anthropic 兼容 API
 
-Vortex 是一个基于 **Tauri 2 (Rust + Vue 3)** 构建的桌面 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持弹性重试、API 密钥管理和用量统计。
+Vortex 是一个基于 **Rust (Actix-Web) + Vue 3** 构建的 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持弹性重试、API 密钥管理和用量统计。
+
+支持两种运行模式：
+- **桌面模式** — 基于 Tauri 2 的桌面应用，内嵌 HTTP 服务器 + 系统托盘 + IPC 命令
+- **Web 模式** — 纯 actix-web 服务器（`vortex-server`），不依赖 Tauri，适合服务器部署
 
 ## 特性
 
@@ -78,6 +82,23 @@ bun run tauri build
 开发模式下：
 - 前端开发服务器：`http://localhost:1420`
 - API 网关服务器：`http://localhost:10168`
+
+### Web 模式部署
+
+不依赖 Tauri，纯 actix-web 服务器，适合服务器/无桌面环境部署：
+
+```bash
+# 编译并运行
+cargo run -p vortex-gateway --bin vortex-server
+
+# 或先编译再运行
+cargo build -p vortex-gateway --bin vortex-server --release
+./target/release/vortex-server
+```
+
+启动后监听 `0.0.0.0:10168`，提供 `/api/*` 管理端点和 `/v1/*` 代理端点。按 `Ctrl+C` 优雅关闭。
+
+> Web 模式下前端需单独部署（如 nginx 托管 `vite build` 产物），通过 `runtime.kind === 'web'` 自动切换到 HTTP API 通道。
 
 ### 使用网关
 
@@ -210,6 +231,15 @@ curl http://localhost:10168/v1/chat/completions \
 | DELETE | `/api/free-tokens/{id}` | 删除用户提交的推荐（内置条目不可删） |
 | GET/POST | `/api/model-aliases` | 模型别名列表/创建 |
 | GET/PATCH/DELETE | `/api/model-aliases/{id}` | 单个模型别名操作 |
+| GET | `/api/system/status` | 系统运行状态快照 |
+| POST | `/api/system/proxy/start` | 启动代理服务器 |
+| POST | `/api/system/proxy/stop` | 停止代理服务器 |
+| GET | `/api/agents/detect` | 检测已安装智能体 |
+| POST | `/api/agents/preview` | 预览智能体配置变更 |
+| POST | `/api/agents/apply` | 应用智能体配置 |
+| POST | `/api/agents/restore` | 恢复智能体配置 |
+| GET | `/api/agents/backups` | 列出配置备份 |
+| POST | `/api/chat/cancel` | 取消流式对话 |
 | GET | `/api/health` | 健康检查 |
 
 详细架构与内部实现参见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
@@ -217,12 +247,13 @@ curl http://localhost:10168/v1/chat/completions \
 ## 技术栈
 
 ### 后端 (Rust)
-- Tauri 2 — 桌面应用框架
-- Actix-Web 4 — HTTP 服务器
+- **Workspace 4 crate** — `vortex-store`（数据层）← `vortex-router`（路由引擎）← `vortex-gateway`（HTTP 网关 + services）← `src-tauri`（Tauri 桌面应用）
+- Actix-Web 4 — HTTP 服务器（桌面模式内嵌 / Web 模式独立 `vortex-server` binary）
 - rusqlite + r2d2 — SQLite 数据库（WAL 模式，连接池）
 - awc + openssl — 统一 HTTP 客户端（管理链路与上游链路共用，OpenSSL 3 指纹兼容 + HTTP/2）
 - aes-gcm — API 密钥加密
 - tokio — 异步运行时
+- Tauri 2 — 桌面应用框架（仅 `src-tauri`，Web 模式不依赖）
 - tauri-plugin-updater — 自动更新
 - tauri-plugin-process — 进程管理（重启应用）
 - tauri-plugin-autostart — 开机自启
@@ -242,33 +273,32 @@ curl http://localhost:10168/v1/chat/completions \
 
 ```
 vortex/
-├── src/                    # 前端源代码 (Vue 3 + TypeScript)
-│   ├── api/                # 请求层与适配层 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens / notifications)
-│   ├── components/         # Vue 组件 (layout / chat / stats / sync / ui)
-│   ├── composables/        # 组合式函数 (useTheme / useThemeColors / useUpdater / useNotifications)
-│   ├── lib/                # 工具函数 (range / dateRange / format / usageChart / runtime)
-│   ├── router/             # 路由配置
-│   ├── stores/             # Pinia 状态管理
-│   ├── styles/             # 设计系统 (cc-theme.css / cc-components.css)
-│   ├── types/              # 类型定义
-│   └── views/              # 页面视图 (16 个 .vue 文件)
-├── src-tauri/              # 后端源代码 (Rust + Tauri)
-│   └── src/
-│       ├── api/            # HTTP API 端点 (v1 OpenAI 兼容 + management 管理接口)
-│       ├── agent_integrations/ # 智能体检测与一键配置 (适配器 / 备份 / 安全写入)
-│       ├── db/             # 数据库操作与迁移
-│       ├── providers/      # 提供商注册表
-│       ├── proxy/          # 代理引擎 (engine / executor / retry / sse)
-│       ├── routing/        # 熔断器等弹性组件
-│       ├── tauri_cmds/     # Tauri IPC 命令
-│       └── translator/     # 响应格式转换器
-├── docs/                   # 项目官网与文档
-│   ├── index.html          # 官网落地页（原生 HTML/CSS/JS 零依赖）
-│   ├── wechat/             # 公众号系列文章
-│   └── promo/              # 视频脚本等宣传材料
-├── package.json            # 前端配置
-└── src-tauri/Cargo.toml    # 后端配置
+├── crates/                         # Rust workspace crates
+│   ├── vortex-store/               # 数据层 — config / db / encryption / migrations / error
+│   ├── vortex-router/              # 路由引擎 — proxy / providers / routing / translator / context
+│   └── vortex-gateway/             # HTTP 网关 — api / services / agent_integrations / AppState
+│       └── src/bin/vortex-server.rs  # Web 模式独立 binary（不依赖 Tauri）
+├── src-tauri/                      # Tauri 桌面应用（薄壳）— tauri_cmds 薄包装 + run() + main
+├── src/                            # 前端源代码 (Vue 3 + TypeScript)
+│   ├── api/                        # 请求层与双通道适配 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens / notifications / system / agents)
+│   ├── components/                 # Vue 组件 (layout / chat / stats / sync / ui)
+│   ├── composables/                # 组合式函数 (useTheme / useThemeColors / useUpdater / useNotifications)
+│   ├── lib/                        # 工具函数 (range / dateRange / format / usageChart / runtime)
+│   ├── router/                     # 路由配置
+│   ├── stores/                     # Pinia 状态管理
+│   ├── styles/                     # 设计系统 (cc-theme.css / cc-components.css)
+│   ├── types/                      # 类型定义
+│   └── views/                      # 页面视图 (16 个 .vue 文件)
+├── docs/                           # 项目官网与文档
+│   ├── index.html                  # 官网落地页（原生 HTML/CSS/JS 零依赖）
+│   ├── wechat/                     # 公众号系列文章
+│   └── promo/                      # 视频脚本等宣传材料
+├── Cargo.toml                     # workspace 根配置
+├── package.json                   # 前端配置
+└── src-tauri/Cargo.toml           # Tauri 桌面应用配置
 ```
+
+依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`。Web 项目复用前三个 crate，不需要 `src-tauri`。
 
 详细架构参见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
@@ -280,14 +310,24 @@ bun run dev          # Vite 开发服务器 (http://localhost:1420)
 bun run build        # 类型检查 (vue-tsc) + 构建
 bun run preview      # 预览构建产物
 
-# 后端开发
-cd src-tauri
-cargo build          # 编译
-cargo test           # 运行测试
-cargo clippy         # 代码检查
+# 后端开发（workspace）
+cargo build                          # 编译所有 crate
+cargo check                          # 快速类型检查
+cargo clippy                         # 代码检查
+cargo test                           # 运行测试
 
-# 完整开发模式
-bun run tauri dev
+# 单 crate 操作
+cargo build -p vortex-store          # 仅编译数据层
+cargo build -p vortex-router         # 仅编译路由引擎
+cargo build -p vortex-gateway        # 仅编译 HTTP 网关
+
+# Web 模式（独立 binary，不依赖 Tauri）
+cargo run -p vortex-gateway --bin vortex-server
+cargo build -p vortex-gateway --bin vortex-server --release
+
+# 桌面模式（完整开发）
+bun run tauri dev                    # 同时启动前端 + Tauri 后端
+bun run tauri build                  # 构建桌面安装包
 ```
 
 > **类型检查的已知问题**：`bun run build` 会先跑 `vue-tsc --noEmit`。当前 `typescript@7` 与 `vue-tsc@3` 组合会抛 `ERR_PACKAGE_PATH_NOT_EXPORTED: './lib/tsc' is not defined by "exports"`，属于依赖版本兼容问题而非代码错误。需要验证构建产物时直接执行 `npx vite build`（跳过类型检查）。

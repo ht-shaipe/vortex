@@ -2,86 +2,131 @@
 
 ## 概述
 
-Vortex 是一个 AI 网关桌面应用，采用 **Tauri 2** 框架，后端使用 **Rust**（Actix-Web + SQLite），前端使用 **Vue 3 + TypeScript**。其核心职责是将 OpenAI 兼容的 API 请求智能路由到多个上游 AI 提供商。
+Vortex 是一个 AI 网关应用，后端使用 **Rust**（Actix-Web + SQLite），前端使用 **Vue 3 + TypeScript**。支持两种运行模式：
+
+- **桌面模式**（`src-tauri`）— 基于 **Tauri 2** 的桌面应用，内嵌 HTTP 服务器 + 系统托盘 + IPC 命令
+- **Web 模式**（`vortex-server`）— 纯 actix-web 服务器，不依赖 Tauri，适合服务器部署
+
+后端 Rust 代码按功能拆分为 4 个 crate（依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`），核心层可独立复用于 Web 项目。
+
+## Crate 结构
+
+```
+vortex/
+├── crates/
+│   ├── vortex-store/       # 数据层：SQLite、配置、加密、错误
+│   ├── vortex-router/      # 路由层：代理引擎、提供商注册表、弹性路由、格式转换
+│   └── vortex-gateway/     # 网关层：HTTP API 服务器、services、智能体集成
+│       └── src/bin/vortex-server.rs  # 独立 Web 服务器入口
+└── src-tauri/              # 桌面应用：Tauri IPC 命令（薄包装）、托盘、窗口
+```
+
+| Crate | 职责 | 可独立复用 |
+|-------|------|------------|
+| `vortex-store` | 数据库（r2d2 连接池 + 18 个迁移）、配置加载、AES-256-GCM 加密、错误类型 | ✓ |
+| `vortex-router` | 代理引擎（ProxyEngine）、提供商注册表、熔断器/重试/速率限制、SSE 流式、格式转换器 | ✓ |
+| `vortex-gateway` | AppState + EngineContext 实现、actix-web 路由注册、services 业务逻辑层、智能体集成 | ✓（vortex-server） |
+| `src-tauri` | Tauri 命令薄包装（委托 services）、系统托盘、窗口管理、自动更新 | ✗（依赖 Tauri） |
 
 ## 系统架构
 
 ```
                           ┌─────────────────────────────────────────────────┐
-                          │            Vortex 桌面应用 (Tauri 2)            │
+                          │              运行模式                           │
                           │                                                 │
-   AI 客户端 ─────────────│  ┌───────────────────────────────────────────┐  │
-              (OpenAI SDK,                           │  │       Actix-Web HTTP Server :10168        │  │
-               cURL, etc.)│  │                                           │  │
-                          │  │/v1/chat/completions    ──┐                │  │
-                          │  │/v1/models                │                │  │
-                          │  │/v1/embeddings            │                │  │
-                          │  │/v1/images/generations    │                │  │
-                          │  │                          ▼                │  │
-                          │  │                     ProxyEngine           │  │
-                          │  │                          │                │  │
-                          │  │          ┌───────────────┼───────────────┐│  │
-                          │  │          │               │               ││  │
-                          │  │    API Key 验证   Route Resolver 用量记录 │  │
-                          │  │          │               │               ││  │
-                          │  │                          ▼                │  │
-                           │  │                  ProviderRegistry         │  │
-                           │  │                    (多家提供商)           │  │
-                          │  │                          │                │  │
-                          │  │                      Executor             │  │
-                          │  │            (OpenAI / Anthropic / Gemini)  │  │
-                          │  │                          │                │  │
-                          │  │               Retry + CircuitBreaker      │  │
-                          │  │                          │                │  │
-                          │  │             Translator (→ OpenAI 格式)    │  │
-                          │  └───────────────────────────────────────────┘  │
-                          │                                                 │
-                          │  ┌───────────────────────────────────────────┐  │
-                          │  │             SQLite (WAL 模式)             │  │
-                          │  │provider_connections | api_keys            │  │
-                          │  │usage_history | key_value (settings)       │  │
-                          │  │free_token_sites (免费站点目录)            │  │
-                          │  └───────────────────────────────────────────┘  │
-                          │                                                 │
-                           │  ┌───────────────────────────────────────────┐  │
-                            │  │        Vue 3 管理界面 (11 个页面)         │  │
-                           │  │接入指南 | 实时路由 | 订阅 | 模型映射       │  │
-                           │  │免费 Token | 请求日志 | 统计 | 同步        │  │
-                           │  │对话 | 设置 | 关于                        │  │
-                          │  └───────────────────────────────────────────┘  │
+                          │  ┌──────────────┐    ┌──────────────────────┐  │
+                          │  │ 桌面模式      │    │ Web 模式             │  │
+                          │  │ src-tauri    │    │ vortex-server        │  │
+                          │  │ (Tauri 2)    │    │ (纯 actix-web)       │  │
+                          │  └──────┬───────┘    └──────────┬───────────┘  │
+                          │         │                       │              │
+                          │         └───────────┬───────────┘              │
+                          │                     │                          │
+                          │         ┌───────────▼───────────┐              │
+                          │         │  vortex-gateway        │              │
+                          │         │  AppState + Services   │              │
+                          │         │  Actix-Web :10168      │              │
+                          │         └───────────┬───────────┘              │
+                          │                     │                          │
+                          │         ┌───────────▼───────────┐              │
+                          │         │  vortex-router         │              │
+                          │         │  ProxyEngine           │              │
+                          │         │  EngineContext trait   │              │
+                          │         └───────────┬───────────┘              │
+                          │                     │                          │
+                          │         ┌───────────▼───────────┐              │
+                          │         │  vortex-store          │              │
+                          │         │  SQLite + Config +     │              │
+                          │         │  Encryption            │              │
+                          │         └───────────────────────┘              │
                           └─────────────────────────────────────────────────┘
-                                          │
-                    ┌─────────────────────┼─────────────────────┐
-                    │                     │                     │
-               OpenAI API           Anthropic API          Gemini API
-               (上游提供商)          (上游提供商)          (上游提供商)
+
+  前端 (Vue 3)
+  ┌─────────────────────────────────────────────────────────┐
+  │  runtime.kind 检测                                      │
+  │  ├── 'desktop' → Tauri IPC (invoke)                     │
+  │  └── 'web'     → HTTP API (axios → localhost:10168/api) │
+  └─────────────────────────────────────────────────────────┘
 ```
 
 ## 核心模块
 
-### 1. 应用状态 (`lib.rs`)
+### 1. 应用状态 (`vortex-gateway/src/lib.rs`)
 
 `AppState` 是全局共享状态，通过 `Arc<AppState>` 在所有请求间共享：
 
 ```rust
 pub struct AppState {
-    pub db_pool: db::core::DbPool,              // SQLite 连接池 (r2d2, 最大8连接)
-    pub config: config::AppConfig,              // 配置 (端口、数据目录、加密密钥等)
-    pub provider_registry: ProviderRegistry,     // 多家内置提供商定义
-    pub proxy_engine: RwLock<ProxyEngine>,       // 代理引擎
-    pub resilience_manager: ResilienceManager,   // 熔断器管理
-    pub upstream_ssl: openssl::ssl::SslConnector, // TLS 连接器 (openssl)，按线程创建 awc::Client —— 管理链路与上游链路统一使用 awc + openssl
-    pub encryption_key: Vec<u8>,                 // AES-256-GCM 密钥
-    pub proxy_handle: Mutex<Option<ServerHandle>>, // 网关服务器句柄，支持运行时启停
-    pub proxy_port: u16,                         // 网关监听端口
+    pub db_pool: db::core::DbPool,                    // SQLite 连接池 (r2d2, 最大8连接)
+    pub config: config::AppConfig,                    // 配置 (端口、数据目录、加密密钥等)
+    pub provider_registry: ProviderRegistry,           // 多家内置提供商定义
+    pub proxy_engine: ProxyEngine,                     // 代理引擎
+    pub resilience_manager: ResilienceManager,         // 熔断器管理
+    pub rate_limiter: RateLimiter,                     // 内存速率限制器 (滑动窗口)
+    pub bandit_router: BanditRouter,                   // Thompson 采样 bandit 路由
+    pub occupancy: OccupancyTracker,                   // 模型占用追踪 (auto 路由软避让)
+    pub sticky_session: StickySessionManager,          // 粘性会话 (auto 路由模型记忆)
+    pub encryption_key: Vec<u8>,                       // AES-256-GCM 密钥
+    pub proxy_handle: Mutex<Option<ServerHandle>>,     // 网关服务器句柄
+    pub proxy_port: u16,                               // 网关监听端口
 }
 ```
 
-**启动流程** (`run()`):
+#### EngineContext trait (`vortex-router/src/context.rs`)
+
+代理引擎通过 `EngineContext` trait 与 `AppState` 解耦，不直接依赖 `AppState` 的具体字段：
+
+```rust
+pub trait EngineContext: Send + Sync {
+    fn db_pool(&self) -> &DbPool;
+    fn config(&self) -> &AppConfig;
+    fn provider_registry(&self) -> &ProviderRegistry;
+    fn sticky_session(&self) -> &StickySessionManager;
+    fn encryption_key(&self) -> &[u8];
+    fn resilience_manager(&self) -> &ResilienceManager;
+    fn rate_limiter(&self) -> &RateLimiter;
+    fn bandit_router(&self) -> &BanditRouter;
+    fn occupancy(&self) -> &OccupancyTracker;
+}
+```
+
+`AppState` 实现 `EngineContext`，`ProxyEngine::handle_request()` 接收 `&dyn EngineContext`，使引擎可脱离 Tauri/actix 独立测试和复用。
+
+#### 启动流程
+
+**桌面模式** (`src-tauri/src/lib.rs::run()`):
 1. 加载配置 (`AppConfig::load()`)
 2. 创建应用状态 (`create_app_state()`) — 初始化 DB 连接池、运行迁移、创建各引擎
 3. 启动 API 服务器 (`start_api_server()`) — 独立线程中运行 Actix-Web
-4. 启动 Tauri 应用 — 注册插件（updater / process / shell）、命令处理器与系统托盘菜单（显示窗口 / 启动代理 / 停止代理 / 退出）
+4. 启动 Tauri 应用 — 注册插件（updater / process / shell）、命令处理器与系统托盘
+
+**Web 模式** (`vortex-gateway/src/bin/vortex-server.rs::main()`):
+1. 加载配置 (`AppConfig::load()`)
+2. 创建应用状态 (`create_app_state()`)
+3. 启动 API 服务器 (`start_api_server()`)
+4. 等待 SIGINT / SIGTERM 信号 → 优雅关闭 (`handle.stop(true).await`)
+
+两种模式共享步骤 1-3，区别仅在进程保持方式（Tauri 事件循环 vs 信号等待）。
 
 ### 2. 代理引擎 (`proxy/engine.rs`)
 
@@ -272,17 +317,45 @@ pub struct ProviderDef {
 | `POST /api/model-aliases/auto-generate` | 自动归纳：按模型家族（剥离日期/`-latest`/`-free`/`:free`/上下文长度等后缀）分组生成虚拟别名，单模型家族也生成同名别名；先删除旧 `auto` 别名再批量创建（跳过与 manual 同名的） |
 | `GET/PATCH/DELETE /api/model-aliases/{id}` | 单个模型别名操作 |
 | `GET /api/health` | 健康检查 (DB 连通性 + 版本) |
+| `GET /api/system/status` | 系统运行状态快照（代理状态、端口、版本、DB、连接统计、今日用量） |
+| `POST /api/system/proxy/start` | 启动本地代理服务器 |
+| `POST /api/system/proxy/stop` | 停止本地代理服务器 |
+| `GET /api/agents/detect` | 检测本机已安装的 AI 编程智能体 |
+| `POST /api/agents/preview` | 预览智能体配置变更 |
+| `POST /api/agents/apply` | 应用智能体配置（写入前自动备份） |
+| `POST /api/agents/restore` | 从备份恢复智能体配置 |
+| `GET /api/agents/backups` | 列出所有配置备份 |
+| `POST /api/chat/cancel` | 取消进行中的流式对话 |
 
-### 10. Tauri 命令 (`tauri_cmds/`)
+### 10. Services 层 (`vortex-gateway/src/services/`)
 
-前端通过 Tauri IPC 调用的命令，功能与管理 API 类似但走 IPC 通道：
+业务逻辑从 Tauri 命令和 HTTP 端点中提取为独立的服务函数，供两种调用方式复用：
 
-- `list_providers`, `add_provider`, `test_provider`
-- `get_settings`, `update_settings`
-- `start_proxy`, `stop_proxy` — 运行时启停网关服务器
+| 模块 | 函数 | 说明 |
+|------|------|------|
+| `provider_service` | `list_providers` / `add_provider` / `test_provider` | 提供商列表（脱敏）、新增连接、测试连通性 |
+| `settings_service` | `get_settings` / `update_settings` | 设置读写 |
+| `system_service` | `get_system_status` | 系统运行状态快照 |
+| `proxy_service` | `start_proxy` / `stop_proxy` | 代理服务器启停 |
+| `chat_service` | `mark_cancelled` / `take_cancelled` | 流式对话取消标记管理（跨命令共享） |
+| `agent_service` | `detect_agents` / `preview_config` / `apply_config` / `restore_config` / `list_backups` | 智能体检测、配置预览/应用/恢复、备份列表 |
+
+> `test_provider` 内部使用 `awc::Client`（非 `Send`），Tauri 命令通过 `spawn_blocking` + `actix_rt::Runtime` 调用，HTTP handler 在 actix runtime 中直接调用。同步 DB/文件操作在 HTTP handler 中通过 `spawn_blocking` 移至阻塞线程池。
+
+### 11. Tauri 命令 (`src-tauri/src/tauri_cmds/`)
+
+前端通过 Tauri IPC 调用的命令，全部为**薄包装**——仅提取 `State` 并委托给 services 层：
+
+- `list_providers`, `add_provider`, `test_provider` → `provider_service`
+- `get_settings`, `update_settings` → `settings_service`
+- `start_proxy`, `stop_proxy` → `proxy_service`
+- `get_system_status` → `system_service`
+- `agent_detect`, `agent_preview_config`, `agent_apply_config`, `agent_restore_config`, `agent_list_backups` → `agent_service`
+- `chat_completions_stream` — Tauri Channel 流式传输（本模块特有），取消逻辑委托 `chat_service`
+- `cancel_chat_stream` → `chat_service::mark_cancelled`
 - 托盘事件通过 `tray-action` 事件向前端广播（`start` / `stop`）
 
-### 11. 智能体集成 (`agent_integrations/`)
+### 12. 智能体集成 (`vortex-gateway/src/agent_integrations/`)
 
 自动检测本机已安装的 AI 编程智能体（Claude Code、Codex、OpenCode、Qwen Code、Gemini CLI、Cursor Agent 等 12 种），并一键将 Vortex 网关配置写入其配置文件。设计原则：只修改受管的 Vortex 节点、写入前备份、不读取用户凭据、幂等操作。
 
@@ -298,7 +371,7 @@ pub struct ProviderDef {
 
 运行时通过 `api/v1/mod.rs::detect_agent()` 从请求头（User-Agent / originator）识别调用方 Agent，写入 `ProxyRequest.agent` 并随 `UsageEntry.agent` 落库到 `usage_history`，请求日志页面展示"来源"列。
 
-### 12. Tauri 插件
+### 13. Tauri 插件
 
 | 插件 | 用途 |
 |------|------|
@@ -362,16 +435,26 @@ AppLayout
 
 ### API 适配层 (`src/api/`)
 
-`client.ts` 提供 axios 实例，其余模块按「直连后端」与「前端适配」两类组织：
+`client.ts` 提供 axios 实例（baseURL: `http://localhost:10168/api`），`runtime.ts` 检测运行环境（`desktop` / `web`）。其余模块按调用方式分三类：
+
+**双通道适配**（桌面端走 Tauri IPC `invoke`，Web 端走 HTTP `axios`）：
+
+| 模块 | 函数 | 桌面端 | Web 端 |
+|------|------|--------|--------|
+| `system.ts` | `getSystemStatus` / `startProxy` / `stopProxy` | `invoke('get_system_status')` 等 | `GET /api/system/status` 等 |
+| `agents.ts` | `detectAgents` / `previewConfig` / `applyConfig` / `restoreConfig` / `listBackups` | `invoke('agent_detect')` 等 | `GET /api/agents/detect` 等 |
+| `chat.ts` | `streamCompletion` | Tauri Channel IPC | `fetch` SSE + `AbortController` |
+| `chat.ts` | `cancelChatStream` | `invoke('cancel_chat_stream')` | `AbortController.abort()` |
+
+**直连 HTTP**（两种模式都走 HTTP API）：
 
 | 模块 | 数据来源 | 说明 |
 |------|----------|------|
 | `providers.ts` / `keys.ts` / `usage.ts` / `settings.ts` | 直连 `/api/*` | 与后端接口一一对应 |
-| `freeTokens.ts` | 直连 `/api/free-tokens` | 站点列表 / 提交推荐 / 删除推荐；字段统一 camelCase，与后端 `#[serde(rename_all = "camelCase")]` 对应 |
-| `stats.ts` | 前端聚合 | 后端无 `daily_stats` 表，`statsApi` 从 `/api/usage` 原始记录聚合出端点统计（KPI / 热力图 / 趋势 / 日模型明细）；`usageApi` 的同步与清理类方法为 TODO 桩 |
-| `chat.ts` | 前端 + 网关 | 分支树（`parentId` / `activeNodeId` / `siblingIds`）持久化在 localStorage；发送走网关 `POST /v1/chat/completions` SSE，鉴权自动取第一个可用 API Key |
-| `sync.ts` | 混合 | cc-switch 迁移预览、本地配置导出/导入为真实实现；WebDAV 云端备份/恢复与云端备份列表为 TODO 桩，UI 降级提示「后端未接入」 |
-| `notifications.ts` | 远程通知中心 | 从远程服务端拉取站内通知列表，与本地后端无关 |
+| `freeTokens.ts` | 直连 `/api/free-tokens` | 站点列表 / 提交推荐 / 删除推荐 |
+| `stats.ts` | 前端聚合 | 从 `/api/usage` 原始记录聚合出端点统计 |
+| `sync.ts` | 混合 | cc-switch 迁移、本地配置导出/导入为真实实现；WebDAV 为 TODO 桩 |
+| `notifications.ts` | 远程通知中心 | 从远程服务端拉取站内通知列表 |
 
 后端补齐接口后，只需替换 `stats.ts` / `sync.ts` 中标注 TODO 的函数，组件层无需改动。
 
