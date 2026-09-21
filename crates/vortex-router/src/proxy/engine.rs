@@ -12,6 +12,7 @@ use crate::proxy::retry::RetryPolicy;
 use crate::proxy::sse::{self, SseStream, StreamUsage, UsageCallback, UsageExtract};
 use crate::proxy::tool_call_rescue;
 use crate::context::EngineContext;
+use crate::routing::resilience::ResilienceManager;
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -346,8 +347,9 @@ impl ProxyEngine {
             }
 
         // 路由解析：找到提供商定义、活跃连接与实际模型名
+        // 传入熔断器管理器，使路由解析感知熔断状态，优先选择可用连接
         let (provider_def, connection, model) =
-            self.resolve_route(&conn, &state.provider_registry(), &request, &state.encryption_key())?;
+            self.resolve_route(&conn, &state.provider_registry(), &request, &state.encryption_key(), state.resilience_manager())?;
 
         let conn_obj = connection.ok_or_else(|| AppError::Provider("No active connection".into()))?;
         // 带重试与熔断的上游执行
@@ -420,12 +422,15 @@ impl ProxyEngine {
     /// 解析策略：
     /// 1. 优先通过注册表精确匹配模型名
     /// 2. 匹配失败时回退到配置了默认模型的活跃连接
+    /// 3. 连接选择时感知熔断器状态，优先选择熔断器可用（非 Open 态）的连接，
+    ///    避免每次请求都先撞一次已确认故障的连接
     ///
     /// # 参数
     /// - `conn`：数据库连接
     /// - `registry`：提供商注册表
     /// - `request`：代理请求
     /// - `enc_key`：加密密钥（用于解密连接凭证）
+    /// - `resilience`：熔断器管理器（用于感知连接健康状态）
     ///
     /// # 返回
     /// `(提供商定义, 活跃连接, 实际模型名)`
@@ -435,18 +440,28 @@ impl ProxyEngine {
         registry: &ProviderRegistry,
         request: &ProxyRequest,
         enc_key: &[u8],
+        resilience: &ResilienceManager,
     ) -> Result<(crate::providers::types::ProviderDef, Option<vortex_store::db::models::ProviderConnection>, String)> {
         // 优先通过注册表精确匹配
         if let Some((provider_id, def, model)) = registry.resolve_model_provider(&request.model) {
             let connections = db_providers::list_by_provider(conn, &provider_id, enc_key)?;
             // 优先选择 models 列表包含该模型的连接，回退到第一个活跃连接
+            // 同一组候选内先挑熔断器可用的连接：同时检查连接级与模型级熔断器，
+            // 跳过已确认故障的连接/模型组合，全部熔断时仍按原顺序兜底
+            // （后续执行层会给 CircuitOpen 快速失败，再由紧急故障转移接管）
+            let conn_ok = |c: &vortex_store::db::models::ProviderConnection| {
+                resilience.is_available(&format!("{}:{}", def.id, c.id))
+                    && resilience.is_available(&format!("{}:{}:{}", def.id, c.id, model))
+            };
             let connection = connections
                 .iter()
-                .find(|c| {
+                .filter(|c| {
                     c.models
                         .as_ref()
                         .is_some_and(|models| models.iter().any(|m| m.id == model))
                 })
+                .find(|c| conn_ok(c))
+                .or_else(|| connections.iter().find(|c| conn_ok(c)))
                 .or_else(|| connections.first())
                 .cloned();
             return Ok((def.clone(), connection, model));
@@ -458,6 +473,7 @@ impl ProxyEngine {
             let connections = db_providers::list_by_provider(conn, &def.id, enc_key)?;
             if let Some(c) = connections.iter().find(|c| {
                 c.default_model.as_deref().is_some_and(|m| !m.is_empty())
+                    && resilience.is_available(&format!("{}:{}", def.id, c.id))
             }) {
                 let model = c.default_model.clone().unwrap_or_default();
                 log::warn!(

@@ -55,6 +55,19 @@
       <UsageTrendChart :data="trendData" />
     </section>
 
+    <!-- 每日 Token 趋势图（按模型分组） -->
+    <section v-if="modelTrendData.length > 0" class="card sec-body p-[var(--pad-card)]">
+      <DailyTokenTrend :data="modelTrendData" :today-start="todayStart" />
+    </section>
+
+    <!-- 模型用量环形图 -->
+    <section v-if="donutModels.length > 0" class="sec flex flex-col gap-[var(--gap-sm)]">
+      <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">模型用量</h2>
+      <div class="card sec-body p-[var(--pad-card)]">
+        <ModelUsageDonut :models="donutModels" :total="donutTotal" />
+      </div>
+    </section>
+
     <section v-if="dayModelRows.length > 0" class="sec flex flex-col gap-[var(--gap-sm)]">
       <h2 class="sec-title m-0 text-13px font-semibold text-ink-2">按日期 · 模型</h2>
       <div class="card table-wrap overflow-hidden">
@@ -102,6 +115,10 @@ import StatCard from './StatCard.vue'
 import TokenHint from './TokenHint.vue'
 import UsageHeatmap from './UsageHeatmap.vue'
 import UsageTrendChart from './UsageTrendChart.vue'
+import DailyTokenTrend from './DailyTokenTrend.vue'
+import ModelUsageDonut from './ModelUsageDonut.vue'
+import type { ModelDayPoint } from './DailyTokenTrend.vue'
+import type { ModelUsageItem } from './ModelUsageDonut.vue'
 import { fmtInt, formatTokenCompact } from '@/lib/format'
 import {
   isHourlyTrend,
@@ -128,11 +145,38 @@ const range = ref<RangeValue>({ kind: 'preset', key: 'today' }) // 日期范围�
 const syncing = ref(false) // 是否正在刷新
 const appTypes = ref<string[]>([]) // 数据中出现的来源列表
 const summary = ref<UsageSummary | null>(null) // 汇总统计
-const dayModelRows = ref<DayModelUsage[]>([]) // 按日期·模型明细行
+const dayModelRows = ref<DayModelUsage[]>([]) // 按日期·模型明细行（受日期筛选影响，明细表格用）
+const allDayModelRows = ref<DayModelUsage[]>([]) // 全量按日期·模型数据（每日趋势图与模型用量环形图用，不受日期筛选影响）
 const byDayRows = ref<DailyUsage[]>([]) // 按天数据（热力图用）
 const byHourRows = ref<DailyUsage[]>([]) // 按小时数据（趋势图用）
 
 const todayStart = startOfTodayMs() // 今日零点时间戳
+
+// 每日 Token 趋势图数据（按日×模型聚合，基于全量数据，不受顶部日期筛选影响）
+const modelTrendData = computed<ModelDayPoint[]>(() => {
+  const today = new Date(todayStart)
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return allDayModelRows.value.map((r) => ({
+    date: r.date,
+    model: r.model || 'unknown',
+    tokens: r.inputTokens + r.outputTokens + r.cacheCreationTokens + r.cacheReadTokens,
+  })).filter((p) => p.date <= todayStr)
+})
+
+// 模型用量环形图数据（按模型聚合总 Token，与趋势图同源同口径）
+const donutModels = computed<ModelUsageItem[]>(() => {
+  const modelMap = new Map<string, number>()
+  for (const r of allDayModelRows.value) {
+    const model = r.model || 'unknown'
+    const total = r.inputTokens + r.outputTokens + r.cacheCreationTokens + r.cacheReadTokens
+    modelMap.set(model, (modelMap.get(model) ?? 0) + total)
+  }
+  const total = [...modelMap.values()].reduce((a, b) => a + b, 0)
+  return [...modelMap.entries()]
+    .map(([model, tokens]) => ({ model, tokens, pct: total > 0 ? Math.round((tokens / total) * 100) : 0 }))
+    .sort((a, b) => b.tokens - a.tokens)
+})
+const donutTotal = computed(() => donutModels.value.reduce((s, m) => s + m.tokens, 0))
 
 // 来源 Tab 列表（全部 + 动态来源）
 const appTabs = computed(() => [
@@ -244,6 +288,15 @@ async function loadByHour(): Promise<void> {
   }
 }
 
+/** 全量按日期·模型数据：供每日 Token 趋势图与模型用量环形图使用（仅随来源 Tab 变化）。 */
+async function loadAllDayModel(): Promise<void> {
+  try {
+    allDayModelRows.value = await usageApi.getByDayModel({ appType: appType.value })
+  } catch (e) {
+    console.error('[UsagePanel] loadAllDayModel failed', e)
+  }
+}
+
 /** 加载来源类型列表。 */
 async function loadAppTypes(): Promise<void> {
   try {
@@ -260,7 +313,7 @@ async function sync(): Promise<void> {
   try {
     invalidateStatsCache()
     await usageApi.sync()
-    await Promise.all([loadAppTypes(), loadFiltered(), loadByDay(), loadByHour()])
+    await Promise.all([loadAppTypes(), loadFiltered(), loadAllDayModel(), loadByDay(), loadByHour()])
     console.log('[UsagePanel] sync done')
   } catch (e) {
     console.error('[UsagePanel] sync failed', e)
@@ -272,7 +325,7 @@ async function sync(): Promise<void> {
 
 // 来源或筛选变化时重新加载对应数据
 watch([appType, filter], () => void loadFiltered(), { immediate: true })
-watch(appType, () => void loadByDay(), { immediate: true })
+watch(appType, () => { void loadByDay(); void loadAllDayModel() }, { immediate: true })
 watch([appType, trendWin], () => void loadByHour(), { immediate: true })
 void loadAppTypes() // 初始加载来源列表
 </script>

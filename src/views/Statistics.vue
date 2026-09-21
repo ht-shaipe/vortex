@@ -238,13 +238,12 @@
             <div class="card-title text-13.5px">按模型成本</div>
           </div>
           <table class="table">
-            <thead><tr><th>提供方</th><th>模型</th><th class="num">请求数</th><th class="num">成本</th><th class="num">输入 Tokens</th><th class="num">输出 Tokens</th><th class="num">节省 Tokens</th></tr></thead>
+            <thead><tr><th>提供方</th><th>模型</th><th class="num">请求数</th><th class="num">输入 Tokens</th><th class="num">输出 Tokens</th><th class="num">节省 Tokens</th></tr></thead>
             <tbody>
               <tr v-for="(m, idx) in costData.byModel" :key="(m.provider || '') + '|' + (m.model || '') + '|' + idx">
                 <td class="text-12.5px">{{ m.provider || '—' }}</td>
                 <td class="mono text-12.5px">{{ m.model || '—' }}</td>
                 <td class="num mono text-12.5px tabular-nums">{{ m.requests }}</td>
-                <td class="num mono text-12.5px tabular-nums">${{ m.cost.toFixed(4) }}</td>
                 <td class="num mono text-12.5px tabular-nums">{{ formatTokenCompact(m.tokensInput) }}</td>
                 <td class="num mono text-12.5px tabular-nums">{{ formatTokenCompact(m.tokensOutput) }}</td>
                 <td class="num mono text-12.5px tabular-nums text-ok">{{ m.savedTokens > 0 ? formatTokenCompact(m.savedTokens) : '—' }}</td>

@@ -72,17 +72,62 @@ fn never_worse(original: &Value, compressed: &Value) -> Value {
     }
 }
 
-/// 压缩消息列表，返回 (压缩后消息, 节省的 token 数)
+/// 按字符边界安全截取字符串前 n 字节（避免 UTF-8 多字节字符中间截断 panic）。
+fn take_bytes(s: &str, n: usize) -> &str {
+    if s.len() <= n {
+        return s;
+    }
+    let mut end = n;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+/// 按字符边界安全跳过前 skip 字节后返回剩余后缀（避免 UTF-8 多字节字符中间截断 panic）。
+fn skip_bytes(s: &str, skip: usize) -> &str {
+    if skip >= s.len() {
+        return "";
+    }
+    let mut start = skip;
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+    &s[start..]
+}
+
+/// 压缩消息列表，返回 (压缩后消息, 节省的 token 数)。
+///
+/// `messages` 兼容两种形态：
+/// - 消息数组（OpenAI messages 数组本身）；
+/// - 完整请求体对象（网关各端点实际传入的形态，如 Anthropic 入站请求转换后的
+///   OpenAI body，其 `messages` 字段才是消息数组）。压缩后写回 `messages` 字段。
 pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value, i64) {
     if !config.enabled || config.level == CompressionLevel::None {
         return (messages.clone(), 0);
     }
 
-    let arr = match messages.as_array() {
-        Some(a) => a,
-        None => return (messages.clone(), 0),
-    };
+    // 形态一：消息数组
+    if let Some(arr) = messages.as_array() {
+        let (compressed, saved) = compress_array(arr, config);
+        return (Value::Array(compressed), saved);
+    }
 
+    // 形态二：完整请求体对象（仅当含 "messages" 数组字段时压缩）
+    if let Some(arr) = messages.get("messages").and_then(|m| m.as_array()) {
+        let (compressed, saved) = compress_array(arr, config);
+        if saved > 0 {
+            let mut out = messages.clone();
+            out["messages"] = Value::Array(compressed);
+            return (out, saved);
+        }
+    }
+
+    (messages.clone(), 0)
+}
+
+/// 压缩消息数组，返回 (压缩后消息数组, 节省的 token 数)
+fn compress_array(arr: &[Value], config: &CompressionConfig) -> (Vec<Value>, i64) {
     let mut compressed: Vec<Value> = Vec::new();
     let mut last_role: Option<String> = None;
 
@@ -123,9 +168,9 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
                         let tail = config.minimal_content_chars / 4;
                         let truncated = format!(
                             "{}\n[...truncated {} chars...]\n{}",
-                            &s[..head],
+                            take_bytes(s, head),
                             s.len() - head - tail,
-                            &s[s.len() - tail..]
+                            skip_bytes(s, s.len() - tail)
                         );
                         *content = Value::String(truncated);
                     }
@@ -135,7 +180,7 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
             && let Some(content) = msg.get_mut("content")
                 && let Some(s) = content.as_str()
                     && s.len() > config.max_content_chars {
-                        let kept = &s[..config.max_content_chars];
+                        let kept = take_bytes(s, config.max_content_chars);
                         *content = Value::String(format!(
                             "{}\n[...truncated {} chars...]",
                             kept,
@@ -162,13 +207,109 @@ pub fn compress_messages(messages: &Value, config: &CompressionConfig) -> (Value
         compressed = result;
     }
 
-    let compressed_val = Value::Array(compressed);
-    let original_tokens = estimate_tokens(messages) as i64;
-
     // Never-Worse 保护
-    let final_val = never_worse(messages, &compressed_val);
-    let final_tokens = estimate_tokens(&final_val) as i64;
-    let saved = (original_tokens - final_tokens).max(0);
+    let original = Value::Array(arr.to_vec());
+    let final_val = never_worse(&original, &Value::Array(compressed.clone()));
+    let saved = (estimate_tokens(&original) as i64 - estimate_tokens(&final_val) as i64).max(0);
 
-    (final_val, saved)
+    let final_arr = match final_val {
+        Value::Array(a) => a,
+        _ => compressed,
+    };
+    (final_arr, saved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn config(level: CompressionLevel) -> CompressionConfig {
+        CompressionConfig {
+            enabled: true,
+            level,
+            ..Default::default()
+        }
+    }
+
+    /// 网关端点实际传入形态：完整请求体对象（含 "messages" 字段），应正常压缩并写回
+    #[test]
+    fn object_body_with_messages_array_is_compressed() {
+        let long_tool_output = (0..50).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let body = json!({
+            "model": "gpt-4o",
+            "max_tokens": 1024,
+            "messages": [
+                {"role": "system", "content": "you are helpful"},
+                {"role": "user", "content": "run it"},
+                {"role": "tool", "tool_call_id": "t1", "content": long_tool_output},
+            ]
+        });
+        let (out, saved) = compress_messages(&body, &config(CompressionLevel::Minimal));
+        assert!(saved > 0, "saved should be > 0, got {}", saved);
+        assert_eq!(out["model"], "gpt-4o", "请求体其它字段应保留");
+        let msgs = out["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 3);
+        let tool_content = msgs[2]["content"].as_str().unwrap();
+        assert!(tool_content.starts_with("[...truncated 40 lines...]\n"), "tool 输出应裁剪为最后 10 行");
+    }
+
+    /// 纯消息数组形态（旧行为）仍应支持
+    #[test]
+    fn array_input_still_supported() {
+        let long_tool_output = (0..50).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+        let arr = json!([
+            {"role": "tool", "tool_call_id": "t1", "content": long_tool_output},
+        ]);
+        let (out, saved) = compress_messages(&arr, &config(CompressionLevel::Minimal));
+        assert!(saved > 0);
+        assert!(out.as_array().unwrap()[0]["content"].as_str().unwrap().contains("[...truncated"));
+    }
+
+    /// 中文长文本截断：UTF-8 多字节字符边界处不应 panic
+    #[test]
+    fn minimal_truncate_handles_utf8_boundaries() {
+        let long_cn = "汉".repeat(5000); // 15000 字节 > minimal_content_chars(8000)
+        let arr = json!([
+            {"role": "user", "content": long_cn},
+        ]);
+        let (out, saved) = compress_messages(&arr, &config(CompressionLevel::Minimal));
+        assert!(saved > 0);
+        let s = out.as_array().unwrap()[0]["content"].as_str().unwrap();
+        assert!(s.contains("[...truncated"));
+    }
+
+    /// 无 messages 数组的对象、未启用、level=None 均应原样返回 saved=0
+    #[test]
+    fn passthrough_cases() {
+        let no_messages = json!({"input": "hello"});
+        let (out, saved) = compress_messages(&no_messages, &config(CompressionLevel::Minimal));
+        assert_eq!(saved, 0);
+        assert_eq!(out, no_messages);
+
+        let body = json!({"messages": [{"role": "user", "content": "hi"}]});
+        let mut disabled = config(CompressionLevel::Minimal);
+        disabled.enabled = false;
+        let (_, saved) = compress_messages(&body, &disabled);
+        assert_eq!(saved, 0);
+
+        let (_, saved) = compress_messages(&body, &config(CompressionLevel::None));
+        assert_eq!(saved, 0);
+    }
+
+    /// 消息数超上限时裁剪陈旧上下文（保留 system + 最近的 max_messages 条）
+    #[test]
+    fn stale_context_trimmed() {
+        let mut msgs = vec![json!({"role": "system", "content": "sys"})];
+        for i in 0..80 {
+            msgs.push(json!({"role": "user", "content": format!("msg {}", i)}));
+        }
+        let body = json!({"messages": msgs});
+        let (out, saved) = compress_messages(&body, &config(CompressionLevel::Minimal));
+        assert!(saved > 0);
+        let kept = out["messages"].as_array().unwrap();
+        assert_eq!(kept.len(), 1 + 50, "应保留 1 条 system + 最近 50 条");
+        assert_eq!(kept[0]["role"], "system");
+        assert_eq!(kept[1]["content"], "msg 30", "旧的 user 消息应被裁掉");
+    }
 }
