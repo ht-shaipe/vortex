@@ -214,6 +214,11 @@
         <h3 data-page-node-id="4UIMkCN71foAOEuey3NYFk">免费 Token 站点目录</h3>
         <p data-page-node-id="3j1fMTaEhbo1ZX4HSJCC3P">内置 43 个可申请免费额度的 AI 平台，标注是否支持 API、是否需绑卡与实名；新发现的站点经远程通知中心实时推送。</p>
       </div>
+      <div class="card feat reveal" data-page-node-id="featHttpsCard">
+        <span class="feat-ico" data-page-node-id="featHttpsIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featHttpsSvg"><rect x="4" y="10" width="16" height="11" rx="2" data-page-node-id="featHttpsRect"/><path d="M8 10V7a4 4 0 0 1 8 0v3" data-page-node-id="featHttpsShackle"/><circle cx="12" cy="15.5" r="1.6" data-page-node-id="featHttpsDot"/></svg></span>
+        <h3 data-page-node-id="featHttpsTitle">本地 HTTPS 双端口</h3>
+        <p data-page-node-id="featHttpsDesc">设置页一键开启：HTTP 端口保持不变，另起一个 HTTPS 端口（自动生成本地证书并装入钥匙串）。第三方客户端不受影响，两种协议同时可用。</p>
+      </div>
 
       <div class="card feat reveal" data-page-node-id="featDesktopCard">
         <span class="feat-ico" data-page-node-id="featDesktopIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featDesktopSvg"><rect x="3" y="4" width="18" height="14" rx="2" data-page-node-id="featDesktopRect"/><path d="M3 19h18M8 22h8" data-page-node-id="featDesktopLines"/></svg></span>
@@ -325,7 +330,7 @@
           <span class="step-n" data-page-node-id="1VGPwi6fxR6Cm7rRv2hxcw">3</span>
           <div data-page-node-id="ATkNRKFei0GGf94G9Oo9Jz">
             <h4 data-page-node-id="OPY5UcO3TnGudoPils2miR">开发模式启动</h4>
-            <p data-page-node-id="Lodf885u84d5Xxy2Q6Csh5">一条命令同时拉起前端与 Rust 后端。界面在 <code data-page-node-id="1bDmHqJ1BuQg0y0yniJ1T6">localhost:1420</code>，网关在 <code data-page-node-id="o86WRCcJjNCrkS6lVBjmZQ">localhost:10168</code>。</p>
+            <p data-page-node-id="Lodf885u84d5Xxy2Q6Csh5">一条命令同时拉起前端与 Rust 后端。界面在 <code data-page-node-id="1bDmHqJ1BuQg0y0yniJ1T6">localhost:1420</code>，网关在 <code data-page-node-id="o86WRCcJjNCrkS6lVBjmZQ">localhost:10168</code>（设置页开启 HTTPS 后另有 <code data-page-node-id="o86WRCcJjNCrkS6lVBjmZQ2">localhost:10169</code>）。</p>
           </div>
         </div>
         <div class="step" data-page-node-id="RjeqIqE9UrbCJQniuqZniO">
@@ -566,6 +571,13 @@ for await (const chunk of stream) {
         <summary data-page-node-id="p6UhYnayAi72ilF1bEv4WU">支持流式输出（SSE）吗？</summary>
         <div class="qa-body" data-page-node-id="3qj0kiAAV8JgTc0xizzHYC">
           支持。<code data-page-node-id="WjPHFq3hxxyZIGyoNw4edS">/v1/chat/completions</code> 同时支持流式与非流式；协议转换层会在流式路径上逐块重写事件格式，因此即使上游并非 OpenAI 原生协议，下游也能拿到标准的 SSE 流。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="faqHttpsQa">
+        <summary data-page-node-id="faqHttpsSummary">支持 HTTPS 访问吗？会和 HTTP 冲突吗？</summary>
+        <div class="qa-body" data-page-node-id="faqHttpsBody">
+          支持，且不冲突。在「设置 → 通用 → HTTPS 访问」一键开启（或启动时设 <code>VORTEX_TLS=1</code>），应用会在保留 HTTP 端口的同时另开一个 HTTPS 端口（默认 10169），两个协议同时可用。首次启用自动生成本地 CA 与服务器证书并尝试装入系统钥匙串；也支持通过 <code>VORTEX_TLS_CERT</code> / <code>VORTEX_TLS_KEY</code> 指定自己的证书。
         </div>
       </details>
 

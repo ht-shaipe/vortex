@@ -135,11 +135,12 @@ pub fn list_backups() -> Result<ListBackupsResponse, String> {
 /// 获取网关配置。
 fn get_gateway_config(state: &AppState) -> Result<VortexGatewayConfig, String> {
     let port = state.proxy_port;
+    let scheme = if state.config.tls_enabled { "https" } else { "http" };
     let conn = db_core::get_conn(&state.db_pool).map_err(|e| e.to_string())?;
     let settings = db_settings::get_settings(&conn).map_err(|e| format!("获取设置失败: {}", e))?;
     let token = settings.get("access_token").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| "default-token".to_string());
     let models = get_available_models(state)?;
-    Ok(VortexGatewayConfig::new(port, token, models))
+    Ok(VortexGatewayConfig::new(port, token, models, scheme))
 }
 
 /// 获取可用模型列表（从数据库查询真实模型）。

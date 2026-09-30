@@ -258,7 +258,10 @@ pub struct ModelInfo {
 
 impl VortexGatewayConfig {
     /// 创建网关配置
-    pub fn new(port: u16, token: String, models: Vec<ModelInfo>) -> Self {
+    ///
+    /// 第三方 Agent 配置恒定使用 HTTP 主端口：多数 CLI（如 Claude Code）基于 Node，
+    /// 其 CA 列表为内置根证书，不读系统钥匙串，自签 HTTPS 会导致连接失败。
+    pub fn new(port: u16, token: String, models: Vec<ModelInfo>, _scheme: &str) -> Self {
         let openai_base_url = format!("http://127.0.0.1:{}/v1", port);
         let anthropic_base_url = format!("http://127.0.0.1:{}", port);
         Self {

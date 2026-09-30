@@ -16,6 +16,7 @@ Vortex 是一个基于 **Rust (Actix-Web) + Vue 3** 构建的 AI 网关应用。
 
 - **多家内置 AI 提供商** — OpenAI、Anthropic、Google Gemini、DeepSeek、Groq、xAI、Mistral、OpenRouter、NVIDIA NIM、Cloudflare AI、Ollama、SiliconFlow、HuggingFace、Qwen、MiniMax、Z.AI (GLM)、火山方舟、商汤日日新，以及自定义 OpenAI 兼容端点
 - **OpenAI / Anthropic 双协议入口** — `/v1/chat/completions` 与 `/v1/messages` 两套端点，无需修改客户端代码，直接替换 `base_url` 即可
+- **本地 HTTPS 双端口** — 设置页一键开启，在保留 HTTP 的同时另开 HTTPS 端口（默认 10169）；首次启用自动生成本地 CA 与服务器证书（SAN 含 localhost / 127.0.0.1 / ::1 / 主机名），macOS 自动装入钥匙串，支持外部证书覆盖；HTTPS 端口被占用时自动降级仅 HTTP，不影响主服务
 - **智能体一键接入** — 自动检测本机已安装的 AI 编程智能体（Claude Code、Codex、OpenCode、Qwen Code 等 12 种），预览将要写入的配置变更后一键接入 Vortex 网关；写入前自动备份，支持一键恢复到配置前状态
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 连接级与模型级双层熔断器 + 指数退避重试：连接连续失败 5 次熔断 60 秒，单个模型连续失败 3 次独立熔断（下线/无权限等确定性故障更快隔离）；熔断期间下游收到 503 与友好提示，冷却后自动探测恢复
@@ -178,8 +179,35 @@ curl http://localhost:10168/v1/chat/completions \
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成 | API 密钥加密密钥（32 字节十六进制） |
 | `VORTEX_REQUIRE_API_KEY` | `false` | 是否要求客户端提供 API Key |
-| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/edge/free_tokens` | 免费 Token 远程服务地址 |
+| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/cms/token_site` | 免费 Token 提交 / 删除接口地址 |
+| `VORTEX_FREE_TOKENS_PAGE_URL` | `https://hub.htui.cc/api/cms/token_site/page` | 免费 Token 分页列表接口（POST） |
+| `VORTEX_HUB_TOKEN` | 空 | hub 管理接口认证令牌（可选，Bearer 方式携带） |
 | `VORTEX_LOG_LEVEL` | `info` | 日志级别 |
+| `VORTEX_TLS` | `false` | 启用本地 HTTPS（双端口，见下方 [HTTPS 访问](#https-访问)） |
+| `VORTEX_TLS_HTTPS_PORT` | `VORTEX_PORT + 1` | HTTPS 监听端口（双端口模式） |
+| `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` | 自动生成 | 外部证书 / 私钥 PEM 路径（设置后跳过自动生成） |
+
+### HTTPS 访问
+
+同一端口只能承载一种协议，因此 Vortex 采用**双端口并存**：主端口（默认 10168）始终提供 HTTP，兼容全部客户端；开启 HTTPS 后另在 `主端口 + 1`（默认 10169）提供 HTTPS，两者同时可用。
+
+启用方式二选一：
+
+1. **设置页开关**（推荐）：设置 → 通用 → 「HTTPS 访问」，保存后按提示重启应用生效，开关持久化到本地数据库；
+2. **环境变量**：启动时设置 `VORTEX_TLS=1`（显式设置时优先于数据库开关），临时调试用。
+
+证书管理：
+
+- 未提供外部证书时，首次启用自动生成本地 CA（10 年有效期）+ 服务器证书（SAN 覆盖 `localhost` / `127.0.0.1` / `::1` / 本机主机名），持久化到 `<数据目录>/tls/`（私钥 0600）；
+- macOS 上启动后自动尝试将 CA 装入用户登录钥匙串（可能弹出系统授权确认）；若自动安装未完成，可手动信任：
+
+  ```bash
+  security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db \
+    ~/Library/Application\ Support/vortex/tls/ca.pem
+  ```
+
+- 需要使用正式证书时设置 `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` 指向 PEM 文件即可；
+- 客户端兼容性提示：部分 CLI（如基于 Node.js 的工具）只信任内置根证书、不读系统钥匙串，连不上 HTTPS 时改用 HTTP 主端口即可。
 
 ### 管理界面
 
@@ -187,7 +215,7 @@ curl http://localhost:10168/v1/chat/completions \
 
 | 页面 | 路由 | 说明 |
 |------|------|------|
-| 接入指南 | `/guide` | 客户端接入示例与模型指定方式，展示访问令牌（可复制）并代入示例代码；下方自动检测本机 AI 编程智能体并支持一键接入 / 恢复配置 |
+| 接入指南 | `/guide` | 客户端接入示例与模型指定方式，展示 HTTP / HTTPS 双协议地址与访问令牌（均可复制）并代入示例代码；下方自动检测本机 AI 编程智能体并支持一键接入 / 恢复配置 |
 | 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
 | 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 自定义 / 编辑子页 |
 | 模型映射 | `/model-aliases` | 虚拟模型名与多目标故障转移配置 |
@@ -196,12 +224,14 @@ curl http://localhost:10168/v1/chat/completions \
 | 统计 | `/statistics` | 端点统计（KPI / 热力图 / 趋势 / 端点表）、用量统计（应用来源 / 日模型明细） |
 | 同步 | `/sync` | cc-switch 迁移、WebDAV 云备份、本地配置导出与导入 |
 | 对话 | `/chat` | 内置对话客户端 —— 会话分支树、模型选择、流式输出 |
-| 设置 | `/settings` | 通用设置 / 安全与访问（Token 鉴权、访问令牌、CORS）/ 高级设置 |
+| 设置 | `/settings` | 通用设置（含 HTTPS 开关）/ 安全与访问（Token 鉴权、访问令牌、CORS）/ 高级设置 |
 | 关于 | `/about` | 版本与项目信息、检查更新 |
 
 > **同步页现状**：cc-switch 迁移与本地配置导出 / 导入已可用；WebDAV 的测试、备份、恢复与云端备份列表需要后端命令支持，当前 UI 已就绪，调用会提示「后端未接入」。适配层位于 `src/api/sync.ts`，接入后只需替换其中的桩函数。
 
 ## API 端点
+
+浏览器直接访问网关根路径（`/` 及任意未匹配路径）返回纯文本版本标识 `vortex vX.Y.Z`，可作连通性确认。
 
 ### OpenAI 兼容端点 (`/v1`)
 

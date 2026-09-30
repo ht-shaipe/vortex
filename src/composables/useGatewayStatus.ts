@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { runtime } from '@/lib/runtime'
+import { gatewayBase } from '@/lib/gateway'
 
 const healthOk = ref(false)
 let _timer: ReturnType<typeof setInterval> | null = null
@@ -8,7 +9,7 @@ let _refCount = 0
 
 async function checkHealth() {
   try {
-    const res = await fetch('http://localhost:10168/api/health')
+    const res = await fetch(`${gatewayBase()}/api/health`)
     const data = await res.json()
     healthOk.value = data.status === 'ok'
   } catch {

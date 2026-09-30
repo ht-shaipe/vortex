@@ -100,7 +100,8 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
 
     // 按提供方分组统计请求数
     let mut by_provider = serde_json::Map::new();
-    let sql = format!("SELECT provider, COUNT(*) as cnt FROM usage_history {} GROUP BY provider", where_clause);
+    // COALESCE：历史数据存在 provider 为 NULL 的行（早期错误记录），直接读取会让整个统计接口报错
+    let sql = format!("SELECT COALESCE(provider, '未知') as provider, COUNT(*) as cnt FROM usage_history {} GROUP BY provider", where_clause);
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
         let provider: String = row.get(0)?;
@@ -114,7 +115,7 @@ pub fn get_stats(conn: &rusqlite::Connection, since: Option<&str>) -> Result<Usa
 
     // 按模型分组统计请求数
     let mut by_model = serde_json::Map::new();
-    let sql2 = format!("SELECT model, COUNT(*) as cnt FROM usage_history {} GROUP BY model", where_clause);
+    let sql2 = format!("SELECT COALESCE(model, '未知') as model, COUNT(*) as cnt FROM usage_history {} GROUP BY model", where_clause);
     let mut stmt2 = conn.prepare(&sql2)?;
     let rows2 = stmt2.query_map([], |row| {
         let model: String = row.get(0)?;

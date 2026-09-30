@@ -30,6 +30,16 @@ pub struct AppConfig {
     pub free_tokens_page_url: String,
     /// 访问 hub 管理接口的认证令牌（可选）。非空时以 `Authorization: Bearer` 携带。
     pub hub_token: String,
+    /// 是否启用 HTTPS（同一端口由 HTTP 切换为 TLS）。默认 `false`。
+    pub tls_enabled: bool,
+    /// 环境变量 `VORTEX_TLS` 是否被显式设置（显式设置时优先于数据库持久化设置）。
+    pub tls_env_explicit: bool,
+    /// 外部证书 PEM 路径（可选）。未设置时自动生成自签证书到数据目录。
+    pub tls_cert: Option<String>,
+    /// 外部私钥 PEM 路径（可选）。
+    pub tls_key: Option<String>,
+    /// HTTPS 监听端口（双端口模式：主端口保持 HTTP，HTTPS 在此端口）。默认 `port + 1`。
+    pub tls_https_port: u16,
 }
 
 impl AppConfig {
@@ -47,6 +57,8 @@ impl AppConfig {
     /// | `VORTEX_FREE_TOKENS_REMOTE` | 免费 Token 提交/删除接口地址 | `https://hub.htui.cc/api/cms/token_site` |
     /// | `VORTEX_FREE_TOKENS_PAGE_URL` | 免费 Token 分页列表接口地址（POST） | `https://hub.htui.cc/api/cms/token_site/page` |
     /// | `VORTEX_HUB_TOKEN` | hub 管理接口认证令牌（可选，Bearer 方式携带） | 空 |
+    /// | `VORTEX_TLS` | 是否启用 HTTPS（同一端口切换协议） | `false` |
+    /// | `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` | 外部证书/私钥 PEM 路径（可选，缺省自动生成自签证书） | 空 |
     ///
     /// # 返回值
     ///
@@ -74,7 +86,7 @@ impl AppConfig {
                 }
             });
 
-        Self {
+        let out = Self {
             // 解析端口，失败时使用默认端口 10168
             port: std::env::var("VORTEX_PORT")
                 .ok()
@@ -98,7 +110,27 @@ impl AppConfig {
                 .unwrap_or_else(|_| "https://hub.htui.cc/api/cms/token_site/page".to_string()),
             // hub 管理接口认证令牌（可选）
             hub_token: std::env::var("VORTEX_HUB_TOKEN").unwrap_or_default(),
+                // 是否启用 HTTPS：值为 "true" 或 "1" 时为真（未设置时由数据库持久化设置决定）
+            tls_env_explicit: std::env::var("VORTEX_TLS").ok().is_some(),
+            tls_enabled: std::env::var("VORTEX_TLS")
+                .ok()
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            // HTTPS 端口：默认主端口 + 1
+            tls_https_port: std::env::var("VORTEX_TLS_HTTPS_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(0), // 0 = 待主端口确定后回填 port+1
+            // 外部 TLS 证书/私钥路径（可选）
+            tls_cert: std::env::var("VORTEX_TLS_CERT").ok().filter(|s| !s.is_empty()),
+            tls_key: std::env::var("VORTEX_TLS_KEY").ok().filter(|s| !s.is_empty()),
+        };
+        // HTTPS 端口未显式指定时默认为主端口 + 1
+        let mut this = out;
+        if this.tls_https_port == 0 {
+            this.tls_https_port = this.port + 1;
         }
+        this
     }
 
     /// 将加密密钥字符串派生为字节序列。

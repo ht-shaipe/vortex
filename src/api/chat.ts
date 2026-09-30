@@ -15,9 +15,10 @@
 import { listKeys } from './keys'
 import { listProviders, type ProviderConnection } from './providers'
 import { runtime } from '@/lib/runtime'
+import { gatewayBase } from '@/lib/gateway'
 
 const STORAGE_KEY = 'vortex-chat-v1'
-const GATEWAY_BASE = 'http://localhost:10168'
+const GATEWAY_BASE = gatewayBase()
 
 /** 消息流式状态 */
 export type ChatMessageStatus = 'pending' | 'streaming' | 'success' | 'error'

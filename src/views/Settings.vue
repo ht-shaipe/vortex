@@ -40,6 +40,14 @@
             </div>
             <el-input-number v-model="form.proxy_port" :min="1024" :max="65535" :step="1" controls-position="right" style="width: 140px" @change="saveField('proxy_port', form.proxy_port)" />
           </div>
+          <!-- HTTPS（TLS）：持久化设置，重启应用后生效（仅桌面端） -->
+          <div v-if="runtime.kind === 'desktop'" class="setting-row">
+            <div>
+              <div class="setting-label">HTTPS 访问</div>
+              <div class="setting-desc">保留 HTTP 的同时，在 https://127.0.0.1:{端口+1} 另开 HTTPS 服务（自动生成本地证书），重启应用后生效</div>
+            </div>
+            <el-switch v-model="form.tls_enabled" @change="onTlsChange" />
+          </div>
           <!-- 开机自启 -->
           <div class="setting-row">
             <div>
@@ -132,8 +140,8 @@
         </div>
       </div>
 
-      <!-- 安全与访问：模型访问权限 -->
-      <div v-if="active === 'security'" class="card section mb-[var(--gap-lg)]">
+      <!-- 安全与访问：模型访问权限（v-else-if 延续条件链，否则高级的 v-else 会错误配对到此处） -->
+      <div v-else-if="active === 'security'" class="card section mb-[var(--gap-lg)]">
         <div class="card-head">
           <div><div class="card-title">模型访问权限</div><div class="card-sub">按 API Key 设置 allow/deny 规则，控制可访问的模型</div></div>
         </div>
@@ -231,7 +239,8 @@
  * （Token 鉴权、CORS）、高级（User-Agent 覆盖、恢复出厂设置）三个分类。
  */
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { runtime } from '@/lib/runtime'
 import { CopyDocument, Loading, Lock, Refresh, Setting, Tools, WarningFilled, Close } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -276,6 +285,7 @@ const loading = ref(true)
 // 表单状态
 const form = reactive({
   proxy_port: 10168,
+  tls_enabled: false,
   openai_ua: '',
   anthropic_ua: '',
   hide_mapped_models: true,
@@ -334,6 +344,7 @@ async function deletePermission(id: string) {
 function applySettings(data: Record<string, unknown>) {
   const g = (data.general ?? {}) as Record<string, unknown>
   if (g.proxy_port != null) form.proxy_port = Number(g.proxy_port)
+  if (g.tls_enabled != null) form.tls_enabled = Boolean(g.tls_enabled)
   if (g.openai_ua != null) form.openai_ua = String(g.openai_ua)
   if (g.anthropic_ua != null) form.anthropic_ua = String(g.anthropic_ua)
   if (g.hideMappedModels != null) form.hide_mapped_models = Boolean(g.hideMappedModels)
@@ -371,6 +382,29 @@ async function saveField(key: string, value: unknown) {
     await updateSettings({ general: { [key]: value } })
   } catch {
     ElMessage.error('保存失败')
+  }
+}
+
+/**
+ * HTTPS 开关切换：保存后提示重启（网关协议绑定在启动时决定）。
+ * @param v 是否启用 HTTPS
+ */
+async function onTlsChange(v: boolean) {
+  await saveField('tls_enabled', v)
+  try {
+    await ElMessageBox.confirm(
+      `已保存 HTTPS${v ? '启用' : '关闭'}设置，需重启应用后生效。现在重启吗？`,
+      '重启生效',
+      { confirmButtonText: '立即重启', cancelButtonText: '稍后手动重启', type: 'info' },
+    )
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch (e) {
+    if (e === 'cancel') {
+      ElMessage.info('已保存，重启应用后生效')
+    } else if (e instanceof Error) {
+      ElMessage.warning('已保存，但自动重启失败，请手动重启应用')
+    }
   }
 }
 

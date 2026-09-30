@@ -8,8 +8,12 @@ authors.workspace = true
 [dependencies]
 vortex-store = { path = "../vortex-store" }
 vortex-router = { path = "../vortex-router" }
-# Web 服务器
-actix-web = "4"
+# Web 服务器（rustls feature：bind_rustls，TLS 终结，与 awc 的 rustls 0.20 依赖树一致）
+actix-web = { version = "4", features = ["rustls"] }
+rustls = "0.20"
+rustls-pemfile = "1"
+# 自签证书生成（本地 CA + localhost 服务器证书）
+rcgen = "0.12"
 actix-cors = "0.7"
 actix-rt = "2"
 # HTTP 客户端

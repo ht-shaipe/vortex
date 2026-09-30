@@ -25,3 +25,6 @@ pub mod chat_cmds;
 /// 智能体集成相关 Tauri 命令模块。
 pub mod agent_cmds;
 
+/// 网关运行信息（scheme/port）命令模块。
+pub mod gateway_cmds;
+

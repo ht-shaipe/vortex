@@ -27,6 +27,7 @@ fn create_test_config() -> VortexGatewayConfig {
                 context_window: Some(200000),
             },
         ],
+        "http",
     )
 }
 

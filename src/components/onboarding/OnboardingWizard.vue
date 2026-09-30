@@ -181,6 +181,7 @@ import {
 } from '@element-plus/icons-vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import { getSettings } from '@/api/settings'
+import { gatewayBase } from '@/lib/gateway'
 
 const emit = defineEmits<{ done: [] }>()
 const router = useRouter()
@@ -188,8 +189,8 @@ const router = useRouter()
 const totalSteps = 4
 const step = ref(1)
 
-const openaiBaseUrl = 'http://localhost:10168/v1'
-const anthropicBaseUrl = 'http://localhost:10168/anthropic/v1'
+const openaiBaseUrl = `${gatewayBase()}/v1`
+const anthropicBaseUrl = `${gatewayBase()}/anthropic/v1`
 const token = ref('')
 
 onMounted(async () => {

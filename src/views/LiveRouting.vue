@@ -123,7 +123,12 @@
           <div class="card-body">
             <div class="access-row flex items-center gap-12px py-4px" v-for="e in endpoints" :key="e.label">
               <span class="access-label w-90px shrink-0 text-12px font-medium text-ink-3">{{ e.label }}</span>
-              <CopyableBlock :text="e.url" variant="inline">{{ e.url }}</CopyableBlock>
+              <div class="flex items-center gap-10px flex-wrap min-w-0">
+                <div class="flex items-center gap-6px" v-for="u in e.urls" :key="u.url">
+                  <span class="text-10px font-semibold px-6px py-2px rounded-full bg-surface-3 text-ink-3 shrink-0" :class="{ '!text-accent-ink !bg-accent-bg': u.tag === 'HTTPS' }">{{ u.tag }}</span>
+                  <CopyableBlock :text="u.url" variant="inline">{{ u.url }}</CopyableBlock>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -163,13 +168,15 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import { listProviders } from '@/api/providers'
+import { gatewayBase } from '@/lib/gateway'
 import { modelCatalogApi } from '@/api/modelCatalog'
 import { statsApi, type StatsOverview } from '@/api/stats'
 import TrendBadge from '@/components/stats/TrendBadge.vue'
 import { formatTokenCompact, fmtInt } from '@/lib/format'
 
-// 网关本地基础地址
-const baseHost = 'http://localhost:10168'
+// 网关双协议端口：HTTP 恒可用，HTTPS 仅在设置页开启后有值
+const httpPort = ref(10168)
+const httpsPort = ref<number | null>(null)
 
 // 对外协议定义
 const protocols = [
@@ -177,11 +184,30 @@ const protocols = [
   { name: 'Anthropic 协议', tag: 'ANT', cls: 'ant' },
 ]
 
-// 客户端接入端点
-const endpoints = [
-  { label: 'OpenAI', url: `${baseHost}/v1` },
-  { label: 'Anthropic', url: `${baseHost}/anthropic/v1` },
-]
+// 客户端接入端点：每协议一行，行内并排 HTTP / HTTPS 地址（未启用 HTTPS 时仅 HTTP）
+const endpoints = computed(() => {
+  const mk = (path: string) => {
+    const urls = [{ tag: 'HTTP', url: `http://localhost:${httpPort.value}${path}` }]
+    if (httpsPort.value) urls.push({ tag: 'HTTPS', url: `https://localhost:${httpsPort.value}${path}` })
+    return urls
+  }
+  return [
+    { label: 'OpenAI', urls: mk('/v1') },
+    { label: 'Anthropic', urls: mk('/anthropic/v1') },
+  ]
+})
+
+/** 从健康检查读取端口信息（https_port 为 null 表示未启用 HTTPS）。 */
+async function loadGatewayAddrs() {
+  try {
+    const res = await fetch(`${gatewayBase()}/api/health`)
+    const data = await res.json()
+    if (data.http_port) httpPort.value = Number(data.http_port)
+    httpsPort.value = data.https_port ? Number(data.https_port) : null
+  } catch {
+    /* 后端未就绪时保持默认 */
+  }
+}
 
 /** 上游提供商连接的简化结构 */
 interface Upstream {
@@ -287,6 +313,7 @@ function onResize(): void {
 }
 
 onMounted(() => {
+  void loadGatewayAddrs()
   window.addEventListener('resize', onResize)
   // 容器尺寸变化（窗口缩放、侧栏折叠等）时重算连线
   if (topoEl.value && typeof ResizeObserver !== 'undefined') {

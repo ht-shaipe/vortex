@@ -34,8 +34,12 @@
         <div class="card-body">
           <p class="para text-13px text-ink-2 leading-[1.7] m-0 mb-12px">Vortex 在本地启动 API 服务器，对外提供 OpenAI 兼容协议：</p>
           <div class="url-row flex items-center gap-12px mb-8px">
-            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">Base URL</span>
-            <CopyableBlock :text="openaiBaseUrl" variant="inline">{{ openaiBaseUrl }}</CopyableBlock>
+            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">HTTP 地址</span>
+            <CopyableBlock :text="`${httpBase}/v1`" variant="inline">{{ httpBase }}/v1</CopyableBlock>
+          </div>
+          <div v-if="httpsBase" class="url-row flex items-center gap-12px mb-8px">
+            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">HTTPS 地址</span>
+            <CopyableBlock :text="`${httpsBase}/v1`" variant="inline">{{ httpsBase }}/v1</CopyableBlock>
           </div>
           <div class="url-row flex items-center gap-12px mb-8px">
             <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">访问令牌</span>
@@ -100,8 +104,12 @@
         <div class="card-body">
           <p class="para text-13px text-ink-2 leading-[1.7] m-0 mb-12px">Vortex 在本地启动 API 服务器，对外提供 Anthropic 兼容协议：</p>
           <div class="url-row flex items-center gap-12px mb-8px">
-            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">Base URL</span>
-            <CopyableBlock :text="anthropicBaseUrl" variant="inline">{{ anthropicBaseUrl }}</CopyableBlock>
+            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">HTTP 地址</span>
+            <CopyableBlock :text="`${httpBase}/anthropic/v1`" variant="inline">{{ httpBase }}/anthropic/v1</CopyableBlock>
+          </div>
+          <div v-if="httpsBase" class="url-row flex items-center gap-12px mb-8px">
+            <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">HTTPS 地址</span>
+            <CopyableBlock :text="`${httpsBase}/anthropic/v1`" variant="inline">{{ httpsBase }}/anthropic/v1</CopyableBlock>
           </div>
           <div class="url-row flex items-center gap-12px mb-8px">
             <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">访问令牌</span>
@@ -168,11 +176,25 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CopyableBlock from '@/components/ui/CopyableBlock.vue'
 import AgentIntegration from '@/components/sync/AgentIntegration.vue'
 import { getSettings } from '@/api/settings'
+import { gatewayBase } from '@/lib/gateway'
 
-// OpenAI 兼容协议的本地接入地址
-const openaiBaseUrl = 'http://localhost:10168/v1'
-// Anthropic 兼容协议的本地接入地址
-const anthropicBaseUrl = 'http://localhost:10168/anthropic/v1'
+// 网关双协议地址：HTTP 恒可用；HTTPS 仅在开启 TLS 后有值
+const httpBase = ref(`http://localhost:10168`)
+const httpsBase = ref('')
+const openaiBaseUrl = computed(() => `${gatewayBase()}/v1`)
+const anthropicBaseUrl = computed(() => `${gatewayBase()}/anthropic/v1`)
+
+/** 从健康检查读取端口信息，组装 HTTP / HTTPS 展示地址。 */
+async function loadGatewayAddrs() {
+  try {
+    const res = await fetch(`${gatewayBase()}/api/health`)
+    const data = await res.json()
+    if (data.http_port) httpBase.value = `http://localhost:${data.http_port}`
+    httpsBase.value = data.https_port ? `https://localhost:${data.https_port}` : ''
+  } catch {
+    /* 后端未就绪时保持默认 */
+  }
+}
 
 // 访问令牌（从安全设置读取，客户端接入时填入 API Key 字段）
 const token = ref('')
@@ -189,8 +211,9 @@ const tabs = [
 // 当前选中的标签
 const active = ref('agent')
 
-// 加载安全设置中的访问令牌
+// 加载安全设置中的访问令牌与网关双协议地址
 onMounted(async () => {
+  void loadGatewayAddrs()
   try {
     const data = await getSettings()
     const s = (data.security ?? {}) as Record<string, unknown>
@@ -204,7 +227,7 @@ onMounted(async () => {
 const openaiSdkSnippet = computed(() => `from openai import OpenAI
 
 client = OpenAI(
-    base_url="${openaiBaseUrl}",
+    base_url="${openaiBaseUrl.value}",
     api_key="${apiKey.value}",
 )
 
@@ -214,7 +237,7 @@ resp = client.chat.completions.create(
 )`)
 
 // OpenAI cURL 用法示例
-const openaiCurlSnippet = computed(() => `curl ${openaiBaseUrl}/chat/completions \\
+const openaiCurlSnippet = computed(() => `curl ${openaiBaseUrl.value}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey.value}" \\
   -d '{"model":"deepseek/deepseek-chat","messages":[{"role":"user","content":"Hi"}]}'`)
@@ -223,7 +246,7 @@ const openaiCurlSnippet = computed(() => `curl ${openaiBaseUrl}/chat/completions
 const anthropicSdkSnippet = computed(() => `from anthropic import Anthropic
 
 client = Anthropic(
-    base_url="${anthropicBaseUrl}",
+    base_url="${anthropicBaseUrl.value}",
     api_key="${apiKey.value}",
 )
 
@@ -234,7 +257,7 @@ resp = client.messages.create(
 )`)
 
 // Anthropic cURL 用法示例
-const anthropicCurlSnippet = computed(() => `curl ${anthropicBaseUrl}/messages \\
+const anthropicCurlSnippet = computed(() => `curl ${anthropicBaseUrl.value}/messages \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${apiKey.value}" \\
   -H "anthropic-version: 2023-06-01" \\
@@ -242,6 +265,6 @@ const anthropicCurlSnippet = computed(() => `curl ${anthropicBaseUrl}/messages \
 
 // Claude Code 环境变量配置示例
 const claudeSnippet = computed(() => `# 设置环境变量
-export ANTHROPIC_BASE_URL=${anthropicBaseUrl}
+export ANTHROPIC_BASE_URL=${anthropicBaseUrl.value}
 export ANTHROPIC_API_KEY=${apiKey.value}`)
 </script>

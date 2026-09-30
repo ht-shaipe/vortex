@@ -382,6 +382,15 @@ pub struct ProviderDef {
 
 前端通过 `composables/useUpdater.ts` 封装更新逻辑：启动时静默检查 → 发现新版本弹出通知 → 用户确认后下载 → 下载完成提示重启。
 
+### 14. TLS（`vortex-gateway/src/tls.rs`）
+
+本地 HTTPS 支持，双端口模式：主端口始终 HTTP，`VORTEX_TLS` 启用（或数据库设置 `general.tls_enabled`，环境变量显式设置时优先）后另在 `tls_https_port`（默认 `port + 1`）提供 HTTPS。
+
+- **证书生成**：外部 `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` 优先；否则自动生成本地 CA（10 年）+ 服务器证书（SAN：localhost / 127.0.0.1 / ::1 / 主机名），持久化到 `<data_dir>/tls/`（私钥 0600，模式同 `.encryption_key`）
+- **信任安装**：macOS 上后台线程执行 `security add-trusted-cert` 装入用户钥匙串（可能等待 GUI 授权，故不阻塞启动；已信任时跳过）
+- **绑定策略**：先绑主端口 HTTP，再用本进程持有的 `std::net::TcpListener` 经 `listen_rustls` 交给 actix（消除端口竞态）；HTTPS 端口被占时降级仅 HTTP 并告警，不 panic
+- **TLS 栈**：actix-web `rustls` feature（rustls 0.20，与 awc 客户端依赖树一致）
+
 ## 前端架构
 
 ### 技术栈
@@ -524,13 +533,18 @@ AppLayout
 | `VORTEX_DATA_DIR` | 系统数据目录/vortex | 数据存储目录 |
 | `VORTEX_ENCRYPTION_KEY` | 自动生成并持久化 | 加密密钥 (32字节十六进制) |
 | `VORTEX_REQUIRE_API_KEY` | false | 是否要求客户端 API Key |
-| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/edge/free_tokens` | 免费 Token 远程服务地址 |
+| `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/cms/token_site` | 免费 Token 提交/删除接口地址 |
+| `VORTEX_FREE_TOKENS_PAGE_URL` | `https://hub.htui.cc/api/cms/token_site/page` | 免费 Token 分页列表接口 |
+| `VORTEX_HUB_TOKEN` | 空 | hub 管理接口认证令牌（Bearer） |
 | `VORTEX_LOG_LEVEL` | info | 日志级别 |
+| `VORTEX_TLS` | false | 启用本地 HTTPS（见「核心模块 · TLS」） |
+| `VORTEX_TLS_HTTPS_PORT` | port+1 | HTTPS 监听端口 |
+| `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` | 自动生成 | 外部证书/私钥 PEM 路径 |
 
 ### 设置存储
 
 设置存储在 `key_value` 表中：
-- `settings/general` — 通用设置 (port, requireApiKey, theme)
+- `settings/general` — 通用设置 (port, requireApiKey, theme, tls_enabled)
 
 ## 错误处理 (`error.rs`)
 

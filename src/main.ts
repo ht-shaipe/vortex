@@ -15,6 +15,7 @@ import './styles/theme.css'
 import './styles/components.css'
 import './styles/markdown.css'
 import '@/composables/useTheme'
+import { initGatewayBase } from '@/lib/gateway'
 
 // 创建 Vue 应用实例与 Pinia 实例
 const app = createApp(App)
@@ -44,6 +45,9 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 // 全局禁用鼠标右键菜单（桌面应用无需 webview 默认右键菜单）
 document.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// 将应用挂载到 #app 节点
-app.mount('#app')
+// 初始化网关地址（Tauri 桌面端经命令获取 scheme/port，再挂载应用）
+initGatewayBase().finally(() => {
+  // 将应用挂载到 #app 节点
+  app.mount('#app')
+})
 

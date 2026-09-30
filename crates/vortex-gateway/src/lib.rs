@@ -7,6 +7,7 @@
 pub mod api;
 pub mod agent_integrations;
 pub mod services;
+pub mod tls;
 
 use actix_cors::Cors;
 use actix_web::{dev::ServerHandle, web, App, HttpServer, middleware as actix_mw};
@@ -101,6 +102,18 @@ pub fn create_app_state(cfg: AppConfig) -> vortex_store::error::Result<Arc<AppSt
     {
         let conn = db::core::get_conn(&db_pool)?;
         db::settings::ensure_security_defaults(&conn)?;
+    }
+
+    // TLS 开关解析：环境变量显式设置时优先，否则读数据库持久化设置（设置页开关）
+    let mut cfg = cfg;
+    if !cfg.tls_env_explicit {
+        if let Ok(conn) = db::core::get_conn(&db_pool) {
+            if let Ok(Some(general)) = db::settings::get(&conn, "settings", "general") {
+                if let Some(v) = general.get("tls_enabled").and_then(|v| v.as_bool()) {
+                    cfg.tls_enabled = v;
+                }
+            }
+        }
     }
 
     let provider_registry = ProviderRegistry::new();
@@ -215,6 +228,7 @@ pub fn start_api_server(
                             .route("/key-permissions", web::post().to(api::management::key_permissions::create_permission))
                             .route("/key-permissions/{id}", web::delete().to(api::management::key_permissions::delete_permission))
                             .route("/health", web::get().to(api::management::health::health_check))
+                            .route("/", web::get().to(api::management::health::index))
                             .route("/system/status", web::get().to(api::management::system::get_system_status))
                             .route("/system/proxy/start", web::post().to(api::management::system::start_proxy))
                             .route("/system/proxy/stop", web::post().to(api::management::system::stop_proxy))
@@ -225,11 +239,37 @@ pub fn start_api_server(
                             .route("/agents/backups", web::get().to(api::management::agents::list_backups))
                             .route("/chat/cancel", web::post().to(api::management::chat::cancel_chat_stream))
                     )
-            })
-            .bind(format!("0.0.0.0:{}", port))
-            .expect("Failed to bind server");
+                    // 未匹配的路径（浏览器直接访问根/任意路径）返回版本标识
+                    .default_service(web::to(api::management::health::index_fallback))
+            });
 
-            let srv = server.run();
+            // 双端口模式：主端口始终提供 HTTP（兼容全部客户端）；
+            // TLS 开启时另在 tls_https_port（默认 port+1）提供 HTTPS。
+            // HTTPS 端口由本进程先绑定 std listener 再交给 actix（消除预检竞态），
+            // 端口被占用（如上一实例未退净）时降级为仅 HTTP 并告警，不崩溃。
+            let server = server
+                .bind(format!("0.0.0.0:{}", port))
+                .expect("Failed to bind server");
+            let srv = if state.config.tls_enabled {
+                let tls_cfg = tls::ensure_tls(&state.config)
+                    .unwrap_or_else(|e| panic!("TLS 初始化失败: {}（可检查 VORTEX_TLS_CERT/VORTEX_TLS_KEY 或删除数据目录下 tls/ 重试）", e));
+                let https_port = state.config.tls_https_port;
+                match std::net::TcpListener::bind(("0.0.0.0", https_port)) {
+                    Ok(lst) => {
+                        log::info!("[TLS] HTTPS 已启用，监听 0.0.0.0:{}（HTTP 继续保留在 0.0.0.0:{}）", https_port, port);
+                        server
+                            .listen_rustls(lst, tls_cfg)
+                            .expect("Failed to attach TLS listener")
+                            .run()
+                    }
+                    Err(e) => {
+                        log::warn!("[TLS] HTTPS 端口 {} 绑定失败（{}），本次仅提供 HTTP 服务", https_port, e);
+                        server.run()
+                    }
+                }
+            } else {
+                server.run()
+            };
             let handle = srv.handle();
             let _ = handle_tx.send(handle);
 

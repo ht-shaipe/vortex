@@ -50,6 +50,7 @@ pub fn run() {
             tauri_cmds::agent_cmds::agent_preview_config,
             tauri_cmds::agent_cmds::agent_apply_config,
             tauri_cmds::agent_cmds::agent_restore_config,
+            tauri_cmds::gateway_cmds::gateway_base_url,
             tauri_cmds::agent_cmds::agent_list_backups,
         ])
         .setup(|app| {
