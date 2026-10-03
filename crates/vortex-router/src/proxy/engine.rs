@@ -826,7 +826,21 @@ impl ProxyEngine {
             return Err(AppError::Routing("no failover candidates".into()));
         }
 
-        // bandit 排序 + 占用避让（与 auto 路由相同的排序策略）
+        // 确定性排序 + bandit 作为次要因子：
+        // 主排序按 provider 名称 + 模型名，保证同模型名始终路由到同一 provider
+        // Bandit 评分仅当 provider+model 完全相同时才作为 tiebreaker
+        candidates.sort_by(|a, b| {
+            let (ci_a, model_a) = a;
+            let (ci_b, model_b) = b;
+            let conn_a = &all_connections[*ci_a];
+            let conn_b = &all_connections[*ci_b];
+            
+            conn_a.provider.cmp(&conn_b.provider)
+                .then_with(|| model_a.cmp(model_b))
+                .then_with(|| ci_a.cmp(ci_b))
+        });
+        
+        // 在确定性排序基础上，用 bandit 评分微调（仅当评分差异显著时）
         let bandit_keys: Vec<(String, String, Option<String>)> = candidates
             .iter()
             .map(|(ci, model)| {
@@ -834,10 +848,34 @@ impl ProxyEngine {
                 (c.provider.clone(), model.clone(), Some(c.id.clone()))
             })
             .collect();
-        let mut ranked = state.bandit_router().rank_candidates(&bandit_keys);
+        let ranked_order: Vec<usize> = state.bandit_router().rank_candidates(&bandit_keys);
+        // 构建 index -> bandit_rank 的映射
+        let mut bandit_rank_map = vec![0usize; candidates.len()];
+        for (rank, &idx) in ranked_order.iter().enumerate() {
+            bandit_rank_map[idx] = rank;
+        }
+        
+        // 将 bandit 排名映射回原始索引
+        let mut ranked_indices: Vec<usize> = (0..candidates.len()).collect();
+        ranked_indices.sort_by(|&a, &b| {
+            // 主排序：确定性顺序（已在 candidates 中排好）
+            // 次排序：bandit 排名（仅当 provider+model 相同时生效）
+            let (ci_a, model_a) = &candidates[a];
+            let (ci_b, model_b) = &candidates[b];
+            let conn_a = &all_connections[*ci_a];
+            let conn_b = &all_connections[*ci_b];
+            
+            if conn_a.provider == conn_b.provider && model_a == model_b {
+                // provider+model 相同，用 bandit 排名作为 tiebreaker
+                bandit_rank_map[a].cmp(&bandit_rank_map[b])
+            } else {
+                // provider 或 model 不同，保持确定性顺序
+                a.cmp(&b)
+            }
+        });
         if request.agent.is_some() {
             let me = request.agent.as_deref();
-            ranked.sort_by_key(|&idx| {
+            ranked_indices.sort_by_key(|&idx| {
                 let (ci, model) = &candidates[idx];
                 let c = &all_connections[*ci];
                 let key = format!("{}:{}:{}", c.provider, c.id, model);
@@ -847,11 +885,11 @@ impl ProxyEngine {
 
         log::warn!(
             "紧急故障转移：{}/{} 失败，预算 {}s，共 {} 个候选",
-            failed_def.id, failed_model, FAILOVER_BUDGET_SECS, ranked.len()
+            failed_def.id, failed_model, FAILOVER_BUDGET_SECS, ranked_indices.len()
         );
 
         let mut tried = 0usize;
-        for &idx in &ranked {
+        for &idx in &ranked_indices {
             let (ci, model) = &candidates[idx];
             let connection = &all_connections[*ci];
             // 预算检查：剩余时间不足一次尝试时放弃

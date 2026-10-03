@@ -8,7 +8,7 @@ authors.workspace = true
 [dependencies]
 vortex-store = { path = "../vortex-store" }
 vortex-router = { path = "../vortex-router" }
-# Web 服务器（rustls feature：bind_rustls，TLS 终结，与 awc 的 rustls 0.20 依赖树一致）
+# Web 服务器（rustls feature：bind_rustls，服务端 TLS 终结）
 actix-web = { version = "4", features = ["rustls"] }
 rustls = "0.20"
 rustls-pemfile = "1"
@@ -16,8 +16,9 @@ rustls-pemfile = "1"
 rcgen = "0.12"
 actix-cors = "0.7"
 actix-rt = "2"
-# HTTP 客户端
-awc = { version = "3", features = ["rustls"] }
+# HTTP 客户端（openssl：z.ai 等 CDN 对 rustls TLS 指纹做风控拒绝，须用 openssl 后端）
+awc = { version = "3", features = ["openssl"] }
+openssl = { version = "0.10", features = ["vendored"] }
 # 异步运行时
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

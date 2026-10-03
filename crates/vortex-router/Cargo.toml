@@ -13,8 +13,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 async-trait = "0.1"
-# HTTP 客户端
-awc = { version = "3", features = ["rustls"] }
+# HTTP 客户端（openssl：z.ai 等 CDN 对 rustls TLS 指纹做风控拒绝）
+awc = { version = "3", features = ["openssl"] }
+openssl = { version = "0.10", features = ["vendored"] }
 actix-web = "4"
 actix-rt = "2"
 # 序列化

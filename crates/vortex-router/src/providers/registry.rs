@@ -287,13 +287,13 @@ impl ProviderRegistry {
                 return Some((provider_id.to_string(), def, model.to_string()));
             }
 
-        // 回退到别名/ID 前缀匹配
+        // 回退到别名/ID 前缀匹配：使用按名称排序的列表，保证遍历顺序确定
         let model_lower = model_str.to_lowercase();
-        for (id, def) in &self.providers {
-            if model_lower.starts_with(&format!("{}-", def.alias)) || model_lower.starts_with(&format!("{}-", id)) {
+        for def in self.list() {
+            if model_lower.starts_with(&format!("{}-", def.alias)) || model_lower.starts_with(&format!("{}-", def.id)) {
                 // 提取前缀后的模型名部分
                 let model = model_str.split_once('-').map(|x| x.1).unwrap_or(model_str).to_string();
-                return Some((id.clone(), def, model));
+                return Some((def.id.clone(), def, model));
             }
         }
 

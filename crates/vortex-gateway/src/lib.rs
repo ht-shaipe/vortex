@@ -80,7 +80,7 @@ impl EngineContext for AppState {
     }
 }
 
-/// 创建 HTTP 客户端（awc + rustls）。
+/// 创建 HTTP 客户端（awc + openssl）。
 ///
 /// 必须在 actix runtime 上下文中调用。
 pub fn create_awc_client() -> awc::Client {

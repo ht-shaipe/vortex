@@ -45,6 +45,7 @@ src-tauri/gen/
 .codeartsdoer/
 .deveco
 .workbuddy
+.zcode
 
 docs/promo/
 docs/wechat/
