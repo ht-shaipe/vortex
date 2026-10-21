@@ -308,6 +308,11 @@
               <el-icon v-else :size="12"><Connection /></el-icon>
               {{ connRefreshing ? '拉取中' : '从连接拉取' }}
             </button>
+            <button type="button" class="btn sm" :disabled="catCleaning" @click="cleanupCatalog">
+              <el-icon v-if="catCleaning" class="spin" :size="12"><Loading /></el-icon>
+              <el-icon v-else :size="12"><Delete /></el-icon>
+              {{ catCleaning ? '清理中' : '清理无连接模型' }}
+            </button>
           </div>
         </div>
 
@@ -454,7 +459,7 @@
  */
 import { computed, onMounted, ref, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, Plus, Connection, Refresh, WarningFilled, InfoFilled } from '@element-plus/icons-vue'
+import { Loading, Plus, Connection, Refresh, WarningFilled, InfoFilled, Delete } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
@@ -854,6 +859,8 @@ async function removeRateLimit(cap: RateLimitCap) {
 const catalog = ref<CatalogEntry[]>([])
 const catLoading = ref(false)
 const connRefreshing = ref(false)
+// 目录清理中（预览/执行共用一个按钮态）
+const catCleaning = ref(false)
 // 目录搜索关键字（与连接列表的 keyword 独立）
 const catKeyword = ref('')
 
@@ -936,6 +943,42 @@ async function refreshFromConnections() {
     ElMessage.error(`从连接拉取失败：${msg}`)
   } finally {
     connRefreshing.value = false
+  }
+}
+
+/** 清理孤儿模型目录：先 dryRun 预览统计，用户确认后执行删除 */
+async function cleanupCatalog() {
+  catCleaning.value = true
+  try {
+    const preview = await modelCatalogApi.cleanup(true)
+    if (preview.totalDeleted === 0 && preview.aliases.removedTargets === 0) {
+      ElMessage.success('无残留数据（模型目录与别名均有归属），无需清理')
+      return
+    }
+    const top = preview.providers.slice(0, 8).map(p => `${p.provider} (${p.count} 条)`).join('、')
+    const rest = preview.providers.length > 8
+      ? ` 等 ${preview.providers.length} 个提供方`
+      : ''
+    const aliasPart = preview.aliases.removedTargets > 0
+      ? `；并剔除 ${preview.aliases.removedTargets} 个指向已删连接的别名路由（其中 ${preview.aliases.deletedAutoAliases} 条自动别名将整条移除）`
+      : ''
+    const proceed = await ElMessageBox.confirm(
+      `将删除 ${preview.totalDeleted} 条无连接归属的模型记录（连接已删除、目录刷新只增不减导致残留）：${top}${rest}${aliasPart}。删除后可随时点「从连接拉取」重新获取。`,
+      '清理无连接模型',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    ).then(() => true).catch(() => false)
+    if (!proceed) return
+    const r = await modelCatalogApi.cleanup(false)
+    const aliasMsg = r.aliases.removedTargets > 0
+      ? `，剔除 ${r.aliases.removedTargets} 个悬空别名路由`
+      : ''
+    ElMessage.success(`已删除 ${r.totalDeleted} 条孤儿模型记录${aliasMsg}`)
+    await loadCatalog()
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '清理失败'
+    ElMessage.error(`清理失败：${msg}`)
+  } finally {
+    catCleaning.value = false
   }
 }
 

@@ -18,6 +18,8 @@ export interface CdpLoginStatus {
   imported?: number
   /** 导入后的登录态校验结果（success 时有效） */
   loggedIn?: boolean
+  /** 浏览器侧是否已检测到登录凭证（可主动触发收集） */
+  hasCredentials?: boolean
   /** 人类可读的当前进展 / 错误详情 */
   message: string
 }

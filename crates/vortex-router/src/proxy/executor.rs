@@ -715,14 +715,10 @@ impl ProviderExecutor for WebExecutor {
                 body: "网页版提供商未启用（web bridge 缺失）".into(),
             });
         };
-        // ProviderDef.id 形如 "web-doubao" → ai-web-provider 平台名 "doubao"
+        // ProviderDef.id 形如 "web-doubao" → ai-web-provider 平台名 "doubao"。
+        // worker 未启动时由 bridge 按需拉起（未授权会继续拉起 CDP 登录窗口），
+        // 这里不再提前返回 503。
         let platform = def.id.strip_prefix("web-").unwrap_or(&def.id).to_string();
-        if !bridge.available(&platform) {
-            return Ok(ExecutorOutput::UpstreamError {
-                status: 503,
-                body: format!("网页版平台 {platform} 的 worker 未启动"),
-            });
-        }
         let Some(question) = web_question(&request.messages) else {
             return Ok(ExecutorOutput::UpstreamError {
                 status: 400,
@@ -812,6 +808,9 @@ impl ProviderExecutor for WebExecutor {
                         out_text.push_str(&chunk.text);
                         json!({"content": chunk.text})
                     }
+                    // 过程提示：自定义增量字段，前端展示为状态行，
+                    // 不参与正文累积与 token 估算
+                    WebChunkKind::Status => json!({"vortex_status": chunk.text}),
                 };
                 let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, delta, None))).await;
             }

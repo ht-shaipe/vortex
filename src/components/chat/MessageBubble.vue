@@ -29,6 +29,12 @@
       <div v-else-if="isUser" class="bubble px-14px py-9px rounded-12px rounded-bl-4px text-14px leading-[1.625] text-ink bg-surface border border-solid border-line whitespace-pre-wrap break-words min-w-64px min-h-22px [&.mine]:bg-accent-bg [&.mine]:border-transparent [&.mine]:text-accent-ink [&.mine]:rounded-bl-12px [&.mine]:rounded-br-4px dark:[&.mine]:text-ink" :class="{ mine: isUser }">{{ body }}</div>
       <div v-else class="bubble markdown-body px-14px py-9px rounded-12px rounded-bl-4px text-14px leading-[1.625] text-ink bg-surface border border-solid border-line break-words min-w-64px min-h-22px [&.mine]:bg-accent-bg [&.mine]:border-transparent [&.mine]:text-accent-ink [&.mine]:rounded-bl-12px [&.mine]:rounded-br-4px dark:[&.mine]:text-ink" :class="{ mine: isUser }" v-html="renderedBody"></div>
 
+      <!-- 过程提示：自动拉起浏览器、收集登录凭证等（不进入正文） -->
+      <div v-if="msg.notice" class="msg-notice flex items-center gap-6px px-2px text-11.5px text-ink-4 leading-[1.5]">
+        <el-icon :size="12" class="spin shrink-0"><Loading /></el-icon>
+        <span class="break-words">{{ msg.notice }}</span>
+      </div>
+
       <div v-if="showBranch || showRegen" class="msg-ops flex items-center gap-3px pt-2px px-2px text-ink-4">
         <template v-if="showBranch">
           <button
@@ -67,7 +73,7 @@
  * 职责：渲染单条对话消息（用户/助手），支持错误态展示、分支切换与重新生成操作。
  */
 import { computed, ref } from 'vue'
-import { User, Cpu, ArrowLeft, ArrowRight, Refresh, CircleClose } from '@element-plus/icons-vue'
+import { User, Cpu, ArrowLeft, ArrowRight, Refresh, CircleClose, Loading } from '@element-plus/icons-vue'
 import type { BranchMessage } from '@/api/chat'
 import { renderMarkdown } from '@/lib/markdown'
 

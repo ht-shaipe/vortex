@@ -40,7 +40,7 @@ use tokio::sync::mpsc;
 use crate::common::chunk::{encode_chunk, ChunkKind};
 use crate::common::cookie_import::parse_cookie_import;
 use crate::common::fill::build_fill_js;
-use crate::common::util::{trace_page_html, truncate_utf8};
+use crate::common::util::{debug_html_dir, trace_page_html, truncate_utf8};
 use crate::config::ProviderCfg;
 use crate::models::*;
 use crate::providers::Provider;
@@ -362,12 +362,12 @@ impl Claude {
                     return;
                 }
                 let body_str = String::from_utf8_lossy(&resp.body);
-                // SSE 原文落盘（html/ 目录，已 gitignore），便于核对协议
+                // SSE 原文落盘（系统临时目录），便于核对协议
                 let ts = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis())
                     .unwrap_or(0);
-                let path = std::path::Path::new("html").join(format!("{ts}_claude_sse.txt"));
+                let path = debug_html_dir().join(format!("{ts}_claude_sse.txt"));
                 if let Err(e) = std::fs::write(&path, body_str.as_bytes()) {
                     tracing::warn!("[claude] SSE 响应落盘失败: {e}");
                 }

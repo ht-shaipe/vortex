@@ -68,7 +68,17 @@ pub(crate) fn dump_page_html(page: &obscura::Page, file_prefix: &str) -> String 
     }
 }
 
-/// 调试模式：把当前渲染后的页面 HTML 存到项目目录 `html/` 下。
+/// 调试 HTML / SSE 落盘目录。
+///
+/// 桌面端进程的当前目录是 `src-tauri`，直接写相对路径的 `html/` 会把
+/// 调试产物堆进仓库。统一放到系统临时目录，保留排查能力但不污染项目。
+pub(crate) fn debug_html_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join("vortex-debug-html");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// 调试模式：把当前渲染后的页面 HTML 存到系统临时目录。
 /// 文件名 = 时间戳毫秒 + 步骤名，自然按时间排序；未开启调试模式时是空操作。
 /// 在每步操作（导航/点击/填入/发送）完成、页面渲染稳定后调用。
 pub(crate) fn trace_page_html(page: &obscura::Page, debug_html: bool, step: &str) {
@@ -84,17 +94,7 @@ pub(crate) fn trace_page_html(page: &obscura::Page, debug_html: bool, step: &str
         tracing::warn!("[trace] {step}: 页面 HTML 为空，跳过");
         return;
     }
-    let dir = match std::env::current_dir() {
-        Ok(d) => d.join("html"),
-        Err(e) => {
-            tracing::warn!("[trace] {step}: 获取当前目录失败: {e}");
-            return;
-        }
-    };
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("[trace] {step}: 创建 {} 失败: {e}", dir.to_string_lossy());
-        return;
-    }
+    let dir = debug_html_dir();
     let ts = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()

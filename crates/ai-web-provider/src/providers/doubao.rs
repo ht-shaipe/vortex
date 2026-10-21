@@ -12,7 +12,7 @@ use crate::common::cookie_import::parse_cookie_import;
 use crate::common::extract::{block_text_value, json_find_text, merge_ai, parse_sse_events};
 use crate::common::fill::build_fill_js;
 use crate::common::qr::save_qr_image;
-use crate::common::util::{dump_page_html, trace_page_html};
+use crate::common::util::{debug_html_dir, dump_page_html, trace_page_html};
 use crate::config::ProviderCfg;
 use crate::models::*;
 use crate::providers::Provider;
@@ -809,14 +809,14 @@ impl Doubao {
                     return;
                 }
                 let body_str = String::from_utf8_lossy(&resp.body);
-                // SSE 聊天响应原文落盘（html/ 目录，已 gitignore），便于分析
+                // SSE 聊天响应原文落盘（系统临时目录），便于分析
                 // 豆包协议结构（思考块/搜索结果/参考资料等）
                 if is_stream && body_str.contains("STREAM_") {
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis())
                         .unwrap_or(0);
-                    let path = std::path::Path::new("html").join(format!("{ts}_sse_chat.txt"));
+                    let path = debug_html_dir().join(format!("{ts}_sse_chat.txt"));
                     if let Err(e) = std::fs::write(&path, body_str.as_bytes()) {
                         tracing::warn!("SSE 响应落盘失败: {e}");
                     }
@@ -1193,7 +1193,7 @@ impl Doubao {
         )
     }
 
-    /// 调试模式：把当前渲染后的页面 HTML 存到项目目录 `html/` 下（common 实现）
+    /// 调试模式：把当前渲染后的页面 HTML 存到系统临时目录（common 实现）
     fn trace_html(&self, step: &str) {
         trace_page_html(&self.page, self.debug_html, step);
     }

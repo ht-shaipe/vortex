@@ -60,6 +60,8 @@ export interface BranchMessage {
   siblingIndex: number
   siblingCount: number
   siblingIds: string[]
+  /** 临时过程提示（如自动拉起浏览器、收集登录凭证），不持久化 */
+  notice?: string
 }
 
 /** 创建会话请求参数 */
@@ -101,6 +103,13 @@ export interface ChatErrorPayload {
   topicId: string // 会话 ID
   messageId: string // 消息节点 ID
   error: string // 错误信息
+}
+
+/** 过程提示载荷（网页版平台自动登录 / 凭证收集进度） */
+export interface ChatStatusPayload {
+  topicId: string // 会话 ID
+  messageId: string // 消息节点 ID
+  status: string // 当前进展提示
 }
 
 /* ============ 持久化 ============ */
@@ -172,6 +181,7 @@ function bus<T>() {
 const chunkBus = bus<ChatChunkPayload>()
 const doneBus = bus<ChatDonePayload>()
 const errorBus = bus<ChatErrorPayload>()
+const statusBus = bus<ChatStatusPayload>()
 
 /** 每个 topic 一个 AbortController，实现「按会话并行 + 单独取消」。 */
 /** 进行中请求的取消句柄（Web 端为 AbortController，桌面端为 IPC 取消函数）。 */
@@ -269,24 +279,37 @@ async function gatewayKey(): Promise<string | null> {
   return cachedKey
 }
 
-/** SSE 增量解析：按空行切分事件，取 `choices[0].delta.content`；同时检测 error 事件。 */
-function extractDelta(json: string): { delta: string; error: string } {
+/**
+ * SSE 增量解析：按空行切分事件，取 `choices[0].delta.content`；
+ * 同时检测 error 事件与网关自定义的过程提示 `delta.vortex_status`。
+ */
+function extractDelta(json: string): { delta: string; error: string; status: string } {
   try {
     const obj = JSON.parse(json) as {
-      choices?: { delta?: { content?: string }; message?: { content?: string } }[]
+      choices?: {
+        delta?: { content?: string; vortex_status?: string }
+        message?: { content?: string }
+      }[]
       error?: { message?: string } | string
     }
     const c = obj.choices?.[0]
     const delta = c?.delta?.content ?? c?.message?.content ?? ''
+    const status = c?.delta?.vortex_status ?? ''
     const error = typeof obj.error === 'string' ? obj.error : (obj.error?.message ?? '')
-    return { delta, error }
+    return { delta, error, status }
   } catch {
-    return { delta: '', error: '' }
+    return { delta: '', error: '', status: '' }
   }
 }
 
 /** 喂入一段 SSE 原始文本，解析出全部 data 行增量并回调；返回未消费完的缓冲尾部。 */
-function feedSseText(buf: string, text: string, onDelta: (delta: string) => void, onError: (error: string) => void): string {
+function feedSseText(
+  buf: string,
+  text: string,
+  onDelta: (delta: string) => void,
+  onError: (error: string) => void,
+  onStatus: (status: string) => void,
+): string {
   buf += text
   // SSE 以空行分隔事件；保留最后一段不完整数据等下一批
   const parts = buf.split(/\r?\n\r?\n/)
@@ -296,8 +319,9 @@ function feedSseText(buf: string, text: string, onDelta: (delta: string) => void
       if (!line.startsWith('data:')) continue
       const payload = line.slice(5).trim()
       if (!payload || payload === '[DONE]') continue
-      const { delta, error } = extractDelta(payload)
+      const { delta, error, status } = extractDelta(payload)
       if (error) onError(error)
+      if (status) onStatus(status)
       if (delta) onDelta(delta)
     }
   }
@@ -317,6 +341,7 @@ async function streamCompletionViaIpc(
   messages: { role: string; content: string }[],
   isCancelled: () => boolean,
   onDelta: (delta: string) => void,
+  onStatus: (status: string) => void,
   temperature?: number,
   maxTokens?: number,
 ): Promise<void> {
@@ -332,7 +357,7 @@ async function streamCompletionViaIpc(
   onEvent.onmessage = (ev) => {
     try {
       if (ev?.type === 'delta' && ev.data?.text) {
-        buf = feedSseText(buf, ev.data.text, onDelta, (e) => { upstreamError = upstreamError || e })
+        buf = feedSseText(buf, ev.data.text, onDelta, (e) => { upstreamError = upstreamError || e }, onStatus)
       } else if (ev?.type === 'complete' && ev.data?.body) {
         const { delta, error } = extractDelta(ev.data.body)
         if (error) upstreamError = upstreamError || error
@@ -403,14 +428,25 @@ async function streamCompletion(
     },
   })
 
-  // Web 端超时兜底：180s ≈ 后端 60s 首字节超时 × 3 次尝试
-  //（桌面端无此限时，由 Rust 侧首字节/逐块超时保护）
+  // Web 端超时兜底：普通 API 模型 180s ≈ 后端 60s 首字节超时 × 3 次尝试；
+  // 网页版平台首次请求可能要先拉起 Chrome / 等待用户登录，放宽到与后端
+  // 登录恢复上限一致的 10 分钟（桌面端无此限时，由 Rust 侧超时保护）。
+  const timeoutMs = topic.endpointId.startsWith('web-') ? 600_000 : 180_000
+  let activeTimeoutMs = timeoutMs
   let timeoutId = 0
+  // 收到过程提示说明服务端仍在推进（如等待浏览器登录）：重置 Web 端
+  // 空闲超时并放宽到登录恢复上限，避免 180s 把仍在收集凭证的请求中断。
+  let resetIdleTimeout: ((ms: number) => void) | null = null
 
   let acc = ''
   const onDelta = (delta: string) => {
     acc += delta
     chunkBus.emit({ topicId, messageId: assistantId, delta })
+  }
+  // 网页版平台自动登录/凭证收集进度：展示在消息气泡下方，不写入正文
+  const onStatus = (status: string) => {
+    statusBus.emit({ topicId, messageId: assistantId, status })
+    resetIdleTimeout?.(600_000)
   }
 
   try {
@@ -421,11 +457,16 @@ async function streamCompletion(
           .then(({ invoke }) => invoke('cancel_chat_stream', { requestId }))
           .catch(() => {})
       }
-      await streamCompletionViaIpc(requestId, topic.model, payloadMessages, isCancelled, onDelta, temperature, maxTokens)
+      await streamCompletionViaIpc(requestId, topic.model, payloadMessages, isCancelled, onDelta, onStatus, temperature, maxTokens)
     } else {
       const controller = new AbortController()
       cancelFn = () => controller.abort()
-      timeoutId = window.setTimeout(() => controller.abort(), 180000)
+      resetIdleTimeout = (ms: number) => {
+        activeTimeoutMs = ms
+        if (timeoutId) window.clearTimeout(timeoutId)
+        timeoutId = window.setTimeout(() => controller.abort(), ms)
+      }
+      resetIdleTimeout(timeoutMs)
 
       const key = await gatewayKey()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -459,7 +500,7 @@ async function streamCompletion(
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        buf = feedSseText(buf, decoder.decode(value, { stream: true }), onDelta, (e) => { httpError = httpError || e })
+        buf = feedSseText(buf, decoder.decode(value, { stream: true }), onDelta, (e) => { httpError = httpError || e }, onStatus)
       }
 
       if (httpError) throw new Error(httpError)
@@ -484,7 +525,7 @@ async function streamCompletion(
       errorBus.emit({ topicId, messageId: assistantId, error: '已取消' })
     } else if (isCancel || (isAbort && !acc)) {
       // 超时取消（Web 端）
-      const msg = '请求超时（180 秒无响应），请检查网关是否已启动且上游提供商可用'
+      const msg = `请求超时（${Math.round(activeTimeoutMs / 1000)} 秒无响应），请检查网关是否已启动且上游提供商可用`
       patchMessage(assistantId, { content: msg, status: 'error' })
       errorBus.emit({ topicId, messageId: assistantId, error: msg })
     } else {
@@ -699,6 +740,9 @@ export const chatApi = {
   },
   onError(cb: (p: ChatErrorPayload) => void): Unlisten {
     return errorBus.on(cb)
+  },
+  onStatus(cb: (p: ChatStatusPayload) => void): Unlisten {
+    return statusBus.on(cb)
   },
 }
 

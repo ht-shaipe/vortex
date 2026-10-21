@@ -2,8 +2,11 @@
 //!
 //! 持有 ai-web-provider 的平台 worker 集合（每平台一个 obscura 引擎线程，
 //! V8 !Send），实现 [`WebChatBridge`] 供代理引擎的 WebExecutor 调用；
-//! 同时内置 [`CdpLoginManager`]，编排「拉起本地 Chrome → 用户登录 →
-//! CDP 收集 cookie → 注入 worker → 校验持久化」的授权流程。
+//! 同时内置 [`CdpLoginManager`]，编排「拉起本地 Chrome → 用户登录/使用 →
+//! CDP 持续同步凭证（含聊天产生的 x5sec/userToken 轮换）→ 注入 worker →
+//! 校验持久化」的授权流程。ask 遇到未登录错误时会自动接管已打开的
+//! 授权窗口（或拉起新窗口），等待凭证收集完成后重试原问题；流式路径
+//! 通过 `Status` chunk 向聊天界面推送当前进展。
 //!
 //! 存储布局：`<data_dir>/web-providers/<platform>/`（cookie 持久化于其中，
 //! 重启自动恢复登录态）。
@@ -18,16 +21,30 @@ use ai_web_provider::config::CommonCfg;
 use ai_web_provider::models::{Command, ERR_NOT_LOGGED_IN};
 use ai_web_provider::providers::spawn_platform;
 use futures::SinkExt;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use tokio::sync::{mpsc, oneshot};
 use vortex_router::proxy::web_bridge::{
     WebChatBridge, WebChunk, WebChunkKind, WebReply, WebStreamHandle,
 };
 
-/// 自动重授权的冷却窗口：与 CDP 授权等待上限对齐，窗口内不重复拉起
-/// （进行中的会话由 CdpLoginManager::start 自身幂等拒绝，冷却防的是
-/// 高频 ask 失败反复走到 spawn 的抖动）
-const AUTO_REAUTH_COOLDOWN: Duration = Duration::from_secs(120);
+/// 登录恢复的最长等待时间（与 CDP 授权窗口上限一致）。
+/// 等待期间流式通道会持续推送进度提示，避免前端误以为请求卡死。
+const LOGIN_RECOVERY_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// 登录恢复的状态轮询间隔
+const LOGIN_POLL_INTERVAL: Duration = Duration::from_millis(800);
+
+/// 主动触发凭证收集的重试间隔。自动同步在校验失败后会记录指纹并
+/// 停止重试，用户刚在浏览器里登录/聊天时需要一次手动收集兜底。
+const LOGIN_FORCE_RETRY: Duration = Duration::from_secs(8);
+
+/// 新拉起的授权窗口先留给自动检测的宽限期。避免用户还在登录时
+/// 就用 profile 里的旧凭证强制收集，导致窗口被提前关闭。
+const LOGIN_FORCE_GRACE: Duration = Duration::from_secs(30);
+
+/// 已打开的会话至少运行这么久，才把「存在凭证」视为用户已完成登录
+/// 的信号并主动收集；刚打开的窗口可能只是 profile 残留。
+const LOGIN_FORCE_MIN_AGE_SECS: u64 = 10;
 
 /// 平台默认站点地址（与 ai-web-provider 各 Provider 的 DEFAULT_URL 对齐）
 pub fn platform_default_urls() -> HashMap<String, String> {
@@ -55,8 +72,6 @@ pub struct WebProviderBridge {
     base_urls: HashMap<String, String>,
     /// worker 公共配置（按需启动新 worker 时复用）
     common: CommonCfg,
-    /// 平台 → 上次自动重授权触发时间（冷却去重）
-    auto_reauth_last: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl WebProviderBridge {
@@ -118,7 +133,6 @@ impl WebProviderBridge {
             cdp: Arc::new(CdpLoginManager::new()),
             base_urls,
             common,
-            auto_reauth_last: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -226,17 +240,19 @@ impl WebProviderBridge {
             .map_err(|_| "worker 未响应 debug".to_string())
     }
 
-    /// 收集自动重授权触发所需的上下文（'static，可 move 进异步任务）。
-    /// worker 未启动等取不到通道时返回 None（此时退化为普通错误文案）
-    fn reauth_ctx(&self, platform: &str) -> Option<ReauthCtx> {
-        let base_url = self.base_urls.get(platform)?.clone();
-        let worker_tx = self.worker_tx(platform).ok()?;
-        Some(ReauthCtx {
+    /// 构造登录恢复上下文（'static，可 move 进流式任务）。
+    fn login_recovery(&self, platform: &str) -> Result<LoginRecovery, String> {
+        let base_url = self
+            .base_urls
+            .get(platform)
+            .cloned()
+            .ok_or_else(|| format!("未知网页版平台: {platform}"))?;
+        let worker_tx = self.worker_tx(platform)?;
+        Ok(LoginRecovery {
             platform: platform.to_string(),
             base_url,
             worker_tx,
             cdp: self.cdp.clone(),
-            last: self.auto_reauth_last.clone(),
         })
     }
 
@@ -255,62 +271,322 @@ impl WebProviderBridge {
     }
 }
 
-/// ask 失败自动重授权的触发上下文
-struct ReauthCtx {
+/// worker ask 错误分类：登录态失效单独识别，便于触发 CDP 凭证恢复。
+enum WorkerAskError {
+    /// `ERR_NOT_LOGGED_IN` 前缀已剥离，保留 provider 的可读提示
+    LoginRequired(String),
+    /// 其他上游错误（原样返回）
+    Other(String),
+}
+
+/// 识别并剥离内部未登录前缀，避免泄漏给最终客户端。
+fn classify_worker_error(msg: String) -> WorkerAskError {
+    match msg.strip_prefix(ERR_NOT_LOGGED_IN) {
+        Some(rest) => WorkerAskError::LoginRequired(rest.trim().to_string()),
+        None => WorkerAskError::Other(msg),
+    }
+}
+
+/// 登录恢复过程中向前端推送的状态（仅流式路径有）。
+type ProgressSink = Option<futures::channel::mpsc::Sender<WebChunk>>;
+
+/// 向前端发送一条过程提示（不进入正文，不参与 token 统计）。
+async fn push_status(
+    tx: Option<&mut futures::channel::mpsc::Sender<WebChunk>>,
+    text: impl Into<String>,
+) {
+    if let Some(tx) = tx {
+        let _ = tx
+            .send(WebChunk {
+                kind: WebChunkKind::Status,
+                text: text.into(),
+            })
+            .await;
+    }
+}
+
+/// ask 失败后的登录恢复上下文（'static，可 move 进流式任务）。
+struct LoginRecovery {
     platform: String,
     base_url: String,
     worker_tx: mpsc::Sender<Command>,
     cdp: Arc<CdpLoginManager>,
-    last: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
-/// worker 错误 → 返回给调用方的错误文案。
-/// 带未登录前缀（`ERR_NOT_LOGGED_IN`）时：自动拉起 CDP 授权 Chrome，
-/// 用户在浏览器完成登录后凭证自动注入 worker，之后的请求即可用；
-/// 冷却窗口内不重复拉起（进行中的会话本来也会被 CdpLoginManager 拒绝）。
-/// 前缀剥离后再返回，不暴露给最终客户端。
-fn map_worker_error(ctx: Option<ReauthCtx>, msg: String) -> String {
-    // 前缀是内部协议标记：无论是否有重授权上下文都先剥离，
-    // 不暴露给最终客户端
-    let Some(base) = msg.strip_prefix(ERR_NOT_LOGGED_IN) else {
-        return msg;
-    };
-    let base = base.trim();
-    let Some(ctx) = ctx else {
-        return base.to_string();
-    };
-    let cooldown_active = {
-        let mut last = ctx.last.lock();
-        match last.get(&ctx.platform) {
-            Some(t) if t.elapsed() < AUTO_REAUTH_COOLDOWN => true,
-            _ => {
-                last.insert(ctx.platform.clone(), Instant::now());
-                false
+impl LoginRecovery {
+    /// 确保 CDP 授权窗口存在并完成凭证收集。
+    ///
+    /// - 已有进行中的会话：等待登录；检测到凭证后主动触发一次 `finish`
+    ///   （自动同步可能因指纹未变化而停下，用户刚刚在浏览器里操作过时
+    ///   手动收集最可靠）；
+    /// - 无会话 / 上次失败或取消：重新拉起 Chrome；
+    /// - 已成功：凭证此前已注入，直接返回让调用方重试 ask。
+    ///
+    /// 等待期间通过 `progress` 推送「正在收集」等提示，收集成功后返回
+    /// Ok，由调用方重新发送原问题。
+    async fn ensure(&self, progress: &mut ProgressSink) -> Result<(), String> {
+        log::info!(
+            "[web] {} 登录态失效，开始自动恢复（复用已打开的 CDP 窗口或拉起新窗口）",
+            self.platform
+        );
+        let started_at = Instant::now();
+        let mut started = false;
+        // 最近一次手动触发收集的时间（节流 + 失败后允许重试）
+        let mut last_force: Option<Instant> = None;
+
+        match self.cdp.status(&self.platform).await {
+            Some(st) if st.phase == "success" => {
+                push_status(progress.as_mut(), "检测到已同步的登录凭证，正在重试发送…").await;
+                return Ok(());
+            }
+            Some(st) if st.phase == "waiting_login" || st.phase == "importing" => {
+                if st.phase == "waiting_login" && st.has_credentials {
+                    if st.elapsed_secs >= LOGIN_FORCE_MIN_AGE_SECS {
+                        push_status(progress.as_mut(), "检测到登录凭证，正在收集并注入…").await;
+                        if self.cdp.finish(&self.platform).await {
+                            last_force = Some(Instant::now());
+                        }
+                    } else {
+                        push_status(
+                            progress.as_mut(),
+                            "检测到登录凭证，正在等待页面稳定后自动收集…",
+                        )
+                        .await;
+                    }
+                } else if st.phase == "importing" {
+                    // 已在导入中：记录时间，失败回到 waiting 后按间隔重试
+                    last_force = Some(Instant::now());
+                    push_status(progress.as_mut(), "正在收集登录凭证并注入网关…").await;
+                } else {
+                    push_status(progress.as_mut(), "等待浏览器完成登录，登录后将自动发送…").await;
+                }
+            }
+            Some(st) => {
+                // failed / cancelled：上一次窗口已结束，重新拉起
+                log::info!(
+                    "[web] {} 上次 CDP 会话状态为 {}，重新拉起授权",
+                    self.platform,
+                    st.phase
+                );
+                self.start(progress).await?;
+                started = true;
+            }
+            None => {
+                self.start(progress).await?;
+                started = true;
+            }
+        }
+
+        self.wait_ready(progress, started, started_at, last_force)
+            .await
+    }
+
+    /// 已同步过凭证但仍无法通过 worker 校验（典型：页面后来被登出、
+    /// 旧 token 失效）：关闭旧窗口后重新拉起一次，等待新的登录/同步。
+    async fn restart(&self, progress: &mut ProgressSink) -> Result<(), String> {
+        log::info!(
+            "[web] {} 已同步的凭证仍不可用，重启 CDP 授权窗口",
+            self.platform
+        );
+        // 旧窗口可能仍占用 profile；先取消/关闭再拉起，避免启动失败
+        let _ = self.cdp.cancel(&self.platform).await;
+        push_status(progress.as_mut(), "当前凭证仍不可用，正在重新拉起 Chrome…").await;
+        self.start(progress).await?;
+        self.wait_ready(progress, true, Instant::now(), None).await
+    }
+
+    /// 等待 CDP 会话进入 success；期间处理登录提示与手动收集。
+    async fn wait_ready(
+        &self,
+        progress: &mut ProgressSink,
+        started: bool,
+        started_at: Instant,
+        mut last_force: Option<Instant>,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + LOGIN_RECOVERY_TIMEOUT;
+        let mut last_phase = String::new();
+        loop {
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "{} 登录等待超时（{} 分钟），请到「网页版账号」页检查授权状态后重试",
+                    self.platform,
+                    LOGIN_RECOVERY_TIMEOUT.as_secs() / 60
+                ));
+            }
+            tokio::time::sleep(LOGIN_POLL_INTERVAL).await;
+
+            let Some(st) = self.cdp.status(&self.platform).await else {
+                return Err(format!(
+                    "{} 的 CDP 授权会话已结束，请重新发起授权",
+                    self.platform
+                ));
+            };
+
+            if st.phase == "success" {
+                log::info!("[web] {} 登录凭证已同步，重试原问题", self.platform);
+                push_status(progress.as_mut(), "登录凭证已同步，正在重新发送消息…").await;
+                return Ok(());
+            }
+            if st.phase == "failed" || st.phase == "cancelled" {
+                return Err(format!("{} 授权未完成：{}", self.platform, st.message));
+            }
+            if st.phase != last_phase {
+                match st.phase.as_str() {
+                    "waiting_login" => {
+                        let text = if started {
+                            "Chrome 已打开，请在浏览器完成登录；登录后将自动发送…"
+                        } else {
+                            "等待浏览器完成登录，登录后将自动发送…"
+                        };
+                        push_status(progress.as_mut(), text).await;
+                    }
+                    "importing" => {
+                        last_force = Some(Instant::now());
+                        push_status(progress.as_mut(), "正在收集登录凭证并注入网关…").await;
+                    }
+                    _ => {}
+                }
+                last_phase = st.phase.clone();
+            }
+
+            // 已打开的会话：用户已经在浏览器里登录/使用过，但自动同步
+            // 没有推进（例如指纹未变被去重）——主动触发一次收集。
+            // 新拉起的会话先给自动检测一个窗口期，避免把 profile 里的
+            // 旧凭证误当成刚完成的登录；导入失败回到 waiting 后，
+            // 再按 LOGIN_FORCE_RETRY 间隔重试。
+            let force_due = last_force
+                .map(|t| t.elapsed() >= LOGIN_FORCE_RETRY)
+                .unwrap_or(true);
+            let force_allowed = if started {
+                started_at.elapsed() >= LOGIN_FORCE_GRACE
+            } else {
+                st.elapsed_secs >= LOGIN_FORCE_MIN_AGE_SECS
+            };
+            if force_allowed
+                && force_due
+                && st.phase == "waiting_login"
+                && st.has_credentials
+                && self.cdp.finish(&self.platform).await
+            {
+                last_force = Some(Instant::now());
+                push_status(progress.as_mut(), "检测到登录凭证，正在收集并注入…").await;
+            }
+        }
+    }
+
+    /// 拉起 CDP 授权窗口；并发场景下已有会话视为成功，直接接管等待。
+    async fn start(&self, progress: &mut ProgressSink) -> Result<(), String> {
+        push_status(progress.as_mut(), "登录态失效，正在拉起 Chrome 授权窗口…").await;
+        match self
+            .cdp
+            .start(&self.platform, &self.base_url, self.worker_tx.clone())
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("已有进行中的 CDP 授权会话") {
+                    // 另一个请求/授权页已经拉起，直接等待其完成
+                    Ok(())
+                } else {
+                    Err(format!("无法拉起 Chrome 授权窗口：{msg}"))
+                }
+            }
+        }
+    }
+}
+
+/// 第二次 ask 仍报未登录时的可操作错误文案。
+fn login_still_invalid(platform: &str, base: &str) -> String {
+    format!(
+        "{platform} 已尝试自动收集登录凭证，但网关仍报告未登录：{base}。\
+         请到「网页版账号」页对 {platform} 重新授权后再试"
+    )
+}
+
+/// 发送一次 ask 并等待完整回复。
+async fn ask_once(tx: &mpsc::Sender<Command>, question: &str) -> Result<WebReply, WorkerAskError> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(Command::Ask {
+        question: question.to_string(),
+        chunk_tx: None,
+        reply_tx,
+    })
+    .await
+    .map_err(|_| WorkerAskError::Other("worker 已退出".to_string()))?;
+    match reply_rx.await {
+        Ok(Ok(r)) => Ok(to_web_reply(r)),
+        Ok(Err(e)) => Err(classify_worker_error(e.to_string())),
+        Err(_) => Err(WorkerAskError::Other("worker 已退出".to_string())),
+    }
+}
+
+/// 发送一次流式 ask：把 worker 的编码 chunk 转发到 `out_tx`，
+/// 返回最终完整回复。错误同样按登录态分类，供调用方决定是否恢复。
+async fn ask_stream_once(
+    tx: &mpsc::Sender<Command>,
+    question: &str,
+    out_tx: &mut futures::channel::mpsc::Sender<WebChunk>,
+) -> Result<WebReply, WorkerAskError> {
+    let (chunk_tx, mut chunk_rx) = mpsc::channel::<String>(64);
+    let (reply_tx, mut reply_rx) = oneshot::channel();
+    tx.send(Command::Ask {
+        question: question.to_string(),
+        chunk_tx: Some(chunk_tx),
+        reply_tx,
+    })
+    .await
+    .map_err(|_| WorkerAskError::Other("worker 已退出".to_string()))?;
+
+    let reply = loop {
+        tokio::select! {
+            maybe = chunk_rx.recv() => match maybe {
+                Some(raw) => forward_web_chunk(&raw, out_tx).await,
+                None => {
+                    break reply_rx
+                        .await
+                        .map_err(|_| WorkerAskError::Other("worker 已退出".to_string()))?;
+                }
+            },
+            r = &mut reply_rx => {
+                break r.map_err(|_| WorkerAskError::Other("worker 已退出".to_string()))?;
             }
         }
     };
-    if cooldown_active {
-        return format!(
-            "{} 登录态已失效。Chrome 授权窗口此前已拉起（等待登录中），\
-             请在浏览器完成登录后重试提问。{}",
-            ctx.platform, base
-        );
+
+    // worker 先发完 chunk 再回最终结果；把通道里剩余增量补发完，
+    // 避免流式输出末尾被截断（客户端断开时发送失败可忽略）。
+    while let Ok(raw) = chunk_rx.try_recv() {
+        forward_web_chunk(&raw, out_tx).await;
     }
-    let platform_name = ctx.platform.clone();
-    tokio::spawn(async move {
-        if let Err(e) = ctx
-            .cdp
-            .start(&ctx.platform, &ctx.base_url, ctx.worker_tx)
-            .await
-        {
-            log::warn!("[web] {} 自动重授权拉起失败: {}", ctx.platform, e);
-        }
-    });
-    format!(
-        "{} 登录态已失效，已自动拉起 Chrome 授权窗口：\
-         请在浏览器完成登录，凭证会自动同步到网关，稍后重试提问即可。{}",
-        platform_name, base
-    )
+
+    match reply {
+        Ok(r) => Ok(to_web_reply(r)),
+        Err(e) => Err(classify_worker_error(e.to_string())),
+    }
+}
+
+/// worker 编码 chunk（"T:xxx"/"H:xxx"）→ WebChunk 并转发。
+async fn forward_web_chunk(raw: &str, out_tx: &mut futures::channel::mpsc::Sender<WebChunk>) {
+    if raw.is_empty() {
+        return;
+    }
+    let chunk = match decode_chunk(raw) {
+        Some((ChunkKind::Thinking, t)) if !t.is_empty() => WebChunk {
+            kind: WebChunkKind::Thinking,
+            text: t,
+        },
+        Some((ChunkKind::Text, t)) if !t.is_empty() => WebChunk {
+            kind: WebChunkKind::Text,
+            text: t,
+        },
+        // 未编码的纯文本 chunk（旧实现）按正文处理
+        _ => WebChunk {
+            kind: WebChunkKind::Text,
+            text: raw.to_string(),
+        },
+    };
+    let _ = out_tx.send(chunk).await;
 }
 
 /// 把 AiReply 转换为 router 侧的 WebReply（丢弃搜索关键字/参考资料，
@@ -329,19 +605,35 @@ impl WebChatBridge for WebProviderBridge {
     }
 
     async fn ask(&self, platform: &str, question: String) -> Result<WebReply, String> {
+        // 聊天请求直接选中未启动的网页版平台时按需拉起 worker；
+        // 若未授权，随后 ask 会返回未登录并进入 CDP 自动恢复流程。
+        self.ensure_platform(platform)?;
         let tx = self.worker_tx(platform)?;
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Ask {
-            question,
-            chunk_tx: None,
-            reply_tx,
-        })
-        .await
-        .map_err(|_| "worker 已退出".to_string())?;
-        match reply_rx.await {
-            Ok(Ok(r)) => Ok(to_web_reply(r)),
-            Ok(Err(e)) => Err(map_worker_error(self.reauth_ctx(platform), e.to_string())),
-            Err(_) => Err("worker 已退出".to_string()),
+        match ask_once(&tx, &question).await {
+            Ok(reply) => Ok(reply),
+            Err(WorkerAskError::Other(e)) => Err(e),
+            Err(WorkerAskError::LoginRequired(_)) => {
+                // 登录态失效：拉起/接管 CDP 授权，等凭证注入后自动重试
+                let recovery = self.login_recovery(platform)?;
+                let mut progress: ProgressSink = None;
+                recovery.ensure(&mut progress).await?;
+                match ask_once(&tx, &question).await {
+                    Ok(reply) => Ok(reply),
+                    Err(WorkerAskError::Other(e)) => Err(e),
+                    Err(WorkerAskError::LoginRequired(_)) => {
+                        // 已有 success 会话但 worker 仍不认（旧 token 已失效）：
+                        // 关闭旧窗口重新授权一次
+                        recovery.restart(&mut progress).await?;
+                        match ask_once(&tx, &question).await {
+                            Ok(reply) => Ok(reply),
+                            Err(WorkerAskError::Other(e)) => Err(e),
+                            Err(WorkerAskError::LoginRequired(base)) => {
+                                Err(login_still_invalid(platform, &base))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -350,55 +642,64 @@ impl WebChatBridge for WebProviderBridge {
         platform: &str,
         question: String,
     ) -> Result<WebStreamHandle, String> {
-        let tx = self.worker_tx(platform)?;
-        let (chunk_tx, mut chunk_rx) = mpsc::channel::<String>(64);
-        let (reply_tx, reply_rx) = oneshot::channel();
-        tx.send(Command::Ask {
-            question,
-            chunk_tx: Some(chunk_tx),
-            reply_tx,
-        })
-        .await
-        .map_err(|_| "worker 已退出".to_string())?;
+        // 同 ask：聊天可直接拉起未启动的 worker（未授权时后续走 CDP 恢复）
+        self.ensure_platform(platform)?;
+        let recovery = self.login_recovery(platform)?;
+        let tx = recovery.worker_tx.clone();
+        let platform_owned = platform.to_string();
 
-        // 错误路径的自动重授权上下文（move 进 final_reply；
-        // 流式路径的错误同样应触发拉起 CDP）
-        let reauth_ctx = self.reauth_ctx(platform);
-
-        // chunk 解码任务：worker 的编码 chunk（"T:xxx"/"H:xxx"）→ WebChunk 流
+        // 立即返回流式句柄：登录恢复/重新发送都在后台任务里完成，
+        // 期间通过 Status chunk 向前端推送进度，避免首字节超时。
         let (mut out_tx, out_rx) = futures::channel::mpsc::channel::<WebChunk>(64);
+        let (result_tx, result_rx) = oneshot::channel::<Result<WebReply, String>>();
         tokio::spawn(async move {
-            while let Some(raw) = chunk_rx.recv().await {
-                if raw.is_empty() {
-                    continue;
+            let mut progress: ProgressSink = Some(out_tx.clone());
+            let result = match ask_stream_once(&tx, &question, &mut out_tx).await {
+                Ok(reply) => Ok(reply),
+                Err(WorkerAskError::Other(e)) => Err(e),
+                Err(WorkerAskError::LoginRequired(_)) => {
+                    push_status(
+                        progress.as_mut(),
+                        format!("{platform_owned} 登录态失效，正在自动恢复登录…"),
+                    )
+                    .await;
+                    match recovery.ensure(&mut progress).await {
+                        Ok(()) => match ask_stream_once(&tx, &question, &mut out_tx).await {
+                            Ok(reply) => Ok(reply),
+                            Err(WorkerAskError::Other(e)) => Err(e),
+                            Err(WorkerAskError::LoginRequired(_)) => {
+                                // 已有 success 会话但 worker 仍不认：
+                                // 关闭旧窗口重新授权一次
+                                push_status(
+                                    progress.as_mut(),
+                                    "已同步的凭证仍不可用，正在重新授权…",
+                                )
+                                .await;
+                                match recovery.restart(&mut progress).await {
+                                    Ok(()) => {
+                                        match ask_stream_once(&tx, &question, &mut out_tx).await {
+                                            Ok(reply) => Ok(reply),
+                                            Err(WorkerAskError::Other(e)) => Err(e),
+                                            Err(WorkerAskError::LoginRequired(base)) => {
+                                                Err(login_still_invalid(&platform_owned, &base))
+                                            }
+                                        }
+                                    }
+                                    Err(e) => Err(e),
+                                }
+                            }
+                        },
+                        Err(e) => Err(e),
+                    }
                 }
-                let chunk = match decode_chunk(&raw) {
-                    Some((ChunkKind::Thinking, t)) if !t.is_empty() => WebChunk {
-                        kind: WebChunkKind::Thinking,
-                        text: t,
-                    },
-                    Some((ChunkKind::Text, t)) if !t.is_empty() => WebChunk {
-                        kind: WebChunkKind::Text,
-                        text: t,
-                    },
-                    // 未编码的纯文本 chunk（旧实现）按正文处理
-                    _ => WebChunk {
-                        kind: WebChunkKind::Text,
-                        text: raw,
-                    },
-                };
-                if out_tx.send(chunk).await.is_err() {
-                    break;
-                }
-            }
+            };
+            let _ = result_tx.send(result);
         });
 
         let final_reply = async move {
-            match reply_rx.await {
-                Ok(Ok(r)) => Ok(to_web_reply(r)),
-                Ok(Err(e)) => Err(map_worker_error(reauth_ctx, e.to_string())),
-                Err(_) => Err("worker 已退出".to_string()),
-            }
+            result_rx
+                .await
+                .unwrap_or_else(|_| Err("web ask 任务已结束".to_string()))
         };
 
         Ok(WebStreamHandle {
@@ -413,19 +714,33 @@ mod tests {
     use super::*;
 
     /// 非登录类错误（无前缀）原样透传
-    #[tokio::test]
-    async fn worker_error_without_prefix_passthrough() {
+    #[test]
+    fn worker_error_without_prefix_passthrough() {
         let msg = "等待回复超时（网络层与 DOM 均无有效内容）".to_string();
-        assert_eq!(map_worker_error(None, msg.clone()), msg);
+        match classify_worker_error(msg.clone()) {
+            WorkerAskError::Other(out) => assert_eq!(out, msg),
+            WorkerAskError::LoginRequired(_) => panic!("普通错误不应被识别为登录失效"),
+        }
     }
 
-    /// 登录类错误（带前缀）在无重授权上下文时剥离前缀、保留指引文案
-    /// （worker_tx 取不到的退化路径，前缀不暴露给最终客户端）
-    #[tokio::test]
-    async fn auth_required_prefix_stripped_without_ctx() {
+    /// 登录类错误剥离内部前缀，保留可读指引
+    #[test]
+    fn auth_required_prefix_stripped() {
         let msg = format!("{ERR_NOT_LOGGED_IN}尚未登录：请重新授权");
-        let out = map_worker_error(None, msg);
-        assert!(!out.contains(ERR_NOT_LOGGED_IN));
-        assert!(out.contains("尚未登录"));
+        match classify_worker_error(msg) {
+            WorkerAskError::LoginRequired(base) => {
+                assert_eq!(base, "尚未登录：请重新授权");
+                assert!(!base.contains(ERR_NOT_LOGGED_IN));
+            }
+            WorkerAskError::Other(_) => panic!("登录错误应被单独识别"),
+        }
+    }
+
+    /// 重试后仍失败时给出可操作指引，不再提示「窗口已拉起、稍后重试」
+    #[test]
+    fn login_still_invalid_is_actionable() {
+        let out = login_still_invalid("deepseek", "尚未登录");
+        assert!(out.contains("deepseek"));
+        assert!(out.contains("重新授权"));
     }
 }

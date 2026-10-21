@@ -369,18 +369,22 @@ onMounted(async () => {
         m.id === p.messageId ? { ...m, content: m.content + p.delta, status: 'streaming' } : m,
       )
     }),
+    // 过程提示（网页版平台自动登录/凭证收集）：显示在消息气泡下方
+    chatApi.onStatus((p) => {
+      patchMessage(p.topicId, p.messageId, { notice: p.status })
+    }),
     // 生成完成：更新最终内容与状态
     chatApi.onDone((p) => {
-      patchMessage(p.topicId, p.messageId, { content: p.content, status: 'success' })
+      patchMessage(p.topicId, p.messageId, { content: p.content, status: 'success', notice: '' })
       markStreaming(p.topicId, false)
       void loadTopics()
     }),
     // 生成出错：标记错误状态（已取消视为成功）
     chatApi.onError((p) => {
       if (p.error.includes('已取消')) {
-        patchMessage(p.topicId, p.messageId, { status: 'success' })
+        patchMessage(p.topicId, p.messageId, { status: 'success', notice: '' })
       } else {
-        patchMessage(p.topicId, p.messageId, { content: p.error, status: 'error' })
+        patchMessage(p.topicId, p.messageId, { content: p.error, status: 'error', notice: '' })
         ElMessage.error(p.error || '生成失败')
       }
       markStreaming(p.topicId, false)

@@ -204,6 +204,32 @@
           </div>
         </div>
 
+        <!-- 存储维护：大表限额清理 -->
+        <div class="card section mb-[var(--gap-lg)]">
+          <div class="card-head">
+            <div><div class="card-title">存储维护</div><div class="card-sub">统计数据永久保留；压缩存档与请求日志超过预算自动清理（每 6 小时巡检）</div></div>
+          </div>
+          <div class="card-body">
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">数据库占用</div>
+                <div class="setting-desc">
+                  当前 {{ storageLoading ? '…' : fmtSize(storage.stats?.dbFileBytes ?? 0) }} / 预算 {{ storage.budgetMb }}MB
+                  <template v-if="storage.stats">
+                    · 压缩存档 {{ storage.stats.compressedRows }} 条（{{ fmtSize(storage.stats.compressedBytes) }}）
+                    · 用量统计 {{ storage.stats.usageRows }} 条（永久保留）
+                  </template>
+                </div>
+              </div>
+              <button type="button" class="btn" :disabled="storageBusy" @click="runStorageCleanup">
+                <el-icon v-if="storageBusy" class="spin" :size="13"><Loading /></el-icon>
+                <el-icon v-else :size="13"><Delete /></el-icon>
+                {{ storageBusy ? '清理中…' : '立即清理' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- 危险区域：恢复出厂设置 -->
         <div class="danger-card section mb-[var(--gap-lg)] border border-solid border-err rounded-lg bg-err-bg py-16px px-20px">
           <div class="danger-head flex items-center gap-6px text-13px font-semibold text-err mb-12px">
@@ -241,7 +267,7 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { runtime } from '@/lib/runtime'
-import { CopyDocument, Loading, Lock, Refresh, Setting, Tools, WarningFilled, Close } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, Loading, Lock, Refresh, Setting, Tools, WarningFilled, Close } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useTheme } from '@/composables/useTheme'
@@ -249,6 +275,7 @@ import { useAutoStart } from '@/composables/useAutoStart'
 import { getSettings, updateSettings } from '@/api/settings'
 import { listKeys, type ApiKey } from '@/api/keys'
 import { keyPermissionsApi, type KeyPermission } from '@/api/keyPermissions'
+import { maintenanceApi, type StorageStats } from '@/api/maintenance'
 
 // 主题组合式函数
 const theme = useTheme()
@@ -498,9 +525,77 @@ async function doReset() {
 onMounted(() => {
   load()
   autoStart.init()
+  void loadStorage()
 })
 
 watch(active, (v) => {
   if (v === 'security') void loadPermissions()
+  if (v === 'advanced') void loadStorage()
 })
+
+// ── 存储维护（大表限额清理） ──
+
+/** 存储占用与预算（高级设置页卡片） */
+const storage = reactive<{ budgetMb: number; stats: StorageStats | null }>({
+  budgetMb: 200,
+  stats: null,
+})
+const storageLoading = ref(false)
+const storageBusy = ref(false)
+
+/** 字节数人类可读化 */
+function fmtSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${bytes} B`
+}
+
+/** 加载存储占用统计（静默失败，卡片显示占位） */
+async function loadStorage() {
+  storageLoading.value = true
+  try {
+    const r = await maintenanceApi.info()
+    storage.budgetMb = r.budgetMb
+    storage.stats = r.stats
+  } catch {
+    // 静默：老版本网关无此端点时卡片显示预算默认值
+  } finally {
+    storageLoading.value = false
+  }
+}
+
+/** 立即清理：预览 → 确认 → 执行 */
+async function runStorageCleanup() {
+  storageBusy.value = true
+  try {
+    const preview = await maintenanceApi.cleanup(true)
+    const r = preview.report
+    if (r.expiredDeleted + r.compressedDeleted + r.callLogTrimmed + r.callLogDeleted === 0) {
+      ElMessage.success(`存储占用在预算内（${fmtSize(r.beforeBytes)} / ${preview.budgetMb}MB），无需清理`)
+      return
+    }
+    const parts: string[] = []
+    if (r.expiredDeleted > 0) parts.push(`过期存档 ${r.expiredDeleted} 条`)
+    if (r.compressedDeleted > 0) parts.push(`超预算存档 ${r.compressedDeleted} 条（从最旧开始）`)
+    if (r.callLogTrimmed + r.callLogDeleted > 0) parts.push(`请求日志 ${r.callLogTrimmed + r.callLogDeleted} 行`)
+    const proceed = await ElMessageBox.confirm(
+      `将清理：${parts.join('、')}。清理后执行空间回收（VACUUM），用量统计不受影响。`,
+      '立即清理存储',
+      { type: 'warning', confirmButtonText: '清理', cancelButtonText: '取消' },
+    ).then(() => true).catch(() => false)
+    if (!proceed) return
+    const done = await maintenanceApi.cleanup(false)
+    const rr = done.report
+    ElMessage.success(
+      `清理完成：${fmtSize(rr.beforeBytes)} → ${fmtSize(rr.afterBytes)}（预算 ${done.budgetMb}MB）`,
+    )
+    await loadStorage()
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '清理失败'
+    ElMessage.error(`存储清理失败：${msg}`)
+  } finally {
+    storageBusy.value = false
+  }
+}
 </script>

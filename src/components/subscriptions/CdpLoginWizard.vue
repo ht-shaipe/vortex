@@ -48,6 +48,8 @@
         已导入 {{ status?.imported ?? 0 }} 条登录凭证{{ status?.loggedIn === false ? '（登录态校验未通过，建议重试）' : '' }}，
         重启后自动保持登录。
       </div>
+      <!-- 持续同步提示：窗口保持开启期间凭证变化会自动同步（如千问聊天下发的 x5sec） -->
+      <div v-if="status?.message" class="text-11.5px text-ink-4 leading-[1.5] max-w-380px break-words">{{ status.message }}</div>
     </div>
 
     <!-- 进行中：launching / waiting_login / collecting / importing -->

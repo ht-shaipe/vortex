@@ -426,7 +426,7 @@ async fn debug(state: web::Data<AppState>, path: web::Path<String>) -> HttpRespo
 /// 开/关/切换调试模式。
 /// - `POST /api/{platform}/debug/html`            → 切换当前状态
 /// - `POST /api/{platform}/debug/html {"enabled": true}`  → 显式开启 / 关闭
-/// 开启后每步操作（导航/点击/填入/发送等）页面渲染完，自动把 HTML 存到项目 `html/` 目录。
+/// 开启后每步操作（导航/点击/填入/发送等）页面渲染完，自动把 HTML 存到系统临时目录。
 async fn debug_html_toggle(
     state: web::Data<AppState>,
     path: web::Path<String>,

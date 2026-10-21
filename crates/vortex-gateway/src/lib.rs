@@ -250,6 +250,9 @@ pub fn start_api_server(
                             .route("/backups", web::post().to(api::management::backup::create_backup))
                             .route("/model-catalog", web::get().to(api::management::model_catalog::list_catalog))
                             .route("/model-catalog/refresh-from-connections", web::post().to(api::management::model_catalog::refresh_from_connections_handler))
+                            .route("/model-catalog/cleanup", web::post().to(api::management::model_catalog::cleanup_catalog))
+                            .route("/maintenance/storage", web::get().to(api::management::maintenance::storage_info))
+                            .route("/maintenance/storage/cleanup", web::post().to(api::management::maintenance::storage_cleanup))
                             .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
                             .route("/playground", web::post().to(api::management::playground::playground))
                             .route("/cost-analysis", web::get().to(api::management::cost_analysis::cost_analysis))
@@ -331,19 +334,44 @@ pub fn start_api_server(
                 });
             }
 
-            // 定期清理过期压缩内容（每 24 小时）
+            // 存储预算巡检：统计数据（usage_history）全保留，压缩存档/
+            // 日志大表限额自动清理 + VACUUM 收缩（含过期存档清理，取代
+            // 原先"先睡 24h 才首次执行"的过期清理任务——桌面应用很少
+            // 连跑 24h，旧任务实际从未执行过）。启动 2 分钟后首跑，
+            // 之后每 6 小时巡检；预算默认 200MB（VORTEX_STORAGE_BUDGET_MB）
             {
                 let pool = state.db_pool.clone();
                 actix_rt::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
                     loop {
-                        tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
+                        let budget_mb = vortex_store::db::maintenance::budget_mb_from_env();
                         let pool_clone = pool.clone();
-                        let _ = tokio::task::spawn_blocking(move || -> std::result::Result<(), String> {
-                            let conn = vortex_store::db::core::get_conn(&pool_clone).map_err(|e| e.to_string())?;
-                            let n = vortex_store::db::compressed_content::cleanup_expired(&conn).map_err(|e| e.to_string())?;
-                            if n > 0 { log::info!("清理过期压缩内容: {} 条", n); }
-                            Ok(())
-                        }).await;
+                        let report = tokio::task::spawn_blocking(move || {
+                            let conn = vortex_store::db::core::get_conn(&pool_clone)
+                                .map_err(|e| e.to_string())?;
+                            vortex_store::db::maintenance::enforce_storage_budget(
+                                &conn,
+                                budget_mb * 1024 * 1024,
+                                false,
+                            )
+                            .map_err(|e| e.to_string())
+                        })
+                        .await;
+                        match report {
+                            Ok(Ok(r)) if r.expired_deleted + r.compressed_deleted + r.call_log_trimmed + r.call_log_deleted > 0 => {
+                                log::info!(
+                                    "存储预算清理完成（预算 {budget_mb}MB）：过期存档 {} 条、超预算存档 {} 条、\
+                                     日志清字段 {} 行/删 {} 行；库 {}MB → {}MB",
+                                    r.expired_deleted, r.compressed_deleted,
+                                    r.call_log_trimmed, r.call_log_deleted,
+                                    r.before_bytes / 1024 / 1024, r.after_bytes / 1024 / 1024
+                                );
+                            }
+                            Ok(Ok(_)) => {}
+                            Ok(Err(e)) => log::warn!("存储预算巡检失败: {e}"),
+                            Err(e) => log::warn!("存储预算巡检任务异常: {e}"),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(21600)).await;
                     }
                 });
             }

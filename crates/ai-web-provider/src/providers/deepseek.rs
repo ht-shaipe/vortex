@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use crate::common::chunk::{encode_chunk, ChunkKind};
 use crate::common::cookie_import::parse_cookie_import;
 use crate::common::fill::build_fill_js;
-use crate::common::util::{trace_page_html, truncate_utf8};
+use crate::common::util::{debug_html_dir, trace_page_html, truncate_utf8};
 use crate::config::ProviderCfg;
 use crate::models::*;
 use crate::providers::Provider;
@@ -549,14 +549,13 @@ impl Deepseek {
                     return;
                 }
                 let body_str = String::from_utf8_lossy(&resp.body);
-                // SSE 响应原文落盘（便于分析协议结构）
+                // SSE 响应原文落盘（系统临时目录，便于分析协议结构）
                 if is_stream {
-                    let _ = std::fs::create_dir_all("html");
                     let ts = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis())
                         .unwrap_or(0);
-                    let path = std::path::Path::new("html").join(format!("deepseek_{ts}_sse.txt"));
+                    let path = debug_html_dir().join(format!("deepseek_{ts}_sse.txt"));
                     if let Err(e) = std::fs::write(&path, body_str.as_bytes()) {
                         tracing::warn!("[deepseek] SSE 响应落盘失败: {e}");
                     }

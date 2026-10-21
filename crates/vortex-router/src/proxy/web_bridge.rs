@@ -33,6 +33,9 @@ pub enum WebChunkKind {
     Thinking,
     /// 正文增量 → OpenAI `delta.content`
     Text,
+    /// 过程提示（如自动拉起浏览器、收集登录凭证）→ OpenAI
+    /// `delta.vortex_status`，不计入正文与 token 统计
+    Status,
 }
 
 /// 单个流式增量
@@ -58,7 +61,7 @@ use futures::Stream;
 /// 由 vortex-gateway 侧实现（包装 ai-web-provider 的平台 worker 命令通道）。
 #[async_trait::async_trait]
 pub trait WebChatBridge: Send + Sync {
-    /// 平台 worker 是否已启动（未启动时执行器返回上游错误）
+    /// 平台 worker 是否已启动（管理页状态展示；聊天路径由 bridge 按需拉起）
     fn available(&self, platform: &str) -> bool;
 
     /// 非流式 ask：阻塞至回复完整

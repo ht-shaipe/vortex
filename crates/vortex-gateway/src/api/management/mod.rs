@@ -50,6 +50,8 @@ pub mod key_permissions;
 pub mod web_providers;
 /// 系统状态与代理控制端点
 pub mod system;
+/// 存储维护端点（大表限额清理）
+pub mod maintenance;
 /// 智能体集成端点
 pub mod agents;
 /// 对话控制端点

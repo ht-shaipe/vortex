@@ -19,7 +19,7 @@ pub struct CommonCfg {
     pub storage_base: String,
     pub max_wait_ms: u64,
     pub stable_ms: u64,
-    /// 调试模式：开启后每步操作渲染完把页面 HTML 存到项目 html/ 目录
+    /// 调试模式：开启后每步操作渲染完把页面 HTML 存到系统临时目录
     pub debug_html: bool,
 }
 
@@ -36,7 +36,7 @@ impl CommonCfg {
             .unwrap_or_else(|_| "5000".into())
             .parse()
             .unwrap_or(5000);
-        // 调试模式（默认开启）：每步操作渲染完把页面 HTML 存到项目 html/ 目录；
+        // 调试模式（默认开启）：每步操作渲染完把页面 HTML 存到系统临时目录；
         // 设 DEBUG_HTML=0/false 可关闭（也可通过 POST /api/{platform}/debug/html 运行时切换）
         let debug_html = std::env::var("DEBUG_HTML")
             .map(|v| !(v == "0" || v.is_empty() || v.to_lowercase() == "false"))

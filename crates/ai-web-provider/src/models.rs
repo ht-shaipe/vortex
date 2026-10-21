@@ -202,7 +202,7 @@ pub enum Command {
         url: Option<String>,
         reply_tx: oneshot::Sender<String>,
     },
-    /// 开/关/切换调试模式（开启后每步操作渲染完都把 HTML 存到项目 html/ 目录）
+    /// 开/关/切换调试模式（开启后每步操作渲染完都把 HTML 存到系统临时目录）
     SetDebugHtml {
         enabled: Option<bool>,
         reply_tx: oneshot::Sender<DebugHtmlResponse>,

@@ -35,3 +35,5 @@ pub mod compressed_content;
 pub mod key_permissions;
 /// AES-256-GCM 加密/解密、密钥派生与密钥生成
 pub mod encryption;
+/// 存储预算维护：大表限额自动清理（compressed_content / call_logs）
+pub mod maintenance;

@@ -42,6 +42,19 @@ export interface ConnectionRefreshResult {
   error?: string
 }
 
+/** 清理结果（预览与执行同构，dryRun 标识本次是否只统计） */
+export interface CleanupResult {
+  dryRun: boolean
+  totalDeleted: number
+  providers: { provider: string; count: number }[]
+  /** 悬空别名 target 清理统计 */
+  aliases: {
+    affected: number
+    removedTargets: number
+    deletedAutoAliases: number
+  }
+}
+
 export const modelCatalogApi = {
   /** 列出模型目录 */
   list: () => api.get('/model-catalog').then(r => r.data.entries as CatalogEntry[]),
@@ -51,4 +64,6 @@ export const modelCatalogApi = {
     totalModels: number
     results: ConnectionRefreshResult[]
   }),
+  /** 清理孤儿目录（provider 无对应连接的模型记录）。先 dryRun=true 预览，确认后传 false 执行 */
+  cleanup: (dryRun: boolean) => api.post('/model-catalog/cleanup', { dryRun }).then(r => r.data as CleanupResult),
 }
