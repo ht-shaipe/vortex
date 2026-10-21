@@ -1,9 +1,16 @@
 //! MCP 服务器端点：让 agent 自省可用模型、提供商健康、路由策略。
+//!
+//! - `GET  /v1/mcp/tools`：返回工具清单（JSON Schema）
+//! - `POST /v1/mcp/call`：按 `name` 分发工具调用
+//!
+//! 当前已实现 `list_models`、`list_providers`、`get_rate_limits`；
+//! `get_routing_strategy` 仅在工具清单中声明，尚未实现分发。
 
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /v1/mcp/tools`，返回 MCP 工具定义列表。
 pub async fn mcp_tools(_state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let tools = json!({
         "tools": [
@@ -32,6 +39,9 @@ pub async fn mcp_tools(_state: web::Data<std::sync::Arc<AppState>>) -> HttpRespo
     HttpResponse::Ok().json(tools)
 }
 
+/// 处理 `POST /v1/mcp/call`，按请求体中的 `name` 执行对应工具。
+///
+/// 请求体：`{ "name": "<tool>", "arguments": { ... } }`（当前工具均无参数）。
 pub async fn mcp_call(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<serde_json::Value>,
@@ -70,6 +80,7 @@ pub async fn mcp_call(
                 let snapshots = vortex_store::db::rate_limits::list_usage_snapshots(&conn).map_err(|e| e.to_string())?;
                 Ok(json!({ "snapshots": snapshots }))
             }
+            // TODO: 工具清单已声明 get_routing_strategy，但尚未实现对应分支
             _ => Ok(json!({ "error": format!("Unknown tool: {}", tool_name) })),
         }
     })

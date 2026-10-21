@@ -985,8 +985,8 @@ impl ProxyEngine {
             let model_key = format!("{}:{}:{}", def.id, connection.id, model);
             state.occupancy().touch(&model_key, agent);
         }
-        // 按提供商格式创建执行器
-        let executor = self.executor_factory.create(def);
+        // 按提供商格式创建执行器（web 格式从上下文取桥接）
+        let executor = self.executor_factory.create(def, state);
         let mut last_err = None;
 
         // 连接级熔断器：provider_id:connection_id（阈值 5，冷却 60s）
@@ -996,8 +996,16 @@ impl ProxyEngine {
         // 更早触发快速失败，别名故障转移可更快跳到下一个目标。
         let model_breaker = format!("{}:{}:{}", def.id, connection.id, model);
 
+        // 重试次数：web（浏览器会话）有副作用——失败重试会往网页会话里
+        // 重复提问，且失败多为登录态/风控问题，重试无意义，只尝试一次
+        let max_attempts = if def.api_format == "web" {
+            0
+        } else {
+            self.retry_policy.max_retries()
+        };
+
         // 重试循环
-        for attempt in 0..=self.retry_policy.max_retries() {
+        for attempt in 0..=max_attempts {
             // 故障转移时间预算耗尽：停止重试（紧急故障转移场景传入 deadline）
             if let Some(d) = deadline
                 && Instant::now() >= d
@@ -1160,10 +1168,10 @@ impl ProxyEngine {
                         "上游返回 HTTP {} (attempt {}/{}): {}",
                         status_code,
                         attempt + 1,
-                        self.retry_policy.max_retries() + 1,
+                        max_attempts + 1,
                         body.chars().take(500).collect::<String>()
                     );
-                    if !self.retry_policy.should_retry(attempt, Some(status_code)) {
+                    if attempt >= max_attempts || !self.retry_policy.should_retry(attempt, Some(status_code)) {
                         // 不可重试：429 时增加退避时间，记录熔断失败
                         if status_code == 429 {
                             let retry_after = chrono::Utc::now() + chrono::Duration::seconds(60);
@@ -1190,7 +1198,7 @@ impl ProxyEngine {
                     log::warn!(
                         "上游请求失败 (attempt {}/{}): {} — provider: {}, connection: {}, model: {}",
                         attempt + 1,
-                        self.retry_policy.max_retries() + 1,
+                        max_attempts + 1,
                         err_chain,
                         def.id,
                         connection.id,
@@ -1200,7 +1208,7 @@ impl ProxyEngine {
                     state.resilience_manager().record_failure_cfg(&model_breaker, 3, 60);
                     // bandit 评分记录失败
                     state.bandit_router().record_failure(&def.id, model, Some(&connection.id));
-                    if !self.retry_policy.should_retry(attempt, None) {
+                    if attempt >= max_attempts || !self.retry_policy.should_retry(attempt, None) {
                         return Err(e);
                     }
                     // 指数退避等待后继续

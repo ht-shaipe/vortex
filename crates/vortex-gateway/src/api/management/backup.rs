@@ -1,10 +1,16 @@
 //! 加密数据库备份端点。
+//!
+//! - `POST /api/backups`：使用 SQLite `VACUUM INTO` 生成一致性快照
+//! - `GET  /api/backups`：扫描数据目录下的备份文件
+//!
+//! 备份是完整的 SQLite 数据库文件；库内的 API Key 等敏感字段本身已加密存储。
 
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use crate::AppState;
 
+/// 创建备份请求体。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupRequest {
@@ -12,15 +18,23 @@ pub struct BackupRequest {
     backup_dir: Option<String>,
 }
 
+/// 备份结果。
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupResult {
+    /// 是否成功（失败会以 HTTP 错误返回，成功时恒为 true）
     success: bool,
+    /// 生成的备份文件绝对路径
     backup_path: String,
+    /// 备份文件大小（字节）
     file_size: u64,
+    /// 备份是否包含加密存储的敏感字段（当前实现固定为 true）
     encrypted: bool,
 }
 
+/// 处理 `POST /api/backups`，生成带时间戳的数据库快照。
+///
+/// 文件名格式：`vortex_backup_YYYYMMDD_HHMMSS.db`。
 pub async fn create_backup(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<BackupRequest>,
@@ -36,7 +50,7 @@ pub async fn create_backup(
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
         let backup_path = format!("{}/vortex_backup_{}.db", backup_dir, timestamp);
 
-        // 使用 SQLite 的 backup API
+        // VACUUM INTO 生成一致性快照，等价于 SQLite backup API，且无需额外句柄
         conn.execute(&format!("VACUUM INTO '{}'", backup_path), [])
             .map_err(|e| e.to_string())?;
 
@@ -60,6 +74,7 @@ pub async fn create_backup(
     }
 }
 
+/// 处理 `GET /api/backups`，列出数据目录下的 `vortex_backup_*.db` 文件。
 pub async fn list_backups(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let data_dir = state.config.data_dir.clone();
 

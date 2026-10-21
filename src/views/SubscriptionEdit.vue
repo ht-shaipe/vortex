@@ -94,8 +94,43 @@
           </div>
         </div>
 
-        <!-- 认证凭据 -->
-        <div class="card section mb-[var(--gap-lg)]">
+        <!-- 网页版授权（仅 web 类型连接）：登录态 + 拉起 Chrome 登录 -->
+        <div v-if="isWeb" class="card section mb-[var(--gap-lg)]">
+          <div class="card-head flex items-center justify-between gap-12px">
+            <div>
+              <div class="card-title">网页版授权</div>
+              <div class="card-sub">浏览器会话登录态：通过本地 Chrome 登录平台后自动收集凭证</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="setting-row [&>*:first-child]:min-w-0 [&>*:last-child]:shrink-0">
+              <div>
+                <div class="setting-label">登录状态</div>
+                <div class="setting-desc">
+                  {{ webLoggedIn === null ? '无法获取（worker 未启动或正忙）' : webLoggedIn ? '浏览器会话有效，可直接使用' : '未登录，需要拉起 Chrome 完成授权' }}
+                </div>
+              </div>
+              <div class="row flex items-center gap-10px">
+                <StatusBadge
+                  :tone="webLoggedIn === null ? 'neutral' : webLoggedIn ? 'ok' : 'warn'"
+                  :label="webLoggedIn === null ? '未知' : webLoggedIn ? '已登录' : '未登录'"
+                />
+                <button type="button" class="btn sm" @click="cdpWizardVisible = true">
+                  {{ webLoggedIn ? '重新授权' : '拉起 Chrome 登录' }}
+                </button>
+              </div>
+            </div>
+            <div class="setting-row [&>*:first-child]:min-w-0">
+              <div>
+                <div class="setting-label">授权方式</div>
+                <div class="setting-desc">拉起本地 Chrome 打开平台登录页（扫码 / 验证码均可过真人风控），登录后凭证自动导入并持久化，重启无需重新登录。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 认证凭据（web 类型无 API 密钥，走上方浏览器会话授权） -->
+        <div v-else class="card section mb-[var(--gap-lg)]">
           <div class="card-head flex items-center justify-between gap-12px">
             <div>
               <div class="card-title">认证凭据</div>
@@ -223,6 +258,14 @@
           :selected="selIds"
           :loading="fetchingModels"
           @confirm="onModelConfirm"
+        />
+
+        <!-- 网页版 CDP 登录向导 -->
+        <CdpLoginWizard
+          v-model:visible="cdpWizardVisible"
+          :platform="webPlatform"
+          :platform-name="webPlatformLabel"
+          @success="refreshWebLoginStatus"
         />
 
         <!-- 手动添加模型对话框 -->
@@ -485,14 +528,16 @@
  * 职责：查看与编辑单个提供商连接的详情，包括基本信息、认证凭据、自定义协议、
  * 模型列表、路由与限制策略，以及只读的运行状态与元数据；支持测试连接与删除。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
 import ModelSelectDialog from '@/components/ui/ModelSelectDialog.vue'
+import CdpLoginWizard from '@/components/subscriptions/CdpLoginWizard.vue'
 import { getProvider, updateProvider, deleteProvider, testProvider, previewModels, getApiKey, type ProviderConnection } from '@/api/providers'
+import { listWebProviders } from '@/api/webProviders'
 import { rateLimitsApi, type RateLimitCap } from '@/api/rateLimits'
 import { tosReviewApi, type TosReview } from '@/api/tosReview'
 
@@ -577,6 +622,23 @@ const form = reactive({
 
 // 是否为自定义提供方
 const isCustom = computed(() => conn.value?.provider === 'custom-openai')
+// 是否为网页版平台连接（浏览器会话授权）
+const isWeb = computed(
+  () => conn.value?.authType?.toLowerCase() === 'web' || conn.value?.provider.startsWith('web-') === true,
+)
+// 网页版平台名（provider id "web-<platform>" 的 platform 部分）
+const webPlatform = computed(() => {
+  const p = conn.value?.provider ?? ''
+  return p.startsWith('web-') ? p.slice(4) : ''
+})
+// 网页版平台展示名（从连接名剥离「 连接」与「(网页版)」）
+const webPlatformLabel = computed(
+  () => (conn.value?.name ?? '').replace(/\s*连接$/, '').replace(/\s*\(网页版\)$/, '') || webPlatform.value,
+)
+// 网页版 worker 登录态（null = 未知）
+const webLoggedIn = ref<boolean | null>(null)
+// CDP 登录向导可见性
+const cdpWizardVisible = ref(false)
 // 是否已配置 API 密钥：以后端 hasApiKey 为准，不再用掩码串是否为空推断
 const hasApiKey = computed(() => !!conn.value?.hasApiKey)
 // 是否已配置 OAuth access token
@@ -586,8 +648,22 @@ const authTypeLabel = computed(() => {
   const t = (conn.value?.authType || '').toLowerCase()
   if (t === 'apikey' || t === 'api_key') return 'API Key'
   if (t === 'oauth') return 'OAuth'
+  if (t === 'web') return '浏览器会话'
   return conn.value?.authType || '未指定'
 })
+
+/**
+ * 刷新网页版平台登录态（worker 报告，null = 未知）。
+ */
+async function refreshWebLoginStatus() {
+  if (!webPlatform.value) return
+  try {
+    const { platforms } = await listWebProviders()
+    webLoggedIn.value = platforms.find((p) => p.platform === webPlatform.value)?.loggedIn ?? null
+  } catch {
+    webLoggedIn.value = null
+  }
+}
 
 /**
  * 判断连接是否拥有某字段（当前简化为始终允许编辑 email / projectId）。
@@ -750,9 +826,10 @@ async function deleteCap(id: string) {
   }
 }
 
-// 是否可拉取模型：自定义提供方需填写 base_url
+// 是否可拉取模型：自定义提供方需填写 base_url；网页版无远程模型列表
 const canFetchModels = computed(() => {
   if (!conn.value) return false
+  if (isWeb.value) return false
   if (conn.value.provider === 'custom-openai') return !!form.baseUrl
   return true
 })
@@ -917,10 +994,25 @@ async function save() {
 }
 
 /**
- * 测试当前连接是否可用。
+ * 测试当前连接是否可用。网页版连接无上游 HTTP 端点，
+ * 改为查询 worker 登录态。
  */
 async function test() {
   if (!conn.value) return
+  if (isWeb.value) {
+    testing.value = true
+    testResult.value = null
+    try {
+      await refreshWebLoginStatus()
+      testResult.value =
+        webLoggedIn.value === true
+          ? { status: 'ok' }
+          : { status: 'error', error: webLoggedIn.value === null ? '无法获取登录态（worker 未启动或正忙）' : '浏览器会话未登录，请先完成网页版授权' }
+    } finally {
+      testing.value = false
+    }
+    return
+  }
   testing.value = true
   testResult.value = null
   try {
@@ -953,6 +1045,15 @@ async function remove() {
 }
 
 onMounted(load)
+
+// 网页版连接：加载后查询 worker 登录态
+watch(
+  isWeb,
+  (v) => {
+    if (v) void refreshWebLoginStatus()
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>

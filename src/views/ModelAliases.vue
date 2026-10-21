@@ -547,6 +547,10 @@ const rowDrag = ref<{
 /** 插入指示：插到该索引的行之前（等于目标数时表示末尾）。 */
 const rowDropIdx = ref<number | null>(null)
 
+/**
+ * 目标行拖拽按下：只记录起点，移动超过阈值后才进入拖拽态，
+ * 避免普通点击被误判为拖动。
+ */
 function onRowPointerDown(e: PointerEvent, a: ModelAlias, i: number) {
   if (e.button !== 0) return
   if ((e.target as HTMLElement).closest('button')) return // 按钮区域留给点击
@@ -558,6 +562,7 @@ function onRowPointerDown(e: PointerEvent, a: ModelAlias, i: number) {
   }
 }
 
+/** 目标行拖拽移动：首次越过阈值时创建幽灵行，并持续计算插入指示位置。 */
 function onRowPointerMove(e: PointerEvent, a: ModelAlias) {
   const st = rowDrag.value
   if (!st || st.aliasId !== a.id || e.pointerId !== st.pointerId) return
@@ -576,6 +581,10 @@ function onRowPointerMove(e: PointerEvent, a: ModelAlias) {
   )
 }
 
+/**
+ * 目标行拖拽释放：把「插入位置」换算成目标下标后持久化。
+ * 向下拖动时插入位置比原下标多 1，需要减回去。
+ */
 async function onRowPointerUp(e: PointerEvent, a: ModelAlias) {
   const st = rowDrag.value
   if (!st || e.pointerId !== st.pointerId) return
@@ -588,6 +597,7 @@ async function onRowPointerUp(e: PointerEvent, a: ModelAlias) {
   await persistMoveTarget(a, fromIdx, to)
 }
 
+/** 清理目标行拖拽产生的幽灵节点与全局光标/选区样式。 */
 function cleanupRowDrag() {
   rowDrag.value?.ghost?.remove()
   document.body.style.userSelect = ''
@@ -596,6 +606,7 @@ function cleanupRowDrag() {
   rowDropIdx.value = null
 }
 
+/** 目标行拖拽被系统取消（如指针丢失）时清理状态。 */
 function onRowPointerCancel() {
   cleanupRowDrag()
 }
@@ -605,10 +616,12 @@ function onRowPointerCancel() {
 const cardDrag = ref<{ fromIdx: number; ghost: HTMLElement | null; startY: number; started: boolean; pointerId: number } | null>(null)
 const cardDropIdx = ref<number | null>(null)
 
+/** 当前别名卡片列表的 DOM 元素（顺序即展示顺序）。 */
 function cardEls(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('.aliases-list > .card')]
 }
 
+/** 卡片拖拽按下：记录起点并捕获指针，超过阈值后才开始拖动。 */
 function onCardHandleDown(e: PointerEvent, idx: number) {
   if (e.button !== 0) return
   cardDrag.value = { fromIdx: idx, ghost: null, startY: e.clientY, started: false, pointerId: e.pointerId }
@@ -619,6 +632,7 @@ function onCardHandleDown(e: PointerEvent, idx: number) {
   }
 }
 
+/** 卡片拖拽移动：创建轻量幽灵条并计算插入位置。 */
 function onCardHandleMove(e: PointerEvent) {
   const st = cardDrag.value
   if (!st || e.pointerId !== st.pointerId) return
@@ -637,6 +651,7 @@ function onCardHandleMove(e: PointerEvent) {
   )
 }
 
+/** 卡片拖拽释放：换算目标下标并持久化别名顺序。 */
 async function onCardHandleUp(e: PointerEvent) {
   const st = cardDrag.value
   if (!st || e.pointerId !== st.pointerId) return
@@ -649,6 +664,7 @@ async function onCardHandleUp(e: PointerEvent) {
   await persistMoveAlias(fromIdx, to)
 }
 
+/** 清理卡片拖拽的幽灵节点与全局样式。 */
 function cleanupCardDrag() {
   cardDrag.value?.ghost?.remove()
   document.body.style.userSelect = ''
@@ -657,6 +673,7 @@ function cleanupCardDrag() {
   cardDropIdx.value = null
 }
 
+/** 卡片拖拽被系统取消时清理状态。 */
 function onCardHandleCancel() {
   cleanupCardDrag()
 }
@@ -705,10 +722,12 @@ function moveProviderGroup(idx: number, dir: number) {
 const providerDrag = ref<{ fromIdx: number; ghost: HTMLElement | null; startY: number; started: boolean; pointerId: number } | null>(null)
 const providerDropIdx = ref<number | null>(null)
 
+/** 提供方优先视图下的卡片元素（顺序即展示顺序）。 */
 function providerCardEls(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('.provider-list > .card')]
 }
 
+/** 提供方卡片拖拽按下：记录起点并捕获指针。 */
 function onProviderHandleDown(e: PointerEvent, idx: number) {
   if (e.button !== 0) return
   providerDrag.value = { fromIdx: idx, ghost: null, startY: e.clientY, started: false, pointerId: e.pointerId }
@@ -719,6 +738,7 @@ function onProviderHandleDown(e: PointerEvent, idx: number) {
   }
 }
 
+/** 提供方卡片拖拽移动：创建幽灵条并计算插入位置。 */
 function onProviderHandleMove(e: PointerEvent) {
   const st = providerDrag.value
   if (!st || e.pointerId !== st.pointerId) return
@@ -737,6 +757,7 @@ function onProviderHandleMove(e: PointerEvent) {
   )
 }
 
+/** 提供方卡片拖拽释放：换算目标下标并持久化连接优先级。 */
 async function onProviderHandleUp(e: PointerEvent) {
   const st = providerDrag.value
   if (!st || e.pointerId !== st.pointerId) return
@@ -749,6 +770,7 @@ async function onProviderHandleUp(e: PointerEvent) {
   await persistProviderMove(fromIdx, to)
 }
 
+/** 清理提供方卡片拖拽的幽灵节点与全局样式。 */
 function cleanupProviderDrag() {
   providerDrag.value?.ghost?.remove()
   document.body.style.userSelect = ''
@@ -757,6 +779,7 @@ function cleanupProviderDrag() {
   providerDropIdx.value = null
 }
 
+/** 提供方卡片拖拽被系统取消时清理状态。 */
 function onProviderHandleCancel() {
   cleanupProviderDrag()
 }

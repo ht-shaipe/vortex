@@ -4,10 +4,13 @@
 //! 上层 crate（如 vortex-gateway）的 AppState 实现此 trait，
 //! 使引擎不依赖具体状态类型，实现核心逻辑与应用层解耦。
 
+use std::sync::Arc;
+
 use vortex_store::config::AppConfig;
 use vortex_store::db::core::DbPool;
 use crate::providers::ProviderRegistry;
 use crate::proxy::sticky_session::StickySessionManager;
+use crate::proxy::web_bridge::WebChatBridge;
 use crate::routing::resilience::ResilienceManager;
 use crate::routing::rate_limiter::RateLimiter;
 use crate::routing::bandit::BanditRouter;
@@ -37,4 +40,9 @@ pub trait EngineContext {
     fn bandit_router(&self) -> &BanditRouter;
     /// 模型占用追踪器
     fn occupancy(&self) -> &OccupancyTracker;
+    /// 网页版平台聊天桥接（浏览器自动化提供商）。
+    /// 未启用 web 提供商的实现返回 None，WebExecutor 相应报上游错误。
+    fn web_bridge(&self) -> Option<Arc<dyn WebChatBridge>> {
+        None
+    }
 }

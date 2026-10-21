@@ -7,11 +7,13 @@ use std::sync::Arc;
 use vortex_gateway::AppState;
 use vortex_gateway::services::provider_service;
 
+/// 列出全部提供商定义与已建立的连接。
 #[tauri::command]
 pub async fn list_providers(state: tauri::State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     provider_service::list_providers(&state)
 }
 
+/// 新增提供商连接。
 #[tauri::command]
 pub async fn add_provider(
     state: tauri::State<'_, Arc<AppState>>,
@@ -22,6 +24,7 @@ pub async fn add_provider(
     provider_service::add_provider(&state, provider, name, api_key)
 }
 
+/// 测试指定连接的连通性。
 #[tauri::command]
 pub async fn test_provider(
     state: tauri::State<'_, Arc<AppState>>,

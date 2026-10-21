@@ -22,12 +22,21 @@ use vortex_gateway::services::chat_service;
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum ChatStreamEvent {
+    /// 上游 SSE 增量（已去除 `data:` 包装）
     Delta { text: String },
+    /// 非流式完整响应体（JSON 字符串）
     Complete { body: String },
+    /// 流结束；`ok=false` 表示被取消或异常终止
     Done { ok: bool },
+    /// 错误信息
     Error { message: String },
 }
 
+/// 通过 Tauri IPC Channel 执行一次流式（或非流式）对话。
+///
+/// - `messages` 可以是 OpenAI 消息数组，也可以是包含 `messages` 的完整请求体；
+/// - 增量通过 `on_event` 逐条推送，前端无需自行处理 SSE；
+/// - 取消通过 [`cancel_chat_stream`] 标记 request_id 实现。
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn chat_completions_stream(
@@ -109,6 +118,7 @@ pub async fn chat_completions_stream(
     Ok(())
 }
 
+/// 取消指定请求的流式对话；后续增量会被丢弃并发送 `Done { ok: true }`。
 #[tauri::command]
 pub fn cancel_chat_stream(request_id: String) {
     chat_service::mark_cancelled(&request_id);

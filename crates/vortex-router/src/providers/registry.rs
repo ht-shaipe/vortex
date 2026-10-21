@@ -240,6 +240,76 @@ impl ProviderRegistry {
                 base_url: "https://your-api-endpoint.com".into(), chat_path: "/chat/completions".into(),
                 models_path: "/models".into(), api_format: "openai".into(), auth_type: "apikey".into(),
             },
+            // 网页版平台（浏览器自动化，经 WebChatBridge 桥接 ai-web-provider worker）：
+            // id 形如 "web-<platform>"，platform 为 ai-web-provider 的平台名。
+            // 认证走 CDP 浏览器授权（拉起本地 Chrome 登录后导入 cookie），
+            // 无需 API Key；模型名即平台名（如 web-doubao/豆包）。
+            ProviderDef {
+                id: "web-doubao".into(), alias: "db".into(), name: "豆包 (网页版)".into(),
+                icon: "doubao".into(), color: "#4E5BA6".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://www.doubao.com/chat/".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
+            ProviderDef {
+                id: "web-deepseek".into(), alias: "wd".into(), name: "DeepSeek (网页版)".into(),
+                icon: "deepseek".into(), color: "#4D6BFE".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://chat.deepseek.com/".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
+            ProviderDef {
+                id: "web-qianwen".into(), alias: "wq".into(), name: "千问 (网页版)".into(),
+                icon: "qianwen".into(), color: "#615CED".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://www.qianwen.com/chat".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
+            ProviderDef {
+                id: "web-kimi".into(), alias: "wk".into(), name: "Kimi (网页版)".into(),
+                icon: "kimi".into(), color: "#16191E".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://www.kimi.com/".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
+            ProviderDef {
+                id: "web-chatgpt".into(), alias: "wg".into(), name: "ChatGPT (网页版)".into(),
+                icon: "chatgpt".into(), color: "#10A37F".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://chatgpt.com/".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
+            ProviderDef {
+                id: "web-claude".into(), alias: "wc".into(), name: "Claude (网页版)".into(),
+                icon: "claude".into(), color: "#D97757".into(),
+                service_kinds: vec!["llm".into()],
+                no_auth: false, has_free: true,
+                free_note: Some("网页版免费额度，走本地浏览器会话".into()),
+                auth_hint: Some("无需 API Key：添加连接后在「授权」里拉起 Chrome 完成登录".into()),
+                base_url: "https://claude.ai/".into(),
+                chat_path: "".into(), models_path: "".into(),
+                api_format: "web".into(), auth_type: "web".into(),
+            },
         ];
 
         // 将所有提供商定义插入映射表
@@ -285,11 +355,18 @@ impl ProviderRegistry {
         if let Some((provider_id, model)) = model_str.split_once('/')
             && let Some(def) = self.providers.get(provider_id) {
                 return Some((provider_id.to_string(), def, model.to_string()));
-            }
+        }
 
         // 回退到别名/ID 前缀匹配：使用按名称排序的列表，保证遍历顺序确定
         let model_lower = model_str.to_lowercase();
         for def in self.list() {
+            // 网页版平台（id 形如 "web-<platform>"）：模型名即平台名，
+            // 裸平台名（如 "doubao"）精确命中，避免坠入 default_model 兜底路由
+            if def.api_format == "web"
+                && def.id.strip_prefix("web-").is_some_and(|p| model_lower == p)
+            {
+                return Some((def.id.clone(), def, model_str.to_string()));
+            }
             if model_lower.starts_with(&format!("{}-", def.alias)) || model_lower.starts_with(&format!("{}-", def.id)) {
                 // 提取前缀后的模型名部分
                 let model = model_str.split_once('-').map(|x| x.1).unwrap_or(model_str).to_string();
@@ -298,5 +375,73 @@ impl ProviderRegistry {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_web_platform_bare_name() {
+        // 裸平台名精确命中 web def（模型名即平台名）
+        let reg = ProviderRegistry::new();
+        let (id, def, model) = reg.resolve_model_provider("doubao").expect("裸平台名应命中 web-doubao");
+        assert_eq!(id, "web-doubao");
+        assert_eq!(def.api_format, "web");
+        assert_eq!(model, "doubao");
+    }
+
+    #[test]
+    fn resolve_web_platform_prefixed_forms() {
+        let reg = ProviderRegistry::new();
+        // "web-doubao/doubao"：provider/model 格式
+        let (id, _, model) = reg.resolve_model_provider("web-doubao/doubao").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-doubao", "doubao"));
+        // "db-doubao"：别名前缀格式
+        let (id, _, model) = reg.resolve_model_provider("db-doubao").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-doubao", "doubao"));
+    }
+
+    #[test]
+    fn resolve_web_deepseek_forms() {
+        let reg = ProviderRegistry::new();
+        // "web-deepseek/deepseek"：provider/model 格式
+        let (id, _, model) = reg.resolve_model_provider("web-deepseek/deepseek").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-deepseek", "deepseek"));
+        // "wd-deepseek"：别名前缀格式
+        let (id, _, model) = reg.resolve_model_provider("wd-deepseek").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-deepseek", "deepseek"));
+        // 裸 "deepseek" 命中 web def（与豆包裸名规则一致；
+        // 引擎层 DB 别名 'deepseek' 优先于此回退）
+        let (id, _, _) = reg.resolve_model_provider("deepseek").unwrap();
+        assert_eq!(id, "web-deepseek");
+    }
+
+    #[test]
+    fn resolve_web_claude_forms() {
+        let reg = ProviderRegistry::new();
+        // "web-claude/claude"：provider/model 格式
+        let (id, _, model) = reg.resolve_model_provider("web-claude/claude").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-claude", "claude"));
+        // "wc-claude"：别名前缀格式
+        let (id, _, model) = reg.resolve_model_provider("wc-claude").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-claude", "claude"));
+        // 裸 "claude" 命中 web def（模型名即平台名）
+        let (id, def, model) = reg.resolve_model_provider("claude").unwrap();
+        assert_eq!((id.as_str(), model.as_str()), ("web-claude", "claude"));
+        assert_eq!(def.api_format, "web");
+    }
+
+    #[test]
+    fn resolve_bare_name_does_not_shadow_api_providers() {
+        let reg = ProviderRegistry::new();
+        // 裸 "doubao" 只命中 web def
+        let (id, _, _) = reg.resolve_model_provider("doubao").unwrap();
+        assert_eq!(id, "web-doubao");
+        // 其他裸模型名（如 "gpt-4o"）不会被 web def 误领
+        assert!(reg
+            .resolve_model_provider("gpt-4o")
+            .map_or(true, |(id, _, _)| id != "web-doubao"));
     }
 }

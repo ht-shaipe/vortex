@@ -46,6 +46,8 @@ pub mod recommendations;
 pub mod compressed_content;
 /// API Key 权限管理端点
 pub mod key_permissions;
+/// 网页版平台（CDP 授权）管理端点
+pub mod web_providers;
 /// 系统状态与代理控制端点
 pub mod system;
 /// 智能体集成端点

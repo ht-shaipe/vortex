@@ -9,6 +9,7 @@
 //! - `proxy_service`：本地代理服务器启停
 //! - `chat_service`：对话流取消管理
 //! - `agent_service`：智能体集成检测、配置预览/应用/恢复、备份列表
+//! - `web_provider_service`：网页版平台 worker 桥接 + CDP 授权编排
 
 pub mod provider_service;
 pub mod settings_service;
@@ -16,3 +17,4 @@ pub mod system_service;
 pub mod proxy_service;
 pub mod chat_service;
 pub mod agent_service;
+pub mod web_provider_service;

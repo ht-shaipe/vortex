@@ -17,7 +17,16 @@ use vortex_store::db;
 use vortex_router::context::EngineContext;
 use vortex_router::providers::ProviderRegistry;
 use vortex_router::proxy;
+use vortex_router::proxy::web_bridge::WebChatBridge;
 use vortex_router::routing;
+
+/// 默认日志过滤器：vortex 自身 info；obscura 引擎（脚本执行/样式表等
+/// 过程日志，页面加载时高频）与 actix 服务器（worker 启停）静音到 warn；
+/// obscura::console（页面 JS console 捕获，如目标站的 rsbuild 资源重试、
+/// "Dynamic script fetch error: HTTP 0" 等，属引擎网络特性导致的正常噪音）
+/// 整体关闭。可用 RUST_LOG 环境变量覆盖（如 RUST_LOG=debug 观察全部细节）。
+pub const DEFAULT_LOG_FILTER: &str =
+    "info,obscura=warn,obscura::console=off,actix_server=warn,actix_web=warn";
 
 /// 应用全局状态。
 ///
@@ -42,6 +51,8 @@ pub struct AppState {
     pub occupancy: routing::occupancy::OccupancyTracker,
     /// 粘性会话管理器
     pub sticky_session: proxy::sticky_session::StickySessionManager,
+    /// 网页版平台桥接（obscura worker 集合 + CDP 授权）
+    pub web_bridge: Arc<services::web_provider_service::WebProviderBridge>,
     /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
     pub encryption_key: Vec<u8>,
     /// 代理服务器的句柄，存储在互斥锁中以便启停控制。
@@ -77,6 +88,9 @@ impl EngineContext for AppState {
     }
     fn occupancy(&self) -> &routing::occupancy::OccupancyTracker {
         &self.occupancy
+    }
+    fn web_bridge(&self) -> Option<Arc<dyn WebChatBridge>> {
+        Some(self.web_bridge.clone())
     }
 }
 
@@ -125,6 +139,16 @@ pub fn create_app_state(cfg: AppConfig) -> vortex_store::error::Result<Arc<AppSt
     let encryption_key = cfg.encryption_key_bytes();
     let proxy_port = cfg.port;
 
+    // 网页版平台 worker：环境变量 VORTEX_WEB_PLATFORMS（逗号分隔）指定
+    // 启动即拉起的平台（默认 doubao）；未列出的已知平台在「网页版账号」
+    // 页发起授权时按需启动（WebProviderBridge::ensure_platform）
+    let web_platforms = std::env::var("VORTEX_WEB_PLATFORMS")
+        .unwrap_or_else(|_| "doubao".to_string());
+    let web_bridge = Arc::new(services::web_provider_service::WebProviderBridge::new(
+        &cfg.data_dir.to_string_lossy(),
+        &web_platforms,
+    ));
+
     Ok(Arc::new(AppState {
         db_pool,
         config: cfg,
@@ -135,6 +159,7 @@ pub fn create_app_state(cfg: AppConfig) -> vortex_store::error::Result<Arc<AppSt
         bandit_router,
         occupancy: routing::occupancy::OccupancyTracker::new(),
         sticky_session,
+        web_bridge,
         encryption_key,
         proxy_handle: parking_lot::Mutex::new(None),
         proxy_port,
@@ -197,6 +222,13 @@ pub fn start_api_server(
                             .route("/free-tokens", web::get().to(api::management::free_tokens::list_sites))
                             .route("/free-tokens", web::post().to(api::management::free_tokens::create_site))
                             .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
+                            .route("/web-providers", web::get().to(api::management::web_providers::list_web_providers))
+                            .route("/web-providers/{platform}/login/cdp", web::post().to(api::management::web_providers::start_cdp_login))
+                            .route("/web-providers/{platform}/login/cdp", web::get().to(api::management::web_providers::cdp_login_status))
+                            .route("/web-providers/{platform}/login/cdp/finish", web::post().to(api::management::web_providers::finish_cdp_login))
+                            .route("/web-providers/{platform}/login/cdp/cancel", web::post().to(api::management::web_providers::cancel_cdp_login))
+                            .route("/web-providers/{platform}/debug", web::get().to(api::management::web_providers::platform_debug))
+                            .route("/web-providers/{platform}/reset", web::post().to(api::management::web_providers::platform_reset))
                             .route("/model-aliases", web::get().to(api::management::model_aliases::list_aliases))
                             .route("/model-aliases", web::post().to(api::management::model_aliases::create_alias))
                             .route("/model-aliases/auto-generate", web::post().to(api::management::model_aliases::auto_generate))

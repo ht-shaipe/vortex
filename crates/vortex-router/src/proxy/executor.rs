@@ -10,10 +10,13 @@
 //! 请求不会因全局总超时被中途杀掉，长流式生成不受影响。
 
 use vortex_store::db::models::{ProxyRequest, ProviderConnection};
+use crate::context::EngineContext;
 use crate::providers::types::ProviderDef;
 use vortex_store::error::{AppError, Result};
-use crate::proxy::sse::{self, SseStream, UpstreamStream, UsageCallback};
+use crate::proxy::sse::{self, SseStream, StreamUsage, UpstreamStream, UsageCallback};
+use crate::proxy::web_bridge::{WebChatBridge, WebChunkKind};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// 格式化完整错误链（遍历 `std::error::Error::source()`）。
@@ -65,14 +68,17 @@ impl ExecutorFactory {
     ///
     /// # 参数
     /// - `def`：提供商定义
+    /// - `ctx`：引擎上下文（web 格式执行器从中取网页版平台桥接）
     ///
     /// # 返回
     /// 按格式匹配的执行器：`anthropic` → AnthropicExecutor，
-    /// `gemini` → GeminiExecutor，其他 → OpenAIExecutor
-    pub fn create(&self, def: &ProviderDef) -> Box<dyn ProviderExecutor + Send + Sync> {
+    /// `gemini` → GeminiExecutor，`web` → WebExecutor（无桥接时为占位实例，
+    /// 执行时报错），其他 → OpenAIExecutor
+    pub fn create(&self, def: &ProviderDef, ctx: &dyn EngineContext) -> Box<dyn ProviderExecutor + Send + Sync> {
         match def.api_format.as_str() {
             "anthropic" => Box::new(AnthropicExecutor),
             "gemini" => Box::new(GeminiExecutor),
+            "web" => Box::new(WebExecutor::new(ctx.web_bridge())),
             _ => Box::new(OpenAIExecutor),
         }
     }
@@ -590,5 +596,307 @@ impl ProviderExecutor for GeminiExecutor {
                 return Ok(ExecutorOutput::Json(openai_response));
             }
         }
+    }
+}
+
+/// Web（浏览器自动化）格式执行器
+///
+/// 不发 HTTP 请求：把 OpenAI 请求转换为对网页版平台 worker 的 ask 命令
+/// （经 [`WebChatBridge`]），回复组装为 OpenAI chat.completion 格式
+/// （流式为 chat.completion.chunk SSE）。
+///
+/// 会话语义：浏览器聊天页自带上下文，只下发 system 前缀 + 最后一条
+/// user 消息；thinking 放 `message.reasoning_content` / `delta.reasoning_content`。
+pub struct WebExecutor {
+    bridge: Option<Arc<dyn WebChatBridge>>,
+}
+
+impl WebExecutor {
+    pub fn new(bridge: Option<Arc<dyn WebChatBridge>>) -> Self {
+        Self { bridge }
+    }
+}
+
+/// 从 OpenAI 请求体提取下发问题：system（含 developer）拼接 +
+/// 最后一条 user 消息。assistant/tool 历史不回放（浏览器会话自带上下文）。
+fn web_question(body: &Value) -> Option<String> {
+    let msgs = body.get("messages")?.as_array()?;
+    let content_text = |v: Option<&Value>| -> String {
+        match v {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Array(parts)) => parts
+                .iter()
+                .filter_map(|p| {
+                    if p.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        p.get("text").and_then(|t| t.as_str()).map(String::from)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => String::new(),
+        }
+    };
+    let mut system: Vec<String> = Vec::new();
+    let mut last_user = String::new();
+    for m in msgs {
+        let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("");
+        let text = content_text(m.get("content"));
+        if text.is_empty() {
+            continue;
+        }
+        match role {
+            "system" | "developer" => system.push(text),
+            "user" => last_user = text,
+            _ => {}
+        }
+    }
+    let sys = system.join("\n\n");
+    let q = if sys.is_empty() {
+        last_user
+    } else if last_user.is_empty() {
+        sys
+    } else {
+        format!("{sys}\n\n{last_user}")
+    };
+    if q.trim().is_empty() {
+        None
+    } else {
+        Some(q)
+    }
+}
+
+/// 生成 OpenAI 风格响应 id（时间戳 + 计数，无 uuid 依赖足够唯一）
+fn web_completion_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("chatcmpl-web-{secs:x}{n:x}")
+}
+
+/// web 流式任务的 SSE 单帧构造（chat.completion.chunk）
+fn web_chunk_frame(id: &str, created: u64, model: &str, delta: Value, finish: Option<&str>) -> actix_web::web::Bytes {
+    let mut choice = json!({"index": 0, "delta": delta});
+    choice["finish_reason"] = match finish {
+        Some(f) => json!(f),
+        None => Value::Null,
+    };
+    let chunk = json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [choice],
+    });
+    actix_web::web::Bytes::from(format!("data: {chunk}\n\n"))
+}
+
+#[async_trait::async_trait(?Send)]
+impl ProviderExecutor for WebExecutor {
+    async fn execute(
+        &self,
+        _client: &awc::Client,
+        request: &ProxyRequest,
+        def: &ProviderDef,
+        _connection: &ProviderConnection,
+        _model: &str,
+        usage_cb: Option<UsageCallback>,
+    ) -> Result<ExecutorOutput> {
+        use futures::{SinkExt, StreamExt};
+
+        let Some(bridge) = self.bridge.as_ref() else {
+            return Ok(ExecutorOutput::UpstreamError {
+                status: 503,
+                body: "网页版提供商未启用（web bridge 缺失）".into(),
+            });
+        };
+        // ProviderDef.id 形如 "web-doubao" → ai-web-provider 平台名 "doubao"
+        let platform = def.id.strip_prefix("web-").unwrap_or(&def.id).to_string();
+        if !bridge.available(&platform) {
+            return Ok(ExecutorOutput::UpstreamError {
+                status: 503,
+                body: format!("网页版平台 {platform} 的 worker 未启动"),
+            });
+        }
+        let Some(question) = web_question(&request.messages) else {
+            return Ok(ExecutorOutput::UpstreamError {
+                status: 400,
+                body: "messages 中没有可用的用户问题文本".into(),
+            });
+        };
+        log::info!(
+            "web ask: platform={} model={} stream={}",
+            platform,
+            request.model,
+            request.stream
+        );
+
+        let created = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        if !request.stream {
+            let reply = bridge
+                .ask(&platform, question.clone())
+                .await
+                .map_err(AppError::Provider)?;
+            let usage_in = sse::estimate_tokens_from_text(&question);
+            let usage_out =
+                sse::estimate_tokens_from_text(&reply.reply) + sse::estimate_tokens_from_text(&reply.thinking);
+            let mut message = json!({"role": "assistant", "content": reply.reply});
+            if !reply.thinking.is_empty() {
+                message["reasoning_content"] = json!(reply.thinking);
+            }
+            let body = json!({
+                "id": web_completion_id(),
+                "object": "chat.completion",
+                "created": created,
+                "model": request.model,
+                "choices": [{
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": usage_in, "completion_tokens": usage_out, "total_tokens": usage_in + usage_out}
+            });
+            return Ok(ExecutorOutput::Json(body));
+        }
+
+        // 输入 token 按实际发送文本估算（system 前缀 + 最后一条 user）。
+        // 不依赖 engine 的兜底估算——那个按完整请求体算，会把未发送的
+        // 历史 messages 也计入，导致 web 会话输入 token 虚高。
+        let usage_in = sse::estimate_tokens_from_text(&question);
+        let handle = bridge
+            .ask_stream(&platform, question)
+            .await
+            .map_err(AppError::Provider)?;
+
+        let (mut tx, rx) = futures::channel::mpsc::channel::<std::result::Result<actix_web::web::Bytes, std::io::Error>>(64);
+        let model = request.model.clone();
+        let id = web_completion_id();
+        tokio::spawn(async move {
+            // 首 chunk：角色声明
+            let _ = tx
+                .send(Ok(web_chunk_frame(&id, created, &model, json!({"role": "assistant"}), None)))
+                .await;
+
+            // 空闲心跳：SSE 注释行，防长思考期间代理/客户端超时断连
+            let mut ping = tokio::time::interval(Duration::from_secs(15));
+            ping.tick().await;
+
+            let mut out_text = String::new();
+            let mut chunks = handle.chunks;
+            loop {
+                let chunk = tokio::select! {
+                    c = chunks.next() => match c {
+                        Some(c) => c,
+                        None => break,
+                    },
+                    _ = ping.tick() => {
+                        let _ = tx.send(Ok(actix_web::web::Bytes::from(": ping\n\n"))).await;
+                        continue;
+                    }
+                };
+                if chunk.text.is_empty() {
+                    continue;
+                }
+                let delta = match chunk.kind {
+                    WebChunkKind::Thinking => json!({"reasoning_content": chunk.text}),
+                    WebChunkKind::Text => {
+                        out_text.push_str(&chunk.text);
+                        json!({"content": chunk.text})
+                    }
+                };
+                let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, delta, None))).await;
+            }
+
+            // 终态：成功发 stop 帧，失败发错误帧；用量按最终结果记账
+            let final_ok = match handle.final_reply.await {
+                Ok(_) => {
+                    let _ = tx
+                        .send(Ok(web_chunk_frame(&id, created, &model, json!({}), Some("stop"))))
+                        .await;
+                    true
+                }
+                Err(e) => {
+                    let err = json!({"error": {"message": e, "type": "api_error"}});
+                    let _ = tx
+                        .send(Ok(actix_web::web::Bytes::from(format!("data: {err}\n\n"))))
+                        .await;
+                    false
+                }
+            };
+            let _ = tx
+                .send(Ok(actix_web::web::Bytes::from("data: [DONE]\n\n")))
+                .await;
+
+            // 流结束：用量按实际收发估算（输入 = 发送的 question）；
+            // 失败时记为 error 状态
+            if let Some(cb) = usage_cb {
+                cb(
+                    StreamUsage {
+                        input_tokens: usage_in,
+                        output_tokens: sse::estimate_tokens_from_text(&out_text),
+                        cache_creation: 0,
+                        cache_read: 0,
+                        reasoning: 0,
+                        estimated: true,
+                    },
+                    final_ok,
+                );
+            }
+        });
+
+        Ok(ExecutorOutput::Stream(Box::pin(rx)))
+    }
+}
+
+#[cfg(test)]
+mod web_tests {
+    use super::*;
+
+    #[test]
+    fn web_question_extracts_system_and_last_user() {
+        let body = json!({
+            "model": "web-doubao",
+            "messages": [
+                {"role": "system", "content": "你是助手"},
+                {"role": "user", "content": "第一问"},
+                {"role": "assistant", "content": "第一答"},
+                {"role": "user", "content": [{"type": "text", "text": "第二问"}]},
+            ]
+        });
+        let q = web_question(&body).unwrap();
+        assert!(q.starts_with("你是助手"));
+        assert!(q.ends_with("第二问"));
+        assert!(q.contains("\n\n"));
+        // 历史 user 消息不回放
+        assert!(!q.contains("第一问"));
+    }
+
+    #[test]
+    fn web_question_empty_body() {
+        assert!(web_question(&json!({"messages": []})).is_none());
+        assert!(web_question(&json!({})).is_none());
+        // 只有 assistant 历史
+        let body = json!({"messages": [{"role": "assistant", "content": "答"}]});
+        assert!(web_question(&body).is_none());
+    }
+
+    #[test]
+    fn web_chunk_frame_shape() {
+        let frame = web_chunk_frame("id1", 123, "web-doubao", json!({"content": "hi"}), None);
+        let s = String::from_utf8(frame.to_vec()).unwrap();
+        assert!(s.starts_with("data: {"));
+        assert!(s.ends_with("\n\n"));
+        assert!(s.contains("\"object\":\"chat.completion.chunk\""));
+        let frame2 = web_chunk_frame("id1", 123, "web-doubao", json!({}), Some("stop"));
+        assert!(String::from_utf8(frame2.to_vec()).unwrap().contains("\"finish_reason\":\"stop\""));
     }
 }

@@ -1,8 +1,13 @@
 //! 智能推荐端点：分析使用历史生成优化建议。
+//!
+//! `GET /api/recommendations` 会汇总五类信号：
+//! 频繁失败、高成本、高延迟、压缩节省、频繁触发限流。
+
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/recommendations`，返回按严重程度排列的建议列表。
 pub async fn recommendations(
     state: web::Data<std::sync::Arc<AppState>>,
 ) -> HttpResponse {

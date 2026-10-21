@@ -23,7 +23,7 @@ VALUES
      '仅网页端可用；需要 API 请查看「腾讯云混元」条目',
      NULL, 'builtin', 162),
 
-    ('cn-web-tongyi', '通义千问（网页版）', 'https://tongyi.aliyun.com', '',
+    ('cn-web-tongyi', '千问（网页版）', 'https://www.qianwen.com', '',
      0, NULL, NULL,
      '网页端免费使用，无免费 API 额度', 'cn', 0, 1,
      '["网页版","无 API","阿里"]',

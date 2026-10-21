@@ -8,6 +8,10 @@ authors.workspace = true
 [dependencies]
 vortex-store = { path = "../vortex-store" }
 vortex-router = { path = "../vortex-router" }
+# 网页版平台（浏览器自动化）provider 桥接：obscura worker + CDP 授权
+ai-web-provider = { path = "../ai-web-provider" }
+# WebChatBridge trait 的 #[async_trait]
+async-trait = "0.1"
 # Web 服务器（rustls feature：bind_rustls，服务端 TLS 终结）
 actix-web = { version = "4", features = ["rustls"] }
 rustls = "0.20"

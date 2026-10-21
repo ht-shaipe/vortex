@@ -3,12 +3,20 @@ use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 成本分析查询参数。
 #[derive(Debug, serde::Deserialize)]
 pub struct CostQuery {
+    /// 起始时间（RFC3339）；缺省表示统计全部历史数据
     #[serde(default)]
     pub since: Option<String>,
 }
 
+/// 处理 `GET /api/cost-analysis`，按模型、提供商和日期聚合用量成本。
+///
+/// 返回：
+/// - `byModel`：按 provider + model 分组，按总 Token 用量倒序
+/// - `byProvider`：按提供商分组，按成本倒序
+/// - `byDay`：最近 30 天按日聚合
 pub async fn cost_analysis(
     state: web::Data<std::sync::Arc<AppState>>,
     query: web::Query<CostQuery>,

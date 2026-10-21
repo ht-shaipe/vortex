@@ -1,0 +1,22 @@
+[package]
+name = "ai-web-provider"
+description = "多平台 AI 网关核心库：obscura 驱动的平台 provider、HTTP 服务与 OpenAI/Anthropic 兼容层"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+obscura = { git = "https://github.com/h4ckf0r0day/obscura", tag = "v0.2.5" }
+actix-web = "4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+tokio-stream = "0.1"
+tokio-tungstenite = "0.23"
+futures = "0.3"
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+qrcodegen = "1.8"
+anyhow = "1"
+tracing = "0.1"
+reqwest = { version = "0.12", features = ["gzip", "brotli", "deflate", "native-tls"], default-features = false }

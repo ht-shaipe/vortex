@@ -9,8 +9,11 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct KeyPermission {
     pub id: String,
+    /// 规则所属的 API Key ID
     pub api_key_id: String,
+    /// 规则类型：`allow` 或 `deny`
     pub rule_type: String,
+    /// 模型匹配模式（支持 `*` 通配）
     pub model_pattern: String,
     pub created_at: String,
 }
@@ -54,7 +57,13 @@ pub fn delete(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// 检查模型是否被允许访问
+/// 检查指定 API Key 是否允许访问模型。
+///
+/// 规则语义：
+/// - 没有配置任何规则时默认允许；
+/// - 按 `created_at DESC` 顺序匹配，**首个命中的规则**决定结果；
+/// - `*` 匹配任意模型，其余模式按前缀通配（如 `gpt-*`）；
+/// - 未命中任何规则时默认允许。
 pub fn check_access(conn: &Connection, api_key_id: &str, model: &str) -> Result<bool> {
     let rules = list_by_key(conn, api_key_id)?;
     if rules.is_empty() {

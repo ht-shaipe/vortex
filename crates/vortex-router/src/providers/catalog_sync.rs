@@ -37,6 +37,10 @@ pub async fn refresh_from_connections(
     let now = chrono::Utc::now().to_rfc3339();
 
     for conn in &connections {
+        // 网页版平台（浏览器会话）：无模型列表端点，跳过（避免对站点发无效请求）
+        if conn.provider.starts_with("web-") {
+            continue;
+        }
         let base_url = match conn.provider_specific_data.get("baseUrl") {
             Some(v) => {
                 let s = v.as_str().unwrap_or("").trim_end_matches('/').to_string();
@@ -81,7 +85,7 @@ pub async fn refresh_from_connections(
             .unwrap_or_else(|| conn.provider.clone());
         let is_anthropic = conn.provider == "anthropic";
 
-        log::info!("从连接 {} 拉取模型列表: {}", conn.name, models_url);
+        log::debug!("从连接 {} 拉取模型列表: {}", conn.name, models_url);
 
         let mut req = client
             .get(&models_url)
@@ -210,12 +214,7 @@ pub async fn refresh_from_connections(
         .map_err(vortex_store::error::AppError::Internal)?;
     }
 
-    log::info!(
-        "从连接刷新模型目录完成: {} 个连接成功, {} 条模型",
-        success_connections,
-        total_models
-    );
-
+    // 汇总日志由调用方决定（定时任务打 info，API handler 直接返回结果）
     Ok((success_connections, total_models, results))
 }
 
@@ -223,10 +222,15 @@ pub async fn refresh_from_connections(
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionRefreshResult {
+    /// 连接名称
     pub connection_name: String,
+    /// 提供商 ID（自定义端点优先使用 `customId`）
     pub provider: String,
+    /// 实际请求的模型列表地址
     pub models_url: String,
+    /// 本次拉取到的模型数
     pub model_count: usize,
+    /// 失败原因；成功时为 None
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

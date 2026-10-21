@@ -5,6 +5,7 @@
 //! 支持自定义 OpenAI 兼容端点，会根据提供商类型选择对应的鉴权方式和 URL 构造规则。
 
 use actix_web::{web, HttpResponse};
+use vortex_router::proxy::web_bridge::WebChatBridge;
 use vortex_store::db::{core as db_core, providers as db_providers};
 use vortex_store::db::models::CreateProviderRequest;
 use crate::AppState;
@@ -117,6 +118,8 @@ pub async fn list_providers(
                 "color": def.color,
                 "hasFree": def.has_free,
                 "noAuth": def.no_auth,
+                "authType": def.auth_type,
+                "apiFormat": def.api_format,
                 "authHint": def.auth_hint,
                 "serviceKinds": def.service_kinds,
                 "connections": provider_connections.len(),
@@ -297,10 +300,20 @@ pub async fn test_provider(
         Err(e) => return HttpResponse::InternalServerError().json(json!({ "error": e.to_string() })),
     };
 
-    // 2. HTTP 连接测试（async）
+    // 2. 连接测试：网页版连接（web-*，浏览器自动化）走 worker 登录态
+    //    检查，其余走 HTTP 探测
     let def = state.provider_registry.get(&provider.provider);
-    let upstream_client = crate::create_awc_client();
-    let test_result = test_connection(&provider, def, &upstream_client).await;
+    let test_result = if def.map(|d| d.auth_type == "web").unwrap_or(false) {
+        let platform = provider
+            .provider
+            .strip_prefix("web-")
+            .unwrap_or(&provider.provider)
+            .to_string();
+        test_web_connection(state.get_ref(), &platform).await
+    } else {
+        let upstream_client = crate::create_awc_client();
+        test_connection(&provider, def, &upstream_client).await
+    };
 
     // 3. DB 写入测试结果
     let pool2 = state.db_pool.clone();
@@ -330,6 +343,56 @@ struct TestResult {
     error: Option<String>,
     /// 响应延迟（毫秒）
     latency_ms: Option<u64>,
+}
+
+/// 网页版连接（web-*，浏览器自动化）的测试。
+///
+/// 网页版连接没有可探测的 HTTP API（对平台站点发 GET 只会拿到登录页
+/// 200，毫无意义），其「可用」等价于「worker 已启动且平台处于登录态」：
+/// 1. worker 未启动时按需拉起（未授权平台拉起后登录态为 false，
+///    测试结果如实反映「未登录」）；
+/// 2. 查询平台登录态作为测试结论。
+async fn test_web_connection(state: &Arc<AppState>, platform: &str) -> TestResult {
+    let bridge = &state.web_bridge;
+    let start = std::time::Instant::now();
+    if !bridge.available(platform)
+        && let Err(e) = bridge.ensure_platform(platform)
+    {
+        return TestResult {
+            status: "error".into(),
+            error: Some(e),
+            latency_ms: None,
+        };
+    }
+    // 登录态查询限时：worker 可能正忙于长命令（Ask 最长两分钟），
+    // 不能让「测试连接」跟着阻塞
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        bridge.login_status(platform),
+    )
+    .await
+    {
+        Ok(Ok(true)) => TestResult {
+            status: "ok".into(),
+            error: None,
+            latency_ms: Some(start.elapsed().as_millis() as u64),
+        },
+        Ok(Ok(false)) => TestResult {
+            status: "error".into(),
+            error: Some("平台未登录：请在「网页版账号」页完成授权后重试".into()),
+            latency_ms: None,
+        },
+        Ok(Err(e)) => TestResult {
+            status: "error".into(),
+            error: Some(e),
+            latency_ms: None,
+        },
+        Err(_) => TestResult {
+            status: "error".into(),
+            error: Some("登录态查询超时（平台可能正忙于处理对话请求），请稍后重试".into()),
+            latency_ms: None,
+        },
+    }
 }
 
 /// 执行实际的连接测试，向提供商模型列表端点发起请求。

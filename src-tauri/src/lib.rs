@@ -17,7 +17,10 @@ use vortex_gateway::AppState;
 /// 4. 启动 Tauri 桌面应用，注册插件、命令处理器与系统托盘
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).try_init();
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(vortex_gateway::DEFAULT_LOG_FILTER),
+    )
+    .try_init();
 
     let cfg = vortex_store::config::AppConfig::load();
     let state = vortex_gateway::create_app_state(cfg.clone()).expect("Failed to initialize app state");

@@ -3,10 +3,14 @@ use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 创建权限规则请求体。
 #[derive(serde::Deserialize)]
 pub struct CreatePermissionReq {
+    /// 规则所属的 API Key ID
     pub api_key_id: String,
+    /// 规则类型：`allow` 或 `deny`
     pub rule_type: String,
+    /// 模型匹配模式，支持 `*` 通配（如 `gpt-*`）
     pub model_pattern: String,
 }
 

@@ -1,5 +1,8 @@
 //! 设置管理端点
 //!
+//! - `GET   /api/settings`：读取全部设置
+//! - `PATCH /api/settings`：按顶层键合并更新设置
+//!
 //! 同步 DB 操作通过 `spawn_blocking` 移至阻塞线程池，避免阻塞 actix async runtime。
 
 use actix_web::{web, HttpResponse};
@@ -8,6 +11,7 @@ use crate::AppState;
 use serde_json::json;
 use std::sync::Arc;
 
+/// 处理 `GET /api/settings`，返回设置对象。
 pub async fn get_settings(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -24,6 +28,7 @@ pub async fn get_settings(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 }
 
+/// 处理 `PATCH /api/settings`，将请求体中的键合并进现有设置并返回完整设置。
 pub async fn update_settings(
     state: web::Data<Arc<AppState>>,
     body: web::Json<serde_json::Value>,

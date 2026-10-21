@@ -28,8 +28,9 @@ pub fn create_fanout_requests(request: &Value, panel_models: &[(String, String)]
     requests
 }
 
-/// 生成 judge 合成请求
-/// 生成 judge 请求
+/// 构造 judge 模型的合成请求。
+///
+/// 将所有草稿拼接进提示词，要求 judge 模型融合各草稿的优点输出最终答案。
 #[allow(dead_code)]
 pub fn create_judge_request(original_prompt: &str, drafts: &[String], judge_model: &str) -> Value {
     let drafts_text = drafts
@@ -57,8 +58,7 @@ pub fn create_judge_request(original_prompt: &str, drafts: &[String], judge_mode
     })
 }
 
-/// 从响应中提取文本
-/// 从响应中提取文本
+/// 从 OpenAI 格式响应体中提取首个 choice 的文本内容。
 #[allow(dead_code)]
 pub fn extract_text(response: &Value) -> String {
     response

@@ -1,33 +1,42 @@
 //! 批量密钥导入/导出端点。
+//!
+//! - `POST /api/bulk-keys/import`：从 env / json 文本批量创建连接
+//! - `POST /api/bulk-keys/export`：把活跃连接的密钥导出为 env / json / csv
+//!
+//! 导入按条目独立处理：单条失败不会中断其余条目，失败原因汇总在 `errors`。
 
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use crate::AppState;
 
-/// 批量导入请求
+/// 批量导入请求。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkImportRequest {
     /// .env 格式文本或 JSON 数组
     content: String,
-    /// 导入格式：env / json / csv
+    /// 导入格式：env / json
     format: String,
 }
 
-/// 批量导入结果
+/// 批量导入结果。
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkImportResult {
+    /// 成功创建的连接数
     success_count: usize,
+    /// 失败的条目数
     fail_count: usize,
+    /// 逐条失败原因
     errors: Vec<String>,
 }
 
-/// 批量导出请求
+/// 批量导出请求。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkExportRequest {
+    /// 导出格式：env / json / csv
     format: String,
 }
 
@@ -74,6 +83,7 @@ fn infer_provider_from_key(key: &str) -> String {
     else { "custom-openai".into() }
 }
 
+/// 处理 `POST /api/bulk-keys/import`，逐条创建提供商连接并汇总失败项。
 pub async fn bulk_import(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<BulkImportRequest>,
@@ -146,6 +156,9 @@ pub async fn bulk_import(
     }
 }
 
+/// 处理 `POST /api/bulk-keys/export`，导出所有活跃连接的密钥。
+///
+/// 注意：响应包含明文密钥，仅应通过本地回环地址访问。
 pub async fn bulk_export(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<BulkExportRequest>,

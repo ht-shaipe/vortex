@@ -1,9 +1,16 @@
 //! 路由配置文件管理端点。
+//!
+//! 路由配置（routing profile）是一组有序的目标（provider + model + 可选连接），
+//! 供命名回退链按顺序尝试。端点：
+//! - `GET  /api/routing-profiles`：列出全部配置
+//! - `POST /api/routing-profiles`：创建配置
+//! - `DELETE /api/routing-profiles/{id}`：删除配置
 
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/routing-profiles`，按名称排序返回全部路由配置。
 pub async fn list_profiles(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -20,6 +27,7 @@ pub async fn list_profiles(state: web::Data<std::sync::Arc<AppState>>) -> HttpRe
     }
 }
 
+/// 处理 `POST /api/routing-profiles`，校验并创建路由配置。
 pub async fn create_profile(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<vortex_store::db::routing_profiles::CreateRoutingProfile>,
@@ -38,6 +46,7 @@ pub async fn create_profile(
     }
 }
 
+/// 处理 `DELETE /api/routing-profiles/{id}`，按 ID 删除路由配置。
 pub async fn delete_profile(
     state: web::Data<std::sync::Arc<AppState>>,
     path: web::Path<String>,

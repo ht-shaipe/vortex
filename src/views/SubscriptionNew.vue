@@ -221,7 +221,9 @@ const providerHint = computed(() => {
 const canSubmit = computed(() => !!form.provider)
 
 // 获取模型按钮可用条件：已选提供方，且（无需鉴权，或已填 API 密钥）
-const canFetchModels = computed(() => !!form.provider && (isNoAuth.value || form.apiKey.trim() !== ''))
+const canFetchModels = computed(
+  () => !!form.provider && (isNoAuth.value || form.apiKey.trim() !== ''),
+)
 
 /**
  * 拉取当前提供方的可用模型列表。
@@ -350,15 +352,23 @@ async function submit() {
 
 /**
  * 组件挂载时加载内置提供商定义列表，并从路由 query 预填字段（从薅Token页"配置使用"跳转来时）。
+ * 网页版平台的添加与授权统一走「网页版账号」页，此处直接重定向。
  */
 onMounted(async () => {
+  const q = route.query
+  if (q.provider && String(q.provider).startsWith('web-')) {
+    router.replace('/web-providers')
+    return
+  }
   try {
     const data = await listProviders()
-    allProviders.value = data.providers ?? []
+    // 网页版平台不在此流程中添加（独立入口：/web-providers）
+    allProviders.value = (data.providers ?? []).filter(
+      (p) => p.authType !== 'web' && p.apiFormat !== 'web',
+    )
   } catch {
     /* ignore */
   }
-  const q = route.query
   if (q.provider) {
     form.provider = String(q.provider)
     // watch 会触发 resetForm，需等其执行后再设置其余字段

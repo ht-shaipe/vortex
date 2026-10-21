@@ -1,10 +1,21 @@
 //! 模型别名（虚拟模型映射）管理端点。
+//!
+//! 别名把一个请求模型名映射到一组有序目标（provider + model + 可选连接），
+//! 目标按顺序回退。端点：
+//! - `GET    /api/model-aliases`：列出别名
+//! - `POST   /api/model-aliases`：创建别名
+//! - `PATCH  /api/model-aliases/{id}`：更新别名
+//! - `DELETE /api/model-aliases/{id}`：删除别名
+//! - `POST   /api/model-aliases/auto-generate`：按模型家族自动生成
+//! - `POST   /api/model-aliases/reorder`：批量调整排序
+//!
 //! 同步 DB 操作通过 `spawn_blocking` 移至阻塞线程池，避免阻塞 actix async runtime。
 
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/model-aliases`，按排序权重列出全部别名。
 pub async fn list_aliases(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -21,6 +32,7 @@ pub async fn list_aliases(state: web::Data<std::sync::Arc<AppState>>) -> HttpRes
     }
 }
 
+/// 处理 `POST /api/model-aliases`，创建别名。
 pub async fn create_alias(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<vortex_store::db::models::CreateModelAlias>,
@@ -39,6 +51,7 @@ pub async fn create_alias(
     }
 }
 
+/// 处理 `PATCH /api/model-aliases/{id}`，按字段增量更新别名。
 pub async fn update_alias(
     state: web::Data<std::sync::Arc<AppState>>,
     path: web::Path<String>,
@@ -60,6 +73,7 @@ pub async fn update_alias(
     }
 }
 
+/// 处理 `DELETE /api/model-aliases/{id}`，删除别名。
 pub async fn delete_alias(
     state: web::Data<std::sync::Arc<AppState>>,
     path: web::Path<String>,
@@ -121,11 +135,13 @@ pub async fn reorder_aliases(
     }
 }
 
+/// 批量重排序请求体：`orders` 中的每项包含别名 ID 与新的排序权重。
 #[derive(serde::Deserialize)]
 pub struct ReorderRequest {
     pub orders: Vec<ReorderItem>,
 }
 
+/// 单个排序项；`sort_order` 越大越靠前。
 #[derive(serde::Deserialize)]
 pub struct ReorderItem {
     pub id: String,

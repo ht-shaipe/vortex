@@ -7,6 +7,7 @@ use crate::AppState;
 use serde_json::json;
 use std::sync::Arc;
 
+/// 处理 `GET /api/health`，探测数据库连通性并返回版本与端口信息。
 pub async fn health_check(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<bool, String> {

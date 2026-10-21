@@ -13,11 +13,13 @@ use vortex_gateway::services::agent_service::{
     ListBackupsResponse, PreviewConfigResponse, RestoreConfigRequest, RestoreConfigResponse,
 };
 
+/// 检测本机已安装且可配置的 AI 编程智能体。
 #[tauri::command]
 pub async fn agent_detect() -> Result<DetectAgentsResponse, String> {
     agent_service::detect_agents()
 }
 
+/// 预览某个智能体的配置变更（不落盘）。
 #[tauri::command]
 pub async fn agent_preview_config(
     state: State<'_, Arc<AppState>>,
@@ -26,6 +28,7 @@ pub async fn agent_preview_config(
     agent_service::preview_config(&state, agent)
 }
 
+/// 应用配置变更，返回实际写入的文件操作结果。
 #[tauri::command]
 pub async fn agent_apply_config(
     state: State<'_, Arc<AppState>>,
@@ -34,6 +37,7 @@ pub async fn agent_apply_config(
     agent_service::apply_config(&state, request)
 }
 
+/// 从备份恢复智能体配置。
 #[tauri::command]
 pub async fn agent_restore_config(
     request: RestoreConfigRequest,
@@ -41,6 +45,7 @@ pub async fn agent_restore_config(
     agent_service::restore_config(request)
 }
 
+/// 列出可用的配置备份。
 #[tauri::command]
 pub async fn agent_list_backups() -> Result<ListBackupsResponse, String> {
     agent_service::list_backups()

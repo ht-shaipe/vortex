@@ -1,5 +1,11 @@
 //! API 密钥管理端点
 //!
+//! 端点：
+//! - `GET    /api/keys`：列出密钥（仅返回脱敏后的元数据）
+//! - `POST   /api/keys`：创建密钥
+//! - `GET    /api/keys/{id}`：按 ID 查询密钥
+//! - `DELETE /api/keys/{id}`：删除密钥
+//!
 //! 同步 DB 操作通过 `spawn_blocking` 移至阻塞线程池，避免阻塞 actix async runtime。
 
 use actix_web::{web, HttpResponse};
@@ -9,6 +15,7 @@ use crate::AppState;
 use serde_json::json;
 use std::sync::Arc;
 
+/// 处理 `GET /api/keys`，列出全部 API 密钥。
 pub async fn list_keys(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -23,6 +30,7 @@ pub async fn list_keys(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 }
 
+/// 处理 `POST /api/keys`，创建新密钥并返回明文 key（仅本次响应可见）。
 pub async fn create_key(
     state: web::Data<Arc<AppState>>,
     body: web::Json<CreateApiKeyRequest>,
@@ -41,6 +49,7 @@ pub async fn create_key(
     }
 }
 
+/// 处理 `GET /api/keys/{id}`，按 ID 返回单个密钥。
 pub async fn get_key(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,
@@ -60,6 +69,7 @@ pub async fn get_key(
     }
 }
 
+/// 处理 `DELETE /api/keys/{id}`，删除密钥；不存在时返回 404。
 pub async fn delete_key(
     state: web::Data<Arc<AppState>>,
     path: web::Path<String>,

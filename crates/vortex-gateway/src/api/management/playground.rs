@@ -5,11 +5,15 @@ use vortex_store::db::models::ProxyRequest;
 use crate::AppState;
 use serde_json::json;
 
+/// Playground 调试请求体（camelCase，与前端保持一致）。
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaygroundRequest {
+    /// 待测试的模型名（可带提供商前缀）
     pub model: String,
+    /// OpenAI 格式消息数组或完整请求体
     pub messages: serde_json::Value,
+    /// 是否以 SSE 流式返回，默认 false
     #[serde(default)]
     pub stream: bool,
     #[serde(default)]
@@ -18,10 +22,15 @@ pub struct PlaygroundRequest {
     pub max_tokens: Option<i64>,
     #[serde(default)]
     pub top_p: Option<f64>,
+    /// 透传给上游的额外参数
     #[serde(default)]
     pub extra: Option<serde_json::Value>,
 }
 
+/// 处理 `POST /api/playground`，走完整代理链路执行一次测试请求。
+///
+/// 与真实客户端请求的区别：不带 API Key、不标记 agent（不参与智能体避让），
+/// 其余鉴权/路由/重试/计费流程与 `/v1/chat/completions` 一致。
 pub async fn playground(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<PlaygroundRequest>,

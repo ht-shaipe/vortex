@@ -1,9 +1,13 @@
 //! 内容寻址回忆端点：查看和检索被压缩的原始 prompt 内容。
+//!
+//! 压缩管线以 SHA-256 为键保存原文，前端可通过 hash 找回压缩前的内容。
+//! - `GET /api/compressed-content`：最近 50 条记录（不含原文）
+//! - `GET /api/compressed-content/{hash}`：按 hash 取完整原文
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
-/// 列出最近的压缩内容记录
+/// 处理 `GET /api/compressed-content`，列出最近的压缩内容记录（原文为空）。
 pub async fn list_compressed_content(
     state: web::Data<std::sync::Arc<AppState>>,
 ) -> HttpResponse {

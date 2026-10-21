@@ -14,6 +14,10 @@ export interface ProviderDef {
   color: string // 主题色
   hasFree: boolean // 是否有免费额度
   noAuth: boolean // 是否无需鉴权
+  /** 鉴权方式（apikey / oauth / web）；web 表示浏览器会话授权 */
+  authType?: string
+  /** API 格式（anthropic-messages / openai-completions / web 等） */
+  apiFormat?: string
   authHint?: string // 鉴权提示文案
   serviceKinds: string[] // 支持的服务类型列表
   connections: number // 连接总数

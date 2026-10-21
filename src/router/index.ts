@@ -29,6 +29,8 @@ const router = createRouter({
         { path: 'live-routing', name: 'live-routing', component: () => import('@/views/LiveRouting.vue') },
         // 订阅管理列表页
         { path: 'subscriptions', name: 'subscriptions', component: () => import('@/views/Subscriptions.vue') },
+        // 网页版账号管理页（CDP 浏览器授权）
+        { path: 'web-providers', name: 'web-providers', component: () => import('@/views/WebProviders.vue') },
         // 模型映射页
         { path: 'model-aliases', name: 'model-aliases', component: () => import('@/views/ModelAliases.vue') },
         // 新建订阅页

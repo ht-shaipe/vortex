@@ -377,6 +377,7 @@ watch([tab, latencyRange], ([activeTab]) => {
 // 成本分析
 const costData = ref<CostAnalysis | null>(null)
 const costLoading = ref(false)
+/** 加载成本分析数据；失败时保留上一次结果。 */
 async function loadCost() {
   costLoading.value = true
   try { costData.value = await analyticsApi.costAnalysis() }
@@ -387,6 +388,7 @@ async function loadCost() {
 // 优化建议
 const recsData = ref<Recommendation[]>([])
 const recsLoading = ref(false)
+/** 加载优化建议列表。 */
 async function loadRecs() {
   recsLoading.value = true
   try { recsData.value = (await analyticsApi.recommendations()).suggestions }
@@ -397,6 +399,7 @@ async function loadRecs() {
 // 压缩内容回忆
 const compContentList = ref<CompressedContentEntry[]>([])
 const compContentLoading = ref(false)
+/** 加载已压缩内容索引。 */
 async function loadCompContent() {
   compContentLoading.value = true
   try { compContentList.value = await compressedContentApi.list() }
@@ -404,6 +407,7 @@ async function loadCompContent() {
   finally { compContentLoading.value = false }
 }
 
+/** 查看单条压缩内容的原始长度与节省的 token（仅弹提示，不回显全文）。 */
 async function showCompContent(hash: string) {
   try {
     const detail = await compressedContentApi.get(hash)

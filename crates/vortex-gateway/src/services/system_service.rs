@@ -8,16 +8,27 @@ use crate::AppState;
 /// 系统运行状态快照。
 #[derive(Serialize)]
 pub struct SystemStatus {
+    /// 本地代理服务器是否运行
     pub proxy_running: bool,
+    /// 代理监听端口
     pub proxy_port: u16,
+    /// 应用版本
     pub version: String,
+    /// 数据库是否可连接
     pub database_ok: bool,
+    /// 提供商连接总数
     pub provider_count: usize,
+    /// 启用的提供商连接数
     pub active_provider_count: usize,
+    /// API Key 总数
     pub api_key_count: usize,
+    /// 启用且未封禁的 API Key 数
     pub active_api_key_count: usize,
+    /// 今日请求数
     pub today_requests: i64,
+    /// 今日输入 Token 数
     pub today_tokens_input: i64,
+    /// 今日输出 Token 数
     pub today_tokens_output: i64,
 }
 

@@ -4,6 +4,7 @@ use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/model-catalog`，返回远程同步的模型目录。
 pub async fn list_catalog(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {

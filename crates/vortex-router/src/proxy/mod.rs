@@ -10,6 +10,8 @@ pub mod sse;
 pub mod retry;
 /// 上游执行器，按 API 格式构建并发送请求
 pub mod executor;
+/// Web（浏览器自动化）提供商桥接抽象
+pub mod web_bridge;
 /// Tool-call rescue：纯文本 tool call 救援为结构化
 pub mod tool_call_rescue;
 /// 粘性会话管理

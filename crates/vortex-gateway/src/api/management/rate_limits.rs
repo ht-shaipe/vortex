@@ -1,10 +1,19 @@
 //! 速率限制管理端点。
+//!
+//! 端点：
+//! - `GET    /api/rate-limits`：列出全部速率上限
+//! - `POST   /api/rate-limits`：新增或更新上限（同时刷新内存限流器）
+//! - `DELETE /api/rate-limits/{id}`：删除上限
+//! - `GET    /api/rate-limits/usage`：查看当前窗口用量快照
+//! - `POST   /api/rate-limits/cleanup`：清理过期用量记录
+//!
 //! 同步 DB 操作通过 `spawn_blocking` 移至阻塞线程池，避免阻塞 actix async runtime。
 
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/rate-limits`，列出所有速率上限配置。
 pub async fn list_rate_limits(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -21,6 +30,9 @@ pub async fn list_rate_limits(state: web::Data<std::sync::Arc<AppState>>) -> Htt
     }
 }
 
+/// 处理 `POST /api/rate-limits`，写入上限后同步更新内存限流器。
+///
+/// 内存更新放在 `spawn_blocking` 内完成，保证 DB 与限流器状态一致。
 pub async fn upsert_rate_limit(
     state: web::Data<std::sync::Arc<AppState>>,
     body: web::Json<vortex_store::db::rate_limits::UpsertRateLimitCap>,
@@ -50,6 +62,7 @@ pub async fn upsert_rate_limit(
     }
 }
 
+/// 处理 `DELETE /api/rate-limits/{id}`，删除指定速率上限。
 pub async fn delete_rate_limit(
     state: web::Data<std::sync::Arc<AppState>>,
     path: web::Path<String>,
@@ -68,6 +81,7 @@ pub async fn delete_rate_limit(
     }
 }
 
+/// 处理 `GET /api/rate-limits/usage`，返回各 provider/model 的当前窗口用量快照。
 pub async fn list_usage(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
@@ -84,6 +98,7 @@ pub async fn list_usage(state: web::Data<std::sync::Arc<AppState>>) -> HttpRespo
     }
 }
 
+/// 处理 `POST /api/rate-limits/cleanup`，清理已过期的用量计数记录。
 pub async fn cleanup_usage(state: web::Data<std::sync::Arc<AppState>>) -> HttpResponse {
     let pool = state.db_pool.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {

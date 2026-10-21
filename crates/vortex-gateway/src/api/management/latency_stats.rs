@@ -1,9 +1,13 @@
-//! 延迟统计端点（p50/p95/TTFT）。
+//! 延迟统计端点（p50/p95/p99 与首 Token 延迟 TTFT）。
+//!
+//! `GET /api/latency-stats?since=<RFC3339>`：基于 `usage_history` 中的
+//! 成功请求计算延迟分位数，并按提供商聚合平均延迟。
 
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use crate::AppState;
 
+/// 处理 `GET /api/latency-stats`，返回延迟/首 Token 延迟分位数及按提供商汇总。
 pub async fn latency_stats(
     state: web::Data<std::sync::Arc<AppState>>,
     query: web::Query<LatencyQuery>,
@@ -82,6 +86,10 @@ pub async fn latency_stats(
     }
 }
 
+/// 计算分位数与基础统计量。
+///
+/// `sorted` 必须是已升序排列的样本；空样本全部返回 0。
+/// 分位数采用最近秩（nearest-rank）近似，避免额外依赖。
 fn compute_stats(sorted: &[f64]) -> serde_json::Value {
     let n = sorted.len();
     if n == 0 {
@@ -96,8 +104,10 @@ fn compute_stats(sorted: &[f64]) -> serde_json::Value {
     json!({ "p50": p50, "p95": p95, "p99": p99, "avg": avg, "min": min, "max": max, "count": n })
 }
 
+/// 延迟统计查询参数。
 #[derive(Debug, serde::Deserialize)]
 pub struct LatencyQuery {
+    /// 起始时间（RFC3339）；缺省表示统计全部历史数据
     #[serde(default)]
     since: Option<String>,
 }
