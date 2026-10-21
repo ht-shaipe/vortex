@@ -6,7 +6,8 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-obscura = { git = "https://github.com/h4ckf0r0day/obscura", tag = "v0.2.5" }
+# fork：包含 op_initial_frame reentrant 修复，避免 srcdoc iframe 重入导致进程 abort
+obscura = { git = "https://github.com/ht-shaipe/obscura", rev = "6594672b9bc3c41d7f67ff3159df544e67da9d70" }
 actix-web = "4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
 tokio-stream = "0.1"

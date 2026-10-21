@@ -13,19 +13,3 @@ version = "0.1.23"
 edition = "2024"
 license = "MIT"
 authors = ["Vortex"]
-
-# 本地补丁：obscura op_initial_frame 未标 reentrant，创建 about:blank/srcdoc
-# iframe 时同步执行 initialize 回调会重入 op_dom，deno_core 重入检查直接 abort
-# 整个进程（kimi 登录弹窗挂载微信面板必触发）。上游修复前用本地源码覆盖：
-# 指向共享副本 ~/workspace/rust/kit/obscura（上游 v0.2.5 之后的开发版，
-# 含 CDP light-DOM 修复等），reentrant 补丁已打在 kit 副本上
-# （crates/obscura-js/src/ops.rs op_initial_frame）。
-# 该副本供多个项目共用；网关依赖的 obscura 库 API（crates/obscura/src）
-# 已核对与 v0.2.5 完全一致。
-[patch."https://github.com/h4ckf0r0day/obscura"]
-obscura = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura" }
-obscura-browser = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura-browser" }
-obscura-dom = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura-dom" }
-obscura-js = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura-js" }
-obscura-net = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura-net" }
-obscura-ssrf = { path = "/Users/shaipe/workspace/rust/kit/obscura/crates/obscura-ssrf" }
