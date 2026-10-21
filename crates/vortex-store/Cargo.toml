@@ -32,6 +32,5 @@ url = "2"
 # 随机数（encryption.rs 密钥生成）
 rand = "0.8"
 # HTTP（error.rs 中 AppError 需要 awc::error::SendRequestError 和 actix-web::ResponseError）
-awc = { version = "3", features = ["openssl"] }
-openssl = { version = "0.10", features = ["vendored"] }
+awc = { version = "3", features = ["rustls-0_22-webpki-roots"] }
 actix-web = "4"
