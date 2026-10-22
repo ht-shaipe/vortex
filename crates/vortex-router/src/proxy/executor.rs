@@ -18,6 +18,161 @@ use crate::proxy::web_bridge::{WebChatBridge, WebChunkKind};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
+use std::sync::OnceLock;
+
+static DSML_REGISTRY: OnceLock<Arc<ai_web_provider::dsml::registry::InvokeRegistry>> = OnceLock::new();
+static DSML_CONFIG: OnceLock<ai_web_provider::dsml::DsmlConfig> = OnceLock::new();
+static DSML_METRICS: OnceLock<Arc<ai_web_provider::dsml::DsmlMetrics>> = OnceLock::new();
+
+fn dsml_registry() -> &'static Arc<ai_web_provider::dsml::registry::InvokeRegistry> {
+    DSML_REGISTRY.get_or_init(|| {
+        Arc::new(ai_web_provider::dsml::registry::InvokeRegistry::new(300))
+    })
+}
+fn dsml_config() -> &'static ai_web_provider::dsml::DsmlConfig {
+    DSML_CONFIG.get_or_init(ai_web_provider::dsml::DsmlConfig::load)
+}
+fn dsml_metrics() -> &'static Arc<ai_web_provider::dsml::DsmlMetrics> {
+    DSML_METRICS.get_or_init(ai_web_provider::dsml::DsmlMetrics::register)
+}
+
+fn register_web_tool_calls(
+    response: &Value,
+    request_id: &str,
+    registry: &ai_web_provider::dsml::registry::InvokeRegistry,
+) {
+    if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array() {
+        for tc in tool_calls {
+            let id = tc["id"].as_str().unwrap_or("");
+            let name = tc["function"]["name"].as_str().unwrap_or("");
+            registry.register(
+                request_id,
+                id,
+                ai_web_provider::dsml::types::Invoke {
+                    name: name.to_string(),
+                    parameters: vec![],
+                },
+            );
+        }
+    }
+}
+
+/// 提取 tools 白名单；DSML_ALWAYS_PARSE=true 时即使无 tools 字段也返回空白名单（接受所有工具名）。
+fn extract_tools_whitelist_with_fallback(body: &Value) -> Option<Vec<String>> {
+    if let Some(w) = ai_web_provider::dsml::extract_tools_whitelist(body) {
+        return Some(w);
+    }
+    if std::env::var("DSML_ALWAYS_PARSE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false)
+    {
+        Some(vec![])
+    } else {
+        None
+    }
+}
+
+/// 补全非流式响应中 tool_calls 缺失的 required 参数。
+fn fill_required_params(response: &mut Value, tools: Option<&Value>) {
+    let Some(tools_arr) = tools.and_then(|t| t.as_array()) else {
+        return;
+    };
+    let mut required_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for tool in tools_arr {
+        let name = tool
+            .get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str());
+        let required = tool
+            .get("function")
+            .and_then(|f| f.get("parameters"))
+            .and_then(|p| p.get("required"))
+            .and_then(|r| r.as_array());
+        if let (Some(name), Some(required)) = (name, required) {
+            let params: Vec<String> =
+                required.iter().filter_map(|r| r.as_str().map(String::from)).collect();
+            required_map.insert(name.to_string(), params);
+        }
+    }
+    if let Some(tool_calls) = response
+        .pointer_mut("/choices/0/message/tool_calls")
+        .and_then(|v| v.as_array_mut())
+    {
+        for tc in tool_calls {
+            let name = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .map(String::from);
+            if let Some(name) = name {
+                if let Some(required) = required_map.get(&name) {
+                    let args_str = tc
+                        .get("function")
+                        .and_then(|f| f.get("arguments"))
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("{}");
+                    let mut args: Value =
+                        serde_json::from_str(args_str).unwrap_or(json!({}));
+                    if let Some(args_map) = args.as_object_mut() {
+                        for param in required {
+                            if !args_map.contains_key(param) {
+                                args_map.insert(
+                                    param.clone(),
+                                    json!(format!("Auto-filled by proxy: {name}")),
+                                );
+                            }
+                        }
+                    }
+                    if let Some(func) = tc.get_mut("function").and_then(|f| f.as_object_mut()) {
+                        func.insert(
+                            "arguments".to_string(),
+                            json!(serde_json::to_string(&args).unwrap_or_default()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 补全流式 arguments chunk 中缺失的 required 参数。
+fn fill_arguments_chunk(arguments: &str, tool_name: &str, tools: Option<&Value>) -> String {
+    let Some(tools_arr) = tools.and_then(|t| t.as_array()) else {
+        return arguments.to_string();
+    };
+    let tool_def = tools_arr.iter().find(|t| {
+        t.get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+            == Some(tool_name)
+    });
+    let Some(tool_def) = tool_def else {
+        return arguments.to_string();
+    };
+    let required = tool_def
+        .get("function")
+        .and_then(|f| f.get("parameters"))
+        .and_then(|p| p.get("required"))
+        .and_then(|r| r.as_array());
+    let Some(required) = required else {
+        return arguments.to_string();
+    };
+    let mut args: Value = serde_json::from_str(arguments).unwrap_or(json!({}));
+    if let Some(args_map) = args.as_object_mut() {
+        for param in required {
+            if let Some(pname) = param.as_str() {
+                if !args_map.contains_key(pname) {
+                    args_map.insert(
+                        pname.to_string(),
+                        json!(format!("Auto-filled by proxy: {tool_name}")),
+                    );
+                }
+            }
+        }
+    }
+    serde_json::to_string(&args).unwrap_or_else(|_| arguments.to_string())
+}
 
 /// 格式化完整错误链（遍历 `std::error::Error::source()`）。
 ///
@@ -726,11 +881,22 @@ impl ProviderExecutor for WebExecutor {
             });
         };
         log::info!(
-            "web ask: platform={} model={} stream={}",
+            "web question extracted: len={} preview={:?}",
+            question.len(),
+            question.chars().take(200).collect::<String>(),
+        );
+
+        log::info!(
+            "web ask: platform={} model={} stream={} has_tools={} tools_count={} has_role_tool={} dsml_always_parse={}",
             platform,
             request.model,
-            request.stream
+            request.stream,
+            request.messages.get("tools").is_some(),
+            request.messages.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
+            ai_web_provider::dsml::return_trip::has_tool_messages(&request.messages),
+            std::env::var("DSML_ALWAYS_PARSE").unwrap_or_default(),
         );
+
 
         let created = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -738,6 +904,11 @@ impl ProviderExecutor for WebExecutor {
             .unwrap_or(0);
 
         if !request.stream {
+            // 回程分支：含 role=tool 消息时走回程路径
+            if ai_web_provider::dsml::return_trip::has_tool_messages(&request.messages) {
+                return handle_web_return_trip(bridge.as_ref(), &platform, request, created).await;
+            }
+
             let reply = bridge
                 .ask(&platform, question.clone())
                 .await
@@ -745,22 +916,48 @@ impl ProviderExecutor for WebExecutor {
             let usage_in = sse::estimate_tokens_from_text(&question);
             let usage_out =
                 sse::estimate_tokens_from_text(&reply.reply) + sse::estimate_tokens_from_text(&reply.thinking);
-            let mut message = json!({"role": "assistant", "content": reply.reply});
-            if !reply.thinking.is_empty() {
-                message["reasoning_content"] = json!(reply.thinking);
-            }
-            let body = json!({
-                "id": web_completion_id(),
-                "object": "chat.completion",
-                "created": created,
-                "model": request.model,
-                "choices": [{
-                    "index": 0,
-                    "message": message,
-                    "finish_reason": "stop"
-                }],
-                "usage": {"prompt_tokens": usage_in, "completion_tokens": usage_out, "total_tokens": usage_in + usage_out}
-            });
+
+            // DSML 解析：有 tools 白名单时启用
+            let tools_whitelist = extract_tools_whitelist_with_fallback(&request.messages);
+            let body = if let Some(whitelist) = &tools_whitelist {
+                let config = dsml_config();
+                let metrics = dsml_metrics();
+                let whitelist_refs: Vec<&str> = whitelist.iter().map(|s| s.as_str()).collect();
+                let full_id = web_completion_id();
+                let id_suffix = full_id.strip_prefix("chatcmpl-").unwrap_or(&full_id);
+                let mut response = ai_web_provider::dsml::dsml_to_openai_completion(
+                    &reply.reply,
+                    &reply.thinking,
+                    Some(&whitelist_refs),
+                    &request.model,
+                    config,
+                    metrics,
+                    id_suffix,
+                    id_suffix,
+                    created,
+                );
+                response["usage"] = json!({"prompt_tokens": usage_in, "completion_tokens": usage_out, "total_tokens": usage_in + usage_out});
+                register_web_tool_calls(&response, id_suffix, dsml_registry());
+                fill_required_params(&mut response, request.messages.get("tools"));
+                response
+            } else {
+                let mut message = json!({"role": "assistant", "content": reply.reply});
+                if !reply.thinking.is_empty() {
+                    message["reasoning_content"] = json!(reply.thinking);
+                }
+                json!({
+                    "id": web_completion_id(),
+                    "object": "chat.completion",
+                    "created": created,
+                    "model": request.model,
+                    "choices": [{
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {"prompt_tokens": usage_in, "completion_tokens": usage_out, "total_tokens": usage_in + usage_out}
+                })
+            };
             return Ok(ExecutorOutput::Json(body));
         }
 
@@ -776,11 +973,26 @@ impl ProviderExecutor for WebExecutor {
         let (mut tx, rx) = futures::channel::mpsc::channel::<std::result::Result<actix_web::web::Bytes, std::io::Error>>(64);
         let model = request.model.clone();
         let id = web_completion_id();
+        let tools_whitelist = extract_tools_whitelist_with_fallback(&request.messages);
+        let dsml_config = dsml_config().clone();
+        let dsml_metrics = dsml_metrics().clone();
+        let tools_def = request.messages.get("tools").cloned();
         tokio::spawn(async move {
             // 首 chunk：角色声明
             let _ = tx
                 .send(Ok(web_chunk_frame(&id, created, &model, json!({"role": "assistant"}), None)))
                 .await;
+
+            let mut dsml_parser = tools_whitelist.map(|w| {
+                ai_web_provider::dsml::stream::DsmlStreamParser::new(
+                    dsml_config.clone(),
+                    Some(w),
+                    dsml_metrics.clone(),
+                    id.clone(),
+                )
+            });
+            let mut has_tool_calls = false;
+            let mut last_tool_name = String::new();
 
             // 空闲心跳：SSE 注释行，防长思考期间代理/客户端超时断连
             let mut ping = tokio::time::interval(Duration::from_secs(15));
@@ -802,24 +1014,64 @@ impl ProviderExecutor for WebExecutor {
                 if chunk.text.is_empty() {
                     continue;
                 }
-                let delta = match chunk.kind {
-                    WebChunkKind::Thinking => json!({"reasoning_content": chunk.text}),
+                match chunk.kind {
+                    WebChunkKind::Thinking => {
+                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({"reasoning_content": chunk.text}), None))).await;
+                    }
                     WebChunkKind::Text => {
                         out_text.push_str(&chunk.text);
-                        json!({"content": chunk.text})
+                        if let Some(ref mut parser) = dsml_parser {
+                            let events = parser.feed(&chunk.text);
+                            for event in events {
+                                match event {
+                                    ai_web_provider::dsml::DeltaEvent::Content(t) if !t.is_empty() => {
+                                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({"content": t}), None))).await;
+                                    }
+                                    ai_web_provider::dsml::DeltaEvent::ToolCallStart { index, id: tc_id, name } => {
+                                        has_tool_calls = true;
+                                        last_tool_name = name.clone();
+                                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({
+                                            "tool_calls": [{"index": index, "id": tc_id, "type": "function", "function": {"name": name}}]
+                                        }), None))).await;
+                                    }
+                                    ai_web_provider::dsml::DeltaEvent::ToolCallArguments { index, arguments_chunk } => {
+                                        let filled = fill_arguments_chunk(&arguments_chunk, &last_tool_name, tools_def.as_ref());
+                                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({
+                                            "tool_calls": [{"index": index, "function": {"arguments": filled}}]
+                                        }), None))).await;
+                                    }
+                                    ai_web_provider::dsml::DeltaEvent::Degrade { reason, snippet } => {
+                                        ai_web_provider::dsml::degrade::handle(&id, reason, &snippet, &dsml_config, &dsml_metrics);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        } else {
+                            let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({"content": chunk.text}), None))).await;
+                        }
                     }
-                    // 过程提示：自定义增量字段，前端展示为状态行，
-                    // 不参与正文累积与 token 估算
-                    WebChunkKind::Status => json!({"vortex_status": chunk.text}),
-                };
-                let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, delta, None))).await;
+                    WebChunkKind::Status => {
+                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({"vortex_status": chunk.text}), None))).await;
+                    }
+                }
             }
 
-            // 终态：成功发 stop 帧，失败发错误帧；用量按最终结果记账
+            // DsmlStreamParser 收尾
+            if let Some(ref mut parser) = dsml_parser {
+                let events = parser.finalize();
+                for event in events {
+                    if let ai_web_provider::dsml::DeltaEvent::Content(t) = event {
+                        let _ = tx.send(Ok(web_chunk_frame(&id, created, &model, json!({"content": t}), None))).await;
+                    }
+                }
+            }
+
+            // 终态：成功发 stop/tool_calls 帧，失败发错误帧
             let final_ok = match handle.final_reply.await {
                 Ok(_) => {
+                    let finish = if has_tool_calls { "tool_calls" } else { "stop" };
                     let _ = tx
-                        .send(Ok(web_chunk_frame(&id, created, &model, json!({}), Some("stop"))))
+                        .send(Ok(web_chunk_frame(&id, created, &model, json!({}), Some(finish))))
                         .await;
                     true
                 }
@@ -835,8 +1087,7 @@ impl ProviderExecutor for WebExecutor {
                 .send(Ok(actix_web::web::Bytes::from("data: [DONE]\n\n")))
                 .await;
 
-            // 流结束：用量按实际收发估算（输入 = 发送的 question）；
-            // 失败时记为 error 状态
+            // 流结束：用量按实际收发估算
             if let Some(cb) = usage_cb {
                 cb(
                     StreamUsage {
@@ -854,6 +1105,103 @@ impl ProviderExecutor for WebExecutor {
 
         Ok(ExecutorOutput::Stream(Box::pin(rx)))
     }
+}
+
+/// Web 回程处理：DSH 发回 role=tool → 合成自然语言文本 → bridge.ask → 解析新一轮 DSML。
+async fn handle_web_return_trip(
+    bridge: &dyn WebChatBridge,
+    platform: &str,
+    request: &ProxyRequest,
+    created: u64,
+) -> Result<ExecutorOutput> {
+    let tool_messages =
+        ai_web_provider::dsml::return_trip::extract_tool_messages(&request.messages);
+    if tool_messages.is_empty() {
+        return Ok(ExecutorOutput::UpstreamError {
+            status: 400,
+            body: "role=tool 消息无 content".into(),
+        });
+    }
+
+    let registry = dsml_registry();
+    let config = dsml_config();
+    let metrics = dsml_metrics();
+
+    let mut parts = Vec::new();
+    for (call_id, content) in &tool_messages {
+        match registry.lookup_by_call_id(call_id) {
+            Some(invoke) => {
+                parts.push(format!("工具 {} 的执行结果：\n{}", invoke.name, content));
+            }
+            None => {
+                metrics.record_registry_miss();
+                parts.push(content.clone());
+            }
+        }
+    }
+    let mut return_text = parts.join("\n\n");
+
+    // 追加最后一条 role=user 消息（用户的新问题），否则 deepseek 只收到工具结果看不到问题
+    if let Some(msgs) = request.messages.get("messages").and_then(|m| m.as_array()) {
+        if let Some(last) = msgs.last() {
+            if last.get("role").and_then(|r| r.as_str()) == Some("user") {
+                if let Some(content) = last.get("content").and_then(|c| c.as_str()) {
+                    if !content.is_empty() {
+                        return_text = format!("{return_text}\n\n{content}");
+                    }
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "web return_trip: tool_count={} return_text_len={} return_text_preview={:?}",
+        tool_messages.len(),
+        return_text.len(),
+        return_text.chars().take(200).collect::<String>(),
+    );
+    let _ = std::fs::write(
+        "/tmp/vortex_debug.log",
+        format!("[return_trip] tool_count={} return_text_len={} preview={:?}\n", tool_messages.len(), return_text.len(), return_text.chars().take(500).collect::<String>()),
+    );
+
+    let reply = bridge
+        .ask(platform, return_text.clone())
+        .await
+        .map_err(AppError::Provider)?;
+
+    let usage_in = sse::estimate_tokens_from_text(&return_text);
+    let usage_out = sse::estimate_tokens_from_text(&reply.reply)
+        + sse::estimate_tokens_from_text(&reply.thinking);
+
+    let tools_whitelist = extract_tools_whitelist_with_fallback(&request.messages);
+    let full_id = web_completion_id();
+    let id_suffix = full_id.strip_prefix("chatcmpl-").unwrap_or(&full_id);
+    let whitelist_refs: Vec<&str> = tools_whitelist
+        .as_ref()
+        .map(|w| w.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
+    let mut response = ai_web_provider::dsml::dsml_to_openai_completion(
+        &reply.reply,
+        &reply.thinking,
+        if tools_whitelist.is_some() {
+            Some(&whitelist_refs)
+        } else {
+            None
+        },
+        &request.model,
+        config,
+        metrics,
+        id_suffix,
+        id_suffix,
+        created,
+    );
+    response["usage"] = json!({"prompt_tokens": usage_in, "completion_tokens": usage_out, "total_tokens": usage_in + usage_out});
+    register_web_tool_calls(&response, id_suffix, registry);
+    fill_required_params(&mut response, request.messages.get("tools"));
+
+    Ok(ExecutorOutput::Json(response))
 }
 
 #[cfg(test)]

@@ -17,8 +17,9 @@
 //! - 思考过程：非流式 OpenAI 响应放 `message.reasoning_content`（DeepSeek 惯例）；
 //!   流式 OpenAI chunk 放 `delta.reasoning_content`；Anthropic 走独立
 //!   `thinking` 内容块（content_block_start/delta）。
-//! - 不支持 tools/function calling（网关是浏览器自动化，无工具通道），
-//!   请求中的 tools 字段被忽略。
+//! - 支持 tools/function calling：当请求含 `tools` 字段时，启用 DSML 解析，
+//!   将 deepseek.com 网页版返回的 `<｜｜DSML｜｜ calls>` 文本转为结构化 `tool_calls`。
+//!   回程（`role=tool` 消息）转为自然语言文本注入网页，实现多轮工具调用。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -264,6 +265,122 @@ fn openai_completion(ids: &Ids, model: &str, reply: &AiReply) -> Value {
     })
 }
 
+// =============================================================================
+// DSML 全局状态（OnceLock 单例，正向与回程共享）
+// =============================================================================
+
+use std::sync::OnceLock;
+
+static DSML_REGISTRY: OnceLock<std::sync::Arc<crate::dsml::registry::InvokeRegistry>> = OnceLock::new();
+static DSML_CONFIG: OnceLock<crate::dsml::DsmlConfig> = OnceLock::new();
+static DSML_METRICS: OnceLock<std::sync::Arc<crate::dsml::DsmlMetrics>> = OnceLock::new();
+
+fn dsml_registry() -> &'static std::sync::Arc<crate::dsml::registry::InvokeRegistry> {
+    DSML_REGISTRY.get_or_init(|| {
+        std::sync::Arc::new(crate::dsml::registry::InvokeRegistry::new(300))
+    })
+}
+fn dsml_config() -> &'static crate::dsml::DsmlConfig {
+    DSML_CONFIG.get_or_init(crate::dsml::DsmlConfig::load)
+}
+fn dsml_metrics() -> &'static std::sync::Arc<crate::dsml::DsmlMetrics> {
+    DSML_METRICS.get_or_init(crate::dsml::DsmlMetrics::register)
+}
+
+/// 从响应中提取 tool_calls 注册到 InvokeRegistry（供回程查询工具名）。
+fn register_tool_calls(
+    response: &Value,
+    request_id: &str,
+    registry: &crate::dsml::registry::InvokeRegistry,
+) {
+    if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array() {
+        for tc in tool_calls {
+            let id = tc["id"].as_str().unwrap_or("");
+            let name = tc["function"]["name"].as_str().unwrap_or("");
+            registry.register(
+                request_id,
+                id,
+                crate::dsml::types::Invoke {
+                    name: name.to_string(),
+                    parameters: vec![],
+                },
+            );
+        }
+    }
+}
+
+/// 回程处理：DSH 发回 role=tool 消息 → 合成自然语言文本 → 发给 worker → 解析新一轮 DSML。
+async fn handle_return_trip(
+    state: &AppState,
+    platform: &str,
+    body: &Value,
+    model: &str,
+) -> HttpResponse {
+    let tool_messages = crate::dsml::return_trip::extract_tool_messages(body);
+    if tool_messages.is_empty() {
+        return openai_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            "role=tool 消息无 content",
+        );
+    }
+
+    let registry = dsml_registry();
+    let config = dsml_config();
+    let metrics = dsml_metrics();
+
+    // 合成回程文本：查 registry 得工具名，未命中原样保留 content
+    let mut parts = Vec::new();
+    for (call_id, content) in &tool_messages {
+        match registry.lookup_by_call_id(call_id) {
+            Some(invoke) => {
+                parts.push(format!("工具 {} 的执行结果：\n{}", invoke.name, content));
+            }
+            None => {
+                metrics.record_registry_miss();
+                tracing::warn!(
+                    call_id = call_id,
+                    event = "registry_miss",
+                    "回程 registry 未命中，原样保留 content",
+                );
+                parts.push(content.clone());
+            }
+        }
+    }
+    let return_text = parts.join("\n\n");
+
+    // 将回程文本作为新 question 发送给 worker（网页版多轮会话延续）
+    match ask_blocking(state, platform, return_text).await {
+        Ok(reply) => {
+            let ids = new_ids();
+            let tools_whitelist = crate::dsml::extract_tools_whitelist(body);
+            let whitelist_refs: Vec<&str> = tools_whitelist
+                .as_ref()
+                .map(|w| w.iter().map(|s| s.as_str()).collect())
+                .unwrap_or_default();
+            let response = crate::dsml::dsml_to_openai_completion(
+                &reply.reply,
+                &reply.thinking,
+                if tools_whitelist.is_some() {
+                    Some(&whitelist_refs)
+                } else {
+                    None
+                },
+                model,
+                config,
+                metrics,
+                &ids.plain,
+                &ids.plain,
+                ids.created,
+            );
+            // 注册新一轮 tool_calls 到 registry
+            register_tool_calls(&response, &ids.plain, registry);
+            HttpResponse::Ok().json(response)
+        }
+        Err(e) => openai_error(StatusCode::BAD_GATEWAY, "api_error", &e),
+    }
+}
+
 /// `POST /v1/chat/completions`：解析 OpenAI 请求体，转发到对应平台 worker。
 ///
 /// `stream=true` 时返回 SSE（`chat.completion.chunk`，以 `[DONE]` 收尾）；
@@ -281,6 +398,10 @@ pub async fn chat_completions(state: web::Data<AppState>, body: web::Json<Value>
             ),
         );
     };
+    // 回程分支：含 role=tool 消息时走回程路径（多轮工具调用）
+    if crate::dsml::return_trip::has_tool_messages(&body) {
+        return handle_return_trip(&state, &platform, &body, model).await;
+    }
     let Some(question) = openai_question(&body) else {
         return openai_error(
             StatusCode::BAD_REQUEST,
@@ -290,12 +411,33 @@ pub async fn chat_completions(state: web::Data<AppState>, body: web::Json<Value>
     };
     let stream = body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
     let model = model.to_string();
+    let tools_whitelist = crate::dsml::extract_tools_whitelist(&body);
 
     if !stream {
         return match ask_blocking(&state, &platform, question).await {
             Ok(reply) => {
                 let ids = new_ids();
-                HttpResponse::Ok().json(openai_completion(&ids, &model, &reply))
+                if let Some(whitelist) = &tools_whitelist {
+                    let config = dsml_config();
+                    let metrics = dsml_metrics();
+                    let whitelist_refs: Vec<&str> =
+                        whitelist.iter().map(|s| s.as_str()).collect();
+                    let response = crate::dsml::dsml_to_openai_completion(
+                        &reply.reply,
+                        &reply.thinking,
+                        Some(&whitelist_refs),
+                        &model,
+                        config,
+                        metrics,
+                        &ids.plain,
+                        &ids.plain,
+                        ids.created,
+                    );
+                    register_tool_calls(&response, &ids.plain, dsml_registry());
+                    HttpResponse::Ok().json(response)
+                } else {
+                    HttpResponse::Ok().json(openai_completion(&ids, &model, &reply))
+                }
             }
             Err(e) => openai_error(StatusCode::BAD_GATEWAY, "api_error", &e),
         };
@@ -306,16 +448,24 @@ pub async fn chat_completions(state: web::Data<AppState>, body: web::Json<Value>
         Err(e) => return openai_error(StatusCode::BAD_GATEWAY, "api_error", &e),
     };
     let (sse_tx, sse_rx) = mpsc::channel::<Bytes>(64);
-    actix_web::rt::spawn(openai_stream_task(model, chunk_rx, reply_rx, sse_tx));
+    actix_web::rt::spawn(openai_stream_task(
+        model,
+        chunk_rx,
+        reply_rx,
+        sse_tx,
+        tools_whitelist,
+    ));
     sse_response(sse_rx)
 }
 
 /// OpenAI 流式任务：增量通道 → chat.completion.chunk SSE，结束补 [DONE]。
+/// tools_whitelist 非空时创建 DsmlStreamParser，将 DSML 文本转为 tool_calls delta。
 async fn openai_stream_task(
     model: String,
     mut chunk_rx: mpsc::Receiver<String>,
     reply_rx: oneshot::Receiver<anyhow::Result<AiReply>>,
     tx: mpsc::Sender<Bytes>,
+    tools_whitelist: Option<Vec<String>>,
 ) {
     let ids = new_ids();
     let mk = |delta: Value, finish: Option<&str>| -> Bytes {
@@ -337,6 +487,18 @@ async fn openai_stream_task(
     // 首 chunk：角色声明
     let _ = tx.send(mk(json!({"role": "assistant"}), None)).await;
 
+    let dsml_config = dsml_config().clone();
+    let dsml_metrics = dsml_metrics().clone();
+    let mut dsml_parser = tools_whitelist.map(|w| {
+        crate::dsml::stream::DsmlStreamParser::new(
+            dsml_config.clone(),
+            Some(w),
+            dsml_metrics.clone(),
+            ids.plain.clone(),
+        )
+    });
+    let mut has_tool_calls = false;
+
     // 空闲心跳：SSE 注释行（: ping），客户端/SDK 按 SSE 规范忽略，
     // 防止长思考期间代理/客户端空闲超时断连。先吃掉 interval 的立即首 tick
     let mut ping = tokio::time::interval(Duration::from_secs(15));
@@ -352,19 +514,73 @@ async fn openai_stream_task(
                 continue;
             }
         };
-        let delta = match decode_chunk(&chunk) {
-            Some((ChunkKind::Thinking, t)) if !t.is_empty() => json!({"reasoning_content": t}),
-            Some((ChunkKind::Text, t)) if !t.is_empty() => json!({"content": t}),
-            // 未编码的纯文本 chunk（旧实现）按正文处理
-            None if !chunk.is_empty() => json!({"content": chunk}),
+        let text = match decode_chunk(&chunk) {
+            Some((ChunkKind::Thinking, t)) if !t.is_empty() => {
+                let _ = tx.send(mk(json!({"reasoning_content": t}), None)).await;
+                continue;
+            }
+            Some((ChunkKind::Text, t)) if !t.is_empty() => t,
+            None if !chunk.is_empty() => chunk,
             _ => continue,
         };
-        let _ = tx.send(mk(delta, None)).await;
+
+        if let Some(ref mut parser) = dsml_parser {
+            let events = parser.feed(&text);
+            for event in events {
+                match event {
+                    crate::dsml::DeltaEvent::Content(t) if !t.is_empty() => {
+                        let _ = tx.send(mk(json!({"content": t}), None)).await;
+                    }
+                    crate::dsml::DeltaEvent::ToolCallStart { index, id, name } => {
+                        has_tool_calls = true;
+                        let _ = tx.send(mk(json!({
+                            "tool_calls": [{
+                                "index": index,
+                                "id": id,
+                                "type": "function",
+                                "function": {"name": name}
+                            }]
+                        }), None)).await;
+                    }
+                    crate::dsml::DeltaEvent::ToolCallArguments { index, arguments_chunk } => {
+                        let _ = tx.send(mk(json!({
+                            "tool_calls": [{
+                                "index": index,
+                                "function": {"arguments": arguments_chunk}
+                            }]
+                        }), None)).await;
+                    }
+                    crate::dsml::DeltaEvent::Degrade { reason, snippet } => {
+                        crate::dsml::degrade::handle(
+                            &ids.plain,
+                            reason,
+                            &snippet,
+                            &dsml_config,
+                            &dsml_metrics,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            let _ = tx.send(mk(json!({"content": text}), None)).await;
+        }
+    }
+
+    // 流结束，处理 DsmlStreamParser 收尾
+    if let Some(ref mut parser) = dsml_parser {
+        let events = parser.finalize();
+        for event in events {
+            if let crate::dsml::DeltaEvent::Content(t) = event {
+                let _ = tx.send(mk(json!({"content": t}), None)).await;
+            }
+        }
     }
 
     match reply_rx.await {
         Ok(Ok(_)) => {
-            let _ = tx.send(mk(json!({}), Some("stop"))).await;
+            let finish = if has_tool_calls { "tool_calls" } else { "stop" };
+            let _ = tx.send(mk(json!({}), Some(finish))).await;
         }
         Ok(Err(e)) => {
             let _ = tx

@@ -39,6 +39,7 @@ pub mod cdp_auth;
 pub mod common;
 pub mod compat;
 pub mod config;
+pub mod dsml;
 pub mod models;
 pub mod providers;
 pub mod server;

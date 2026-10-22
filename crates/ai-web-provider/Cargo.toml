@@ -21,3 +21,5 @@ qrcodegen = "1.8"
 anyhow = "1"
 tracing = "0.1"
 reqwest = { version = "0.12", features = ["gzip", "brotli", "deflate", "native-tls"], default-features = false }
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
