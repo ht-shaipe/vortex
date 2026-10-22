@@ -78,6 +78,11 @@
       <div v-if="status?.message" class="text-11.5px text-ink-4 leading-[1.5] break-words">{{ status.message }}</div>
     </div>
 
+    <!-- 免责提示：授权前告知平台条款风险 -->
+    <div v-if="!isTerminal" class="text-11px leading-[1.6] px-12px py-8px rounded-sm" style="background: var(--warn-bg); color: var(--warn)">
+      网页版会话的程序化调用可能违反{{ platformLabel }}的服务条款，账号风险自担；仅供技术研究与个人学习，请合理控制调用频率。
+    </div>
+
     <template #footer>
       <div class="dialog-footer flex items-center gap-10px">
         <!-- 失败可重试 -->

@@ -8,6 +8,8 @@
 
 Vortex 是一个基于 **Rust (Actix-Web) + Vue 3** 构建的 AI 网关应用。它在本地启动一个 OpenAI 兼容的 API 服务器，将请求路由到多个 AI 提供商（OpenAI、Anthropic、Google Gemini、DeepSeek 等），支持弹性重试、API 密钥管理和用量统计。
 
+> **使用须知**：本项目定位为**技术研究项目**，仅供技术研究与个人学习使用，不具备任何商业服务资质。个人使用者请在使用前**认真阅读并充分理解** [免责申明](#免责申明) 及所涉平台的服务条款等法律相关信息；其中「网页版账号」功能可能违反第三方平台服务条款，不接受条款请勿使用该功能。
+
 支持两种运行模式：
 - **桌面模式** — 基于 Tauri 2 的桌面应用，内嵌 HTTP 服务器 + 系统托盘 + IPC 命令
 - **Web 模式** — 纯 actix-web 服务器（`vortex-server`），不依赖 Tauri，适合服务器部署
@@ -18,10 +20,13 @@ Vortex 是一个基于 **Rust (Actix-Web) + Vue 3** 构建的 AI 网关应用。
 - **OpenAI / Anthropic 双协议入口** — `/v1/chat/completions` 与 `/v1/messages` 两套端点，无需修改客户端代码，直接替换 `base_url` 即可
 - **本地 HTTPS 双端口** — 设置页一键开启，在保留 HTTP 的同时另开 HTTPS 端口（默认 10169）；首次启用自动生成本地 CA 与服务器证书（SAN 含 localhost / 127.0.0.1 / ::1 / 主机名），macOS 自动装入钥匙串，支持外部证书覆盖；HTTPS 端口被占用时自动降级仅 HTTP，不影响主服务
 - **智能体一键接入** — 自动检测本机已安装的 AI 编程智能体（Claude Code、Codex、OpenCode、Qwen Code 等 12 种），预览将要写入的配置变更后一键接入 Vortex 网关；写入前自动备份，支持一键恢复到配置前状态
+- **网页版账号转 API** — 「网页版账号」页拉起本地 Chrome 完成平台登录（豆包 / DeepSeek / 通义千问 / Kimi / ChatGPT / Claude，扫码 / 验证码均可），登录凭证自动导入网关并持久化，重启免登录；网页版对话被包装成标准 API，与 API 提供商一样参与路由、熔断与统计，模型名即平台名（如 `doubao`）。**该功能可能违反相关平台的服务条款，使用前请务必阅读 [免责申明](#免责申明)**
 - **跨格式转换** — 自动将 Anthropic/Gemini 请求和响应转换为 OpenAI 格式，包括 SSE 流式响应
 - **弹性机制** — 连接级与模型级双层熔断器 + 指数退避重试：连接连续失败 5 次熔断 60 秒，单个模型连续失败 3 次独立熔断（下线/无权限等确定性故障更快隔离）；熔断期间下游收到 503 与友好提示，冷却后自动探测恢复
 - **上游错误透传** — 上游返回 4xx/5xx 时原样透传状态码与错误响应体，客户端可直接看到上游真实报错，便于排查
+- **运行日志落盘** — 日志双写终端与数据目录 `logs/vortex.log`，单文件超 5MB 自动截断；设置页「存储维护」展示运行日志与数据库占用，一键清空日志、执行数据库预算清理（VACUUM 收缩文件）
 - **模型映射 + 故障转移** — 自定义虚拟模型名映射到多个真实模型目标，按优先级自动故障转移，免费额度组成"永动机"
+- **auto 自动路由** — 模型名填 `auto` 即可：网关按连接优先级与历史成功率（bandit）排序所有可用模型，单个模型失败自动切换下一个，直到成功返回内容；整体时间预算 15 秒，粘性会话优先复用上次成功的模型；失败模型立即标记熔断，10 分钟内直接跳过不再尝试；不包含网页版账号模型（网页版模型可通过显式模型名或模型映射使用）
 - **模型自动归纳** — 按模型家族自动将同族模型（如 gpt-4o、gpt-4o-2024-08-06、glm-5.3-flash:free）归纳为虚拟名，单模型家族同样生成同名别名保证全覆盖；开启「隐藏已映射的真实模型」后 `/v1/models` 仅输出虚拟模型列表，减少使用者选择负担
 - **安全存储** — API 密钥使用 AES-256-GCM 加密存储
 - **访问令牌开箱即用** — 首次启动默认开启 Token 鉴权并自动生成访问令牌，接入指南页一键复制并代入示例代码；多数客户端要求 API Key 字段非空才能发起请求，无需额外配置即可接入
@@ -143,6 +148,7 @@ curl http://localhost:10168/v1/chat/completions \
 |------|------|------|
 | `provider/model` | `openai/gpt-4o` | 显式指定提供商和模型 |
 | `alias-model` | `ds-deepseek-chat` | 使用提供商别名前缀 |
+| `auto` | `auto` | 自动路由：按优先级与历史成功率排序所有可用模型（不含网页版账号模型），单个失败自动切换下一个，直到某个模型成功返回内容；整体时间预算最高 15 秒，预算内未成功则返回最后错误 |
 
 ## 内置提供商
 
@@ -167,7 +173,15 @@ curl http://localhost:10168/v1/chat/completions \
 | 火山方舟 Code Plan | `vc` | openai | llm | - |
 | 火山方舟 Agent Plan | `va` | openai | llm | - |
 | 商汤日日新 | `sn` | openai | llm | - |
+| 豆包 (网页版) | `db` | web | llm | ✓ (网页版额度) |
+| DeepSeek (网页版) | `wd` | web | llm | ✓ (网页版额度) |
+| 千问 (网页版) | `wq` | web | llm | ✓ (网页版额度) |
+| Kimi (网页版) | `wk` | web | llm | ✓ (网页版额度) |
+| ChatGPT (网页版) | `wg` | web | llm | ✓ (网页版额度) |
+| Claude (网页版) | `wc` | web | llm | ✓ (网页版额度) |
 | Custom | `cx` | openai | llm, embedding | - |
+
+> **网页版提供商**（API 格式为 `web`）：通过本地浏览器（CDP）登录平台网页版后，把网页版对话包装成 API，不走官方 API 端点。授权入口在「网页版账号」页，详见 [免责申明](#免责申明)。
 
 ## 配置
 
@@ -218,6 +232,7 @@ curl http://localhost:10168/v1/chat/completions \
 | 接入指南 | `/guide` | 客户端接入示例与模型指定方式，展示 HTTP / HTTPS 双协议地址与访问令牌（均可复制）并代入示例代码；下方自动检测本机 AI 编程智能体并支持一键接入 / 恢复配置 |
 | 实时路由 | `/live-routing` | 网关拓扑、Base URL、API 端点一览（默认首页） |
 | 订阅 | `/subscriptions` | 提供商连接管理 —— 添加 API Key、测试连接；含新建 / 自定义 / 编辑子页 |
+| 网页版账号 | `/web-providers` | 网页版平台登录态管理与 CDP 浏览器授权 —— 拉起本地 Chrome 登录后凭证自动导入并持久化，授权成功自动创建对应连接；登录态 30 秒巡检，过期 / 掉登录及时发现 |
 | 模型映射 | `/model-aliases` | 虚拟模型名与多目标故障转移配置 |
 | 免费 Token | `/free-tokens` | 免费额度站点目录 —— 卡片 / 表格双视图、按区域与「是否支持 API」筛选、提交与删除本地推荐 |
 | 请求日志 | `/request-log` | 请求流水与用量明细 |
@@ -269,6 +284,12 @@ curl http://localhost:10168/v1/chat/completions \
 | POST | `/api/agents/apply` | 应用智能体配置 |
 | POST | `/api/agents/restore` | 恢复智能体配置 |
 | GET | `/api/agents/backups` | 列出配置备份 |
+| GET | `/api/web-providers` | 网页版平台列表与登录态（worker 启用状态 + CDP 会话） |
+| POST/GET | `/api/web-providers/{platform}/login/cdp` | 发起 CDP 浏览器授权 / 查询授权进度 |
+| POST | `/api/web-providers/{platform}/login/cdp/finish` | 确认完成登录并收集导入凭证 |
+| POST | `/api/web-providers/{platform}/login/cdp/cancel` | 取消授权 |
+| GET | `/api/web-providers/{platform}/debug` | 平台调试信息 |
+| POST | `/api/web-providers/{platform}/reset` | 重置平台会话 |
 | POST | `/api/chat/cancel` | 取消流式对话 |
 | GET | `/api/health` | 健康检查 |
 
@@ -277,7 +298,7 @@ curl http://localhost:10168/v1/chat/completions \
 ## 技术栈
 
 ### 后端 (Rust)
-- **Workspace 4 crate** — `vortex-store`（数据层）← `vortex-router`（路由引擎）← `vortex-gateway`（HTTP 网关 + services）← `src-tauri`（Tauri 桌面应用）
+- **Workspace 5 crate** — `vortex-store`（数据层）← `vortex-router`（路由引擎）← `vortex-gateway`（HTTP 网关 + services）← `src-tauri`（Tauri 桌面应用）；另含 `ai-web-provider`（网页版平台桥接：CDP 授权 + 浏览器自动化对话，由 `vortex-gateway` 按需调用）
 - Actix-Web 4 — HTTP 服务器（桌面模式内嵌 / Web 模式独立 `vortex-server` binary）
 - rusqlite + r2d2 — SQLite 数据库（WAL 模式，连接池）
 - awc + openssl — 统一 HTTP 客户端（管理链路与上游链路共用，OpenSSL 3 指纹兼容 + HTTP/2）
@@ -306,8 +327,9 @@ vortex/
 ├── crates/                         # Rust workspace crates
 │   ├── vortex-store/               # 数据层 — config / db / encryption / migrations / error
 │   ├── vortex-router/              # 路由引擎 — proxy / providers / routing / translator / context
-│   └── vortex-gateway/             # HTTP 网关 — api / services / agent_integrations / AppState
-│       └── src/bin/vortex-server.rs  # Web 模式独立 binary（不依赖 Tauri）
+│   ├── vortex-gateway/             # HTTP 网关 — api / services / agent_integrations / AppState
+│   │   └── src/bin/vortex-server.rs  # Web 模式独立 binary（不依赖 Tauri）
+│   └── ai-web-provider/            # 网页版平台桥接 — CDP 授权 / cookie 导入 / 浏览器自动化对话（豆包 / DeepSeek / 千问 / Kimi / ChatGPT / Claude）
 ├── src-tauri/                      # Tauri 桌面应用（薄壳）— tauri_cmds 薄包装 + run() + main
 ├── src/                            # 前端源代码 (Vue 3 + TypeScript)
 │   ├── api/                        # 请求层与双通道适配 (client / providers / keys / usage / settings / stats / chat / sync / freeTokens / notifications / system / agents)
@@ -328,7 +350,7 @@ vortex/
 └── src-tauri/Cargo.toml           # Tauri 桌面应用配置
 ```
 
-依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`。Web 项目复用前三个 crate，不需要 `src-tauri`。
+依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`；`ai-web-provider` 由 `vortex-gateway` 按需调用（网页版账号功能）。Web 项目复用前三个 crate，不需要 `src-tauri`。
 
 详细架构参见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 
@@ -374,13 +396,28 @@ open docs/index.html
 python3 -m http.server 8080 --directory docs
 ```
 
-页面结构：Hero → 数据概览 → 接入范围 → 特性 → 界面预览 → 快速开始 → 请求流程 → 下载安装 → FAQ。
+页面结构：Hero → 数据概览 → 接入范围 → 特性 → 界面预览 → 快速开始 → 请求流程 → 下载安装 → FAQ → 免责申明。
 截图位于 `docs/assets/screens/`，取自本机开发实例，更新 UI 后可重新截取替换。
 
 > 下载区的按钮由 `docs/assets/app.js` 在运行时请求 `api.github.com` 解析最新 Release 的产物地址，
 > 静态 HTML 里只放「指向 Releases 页面」的兜底链接 —— 因为安装包文件名带版本号，写死必然过期。
 
 > 官网刻意不逐个列出上游平台的厂商名：站点只讲接入能力（云端 API / 聚合中转 / 本地推理 / 自定义端点）与协议兼容性，具体清单以应用内「订阅」页和本 README 的「内置提供商」表为准，避免站点与注册表脱节。
+
+## 免责申明
+
+Vortex 提供「网页版账号」功能：通过本地浏览器（CDP）登录第三方 AI 平台的**网页版**，收集登录凭证（cookie / session）并保存在本机，把网页版对话包装成 API 供网关调用。
+
+**本应用定位为技术研究项目，仅供技术研究与个人学习使用。个人使用者请在使用前认真阅读并充分理解本申明全部条款，以及所涉平台服务条款等法律相关信息；对条款含义有疑问时，应先咨询专业法律意见再决定是否使用。**以下条款适用于「网页版账号」功能：
+
+1. **仅供技术研究与个人学习**。本功能仅面向技术研究、个人学习与个人效率工具场景，是对「你已经拥有合法账号」的网页会话做本地封装，**不是**任何平台官方 API 的替代品，也不构成平台服务的正式接入方式。
+2. **遵守平台服务条款**。以程序化方式使用网页版会话，可能违反相关平台（含其关联公司）的服务条款（Terms of Service）。用户应在使用前自行阅读并评估所涉及平台的条款；**因违反平台条款引发的一切后果（包括但不限于账号警告、功能限制、封禁），由用户自行承担**。
+3. **账号与数据风险自担**。登录凭证仅保存在本机、不上传任何服务器，但会话行为发生在你的平台账号上，平台可能将非浏览器标准的调用行为识别为异常。请合理控制调用频率与并发，**严禁**用于批量注册、账号出租、额度转售、对外提供商业服务或其他规模化滥用。
+4. **非官方、无关联**。Vortex 是独立开源项目，与 OpenAI、Anthropic、字节跳动（豆包）、DeepSeek、阿里巴巴（通义千问）、月之暗面（Kimi）等任何平台均无关联，未获得其授权、合作或背书；项目中出现的平台名称与商标归各自权利人所有。
+5. **不提供保证**。本软件按「现状」基于 MIT 许可证提供，不对可用性、稳定性、适销性或特定用途适用性作任何明示或默示的保证；对因使用或无法使用本软件（包括「网页版账号」功能）造成的任何直接或间接损失，作者不承担责任。
+6. **合规使用**。你承诺遵守所在司法辖区的适用法律法规及平台规则，不将本软件用于任何违法违规用途。
+
+**如果你不接受上述条款，请勿使用「网页版账号」相关功能（不授权、不调用 `web-*` 提供商即可，其余功能不受影响）；一旦使用，即视为你已充分阅读、理解并同意全部条款。**
 
 ## 许可证
 

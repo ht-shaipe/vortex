@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="nqcPJ49uiK1CoxBCMrcKqA">
 <meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="Fl9pQB7C5bG9kdzBDCSpIc">
 <title>Vortex — 本地 AI 网关，把多家模型聚合成一个 OpenAI / Anthropic 兼容接口</title>
-<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、模型映射故障转移、模型自动归纳、两级熔断重试、上游错误透传、密钥加密、默认开启 Token 鉴权、用量统计与估算、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
+<meta name="description" content="Vortex 是基于 Tauri 2（Rust + Vue 3）的桌面 AI 网关：在本机启动一个 OpenAI 兼容的 API 服务器，统一接入多家云端与本地模型服务，支持 OpenAI 与 Anthropic 双协议入口、网页版账号转 API、模型映射故障转移、模型自动归纳、两级熔断重试、上游错误透传、密钥加密、默认开启 Token 鉴权、用量统计与估算、请求日志、内置对话与自动更新。" data-page-node-id="IUBHm1vrGAJh6mYgz33KAc">
 <meta name="theme-color" content="#0a0a0e" data-page-node-id="g6QswfvEdReIbmAPlfxfCB">
 <meta property="og:title" content="Vortex — 本地 AI 网关" data-page-node-id="YjyhbMF0ADvsr3lgvdDhe7">
 <meta property="og:description" content="把多家 AI 提供商聚合成 OpenAI / Anthropic 兼容接口。Rust 驱动，密钥本地加密，用量一目了然。" data-page-node-id="CKF5IuRYp4vRc2x4afP55e">
@@ -79,12 +79,18 @@
         </div>
 
         <div class="hero-meta" data-page-node-id="3AyRxue92UDXWRdGyDRiDG">
-          <span data-page-node-id="W8oVSrz6hUnIophVf3jZk6">Rust 后端 · Actix-Web</span><span class="sep" data-page-node-id="dyX8pZTu645GklOz6d7Vn4"></span>
+          <span data-page-node-id="W8oVSrz6hUnIophVf3jZk6">Rust 后端 · Actix-Web</span><span class="sep" data-page-node-id="dyX8pZTu645KklOz6d7Vn4"></span>
           <span data-page-node-id="8xDOafomfReJFS7s0SZFPb">Vue 3 管理界面</span><span class="sep" data-page-node-id="T049JTdrqz0BtEaqeaVdZ1"></span>
           <span data-page-node-id="UUpEYcMxGh4zPrzF7GEZpx">AES-256-GCM 本地加密</span><span class="sep" data-page-node-id="RsClNhTalLPtF8I5ZHKCCD"></span>
           <span data-page-node-id="DQHGKx1FbT47nIQb2pCYgH">自动更新 · 内置对话</span><span class="sep" data-page-node-id="RsClNhTalLPtF8I5ZHKCCD2"></span>
           <span data-page-node-id="DQHGKx1FbT47nIQb2pCYgH2">桌面 + Web 部署</span>
         </div>
+
+        <p style="margin-top:16px;font-size:12.5px;line-height:1.7;color:var(--ink-4)" data-page-node-id="heroDisclaimerNote">
+          本项目为<strong style="color:var(--ink-3)">技术研究项目</strong>，仅供技术研究与个人学习使用。个人使用者请在使用前认真阅读
+          <a href="#disclaimer" style="color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px">免责申明</a>
+          及所涉平台服务条款等法律相关信息。
+        </p>
       </div>
 
       <!-- 终端演示 -->
@@ -155,6 +161,12 @@
       </div>
 
       <div class="card scope">
+        <span class="scope-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></span>
+        <h4>网页版账号</h4>
+        <p>本地浏览器登录平台网页版后，网页对话也能包装成 API 参与路由。<a href="#disclaimer" style="color:var(--accent-ink)">可能违反平台条款，详见免责申明</a>。</p>
+      </div>
+
+      <div class="card scope">
         <span class="scope-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V3M15 7V3"/><path d="M7 7h10v4a5 5 0 0 1-10 0V7z"/><path d="M12 16v5"/></svg></span>
         <h4>自定义端点</h4>
         <p>内置 Custom 类型，任何 OpenAI 兼容端点都能加，一样参与路由、熔断与统计。</p>
@@ -189,6 +201,12 @@
         <span class="feat-ico" data-page-node-id="featAgentIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featAgentSvg"><rect x="4" y="4" width="16" height="16" rx="2" data-page-node-id="featAgentRect"/><path d="M9 9h6M9 13h6M9 17h3" data-page-node-id="featAgentLines"/></svg></span>
         <h3 data-page-node-id="featAgentTitle">智能体一键接入</h3>
         <p data-page-node-id="featAgentDesc">自动检测本机已装的 AI 编程智能体（Claude Code、Codex、OpenCode 等），预览配置变更后一键写入，写入前自动备份、可随时恢复。</p>
+      </div>
+
+      <div class="card feat reveal" data-page-node-id="featWebCard">
+        <span class="feat-ico" data-page-node-id="featWebIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" data-page-node-id="featWebSvg"><rect x="3" y="4" width="18" height="13" rx="2" data-page-node-id="featWebRect"/><path d="M8 21h8M12 17v4" data-page-node-id="featWebStand"/><path d="M8.5 10.5l2.3 2.3 4.7-4.6" data-page-node-id="featWebCheck"/></svg></span>
+        <h3 data-page-node-id="featWebTitle">网页版账号转 API</h3>
+        <p data-page-node-id="featWebDesc">拉起本地 Chrome 登录平台网页版（扫码 / 验证码均可），凭证自动导入并持久化、重启免登录；网页对话包装成标准 API，与 API 提供商一同参与路由、熔断与统计。<a href="#disclaimer" style="color:var(--accent-ink)">使用前请阅读免责申明</a>。</p>
       </div>
 
       <div class="card feat reveal" data-page-node-id="featAliasCard">
@@ -560,6 +578,13 @@ for await (const chunk of stream) {
         </div>
       </details>
 
+      <details class="qa" data-page-node-id="faqWebQa">
+        <summary data-page-node-id="faqWebSummary">「网页版账号」是什么？有什么风险？</summary>
+        <div class="qa-body" data-page-node-id="faqWebBody">
+          「网页版账号」功能会拉起本地 Chrome，让你登录 AI 平台的网页版（扫码 / 验证码均可），登录凭证自动导入网关并保存在本机、重启免登录，之后网页版对话即可像 API 一样调用（模型名即平台名，如 <code>doubao</code>）。<strong>需要特别注意的是</strong>：以程序化方式使用网页版会话，可能违反相关平台的服务条款，存在账号被限制或封禁的风险，因此该功能仅供技术研究与个人学习使用，请合理控制调用频率，勿用于批量注册、额度转售或对外提供服务 —— 完整条款见页面底部<a href="#disclaimer" style="color:var(--accent-ink)">免责申明</a>。
+        </div>
+      </details>
+
       <details class="qa" data-page-node-id="uCY4XakytTieQKrtcYW1i9">
         <summary data-page-node-id="tm5lQDzChwOKRwezMSqBq5">我的 API Key 会被上传吗？</summary>
         <div class="qa-body" data-page-node-id="sxQ7iJYNBEbG2hMvgsdg5W">
@@ -671,6 +696,59 @@ for await (const chunk of stream) {
   </div>
 </section>
 
+<!-- ========== 免责申明 ========== -->
+<section class="section section--tight" id="disclaimer" data-page-node-id="disclaimerSection">
+  <div class="container" data-page-node-id="disclaimerContainer">
+    <div class="sec-head reveal" data-page-node-id="disclaimerHead">
+      <span class="eyebrow" data-page-node-id="disclaimerEyebrow"><span class="dot" data-page-node-id="disclaimerDot"></span>Disclaimer</span>
+      <h2 class="sec-title" data-page-node-id="disclaimerTitle">免责申明</h2>
+      <p class="sec-sub" data-page-node-id="disclaimerSub">Vortex 定位为<strong>技术研究项目</strong>，仅供技术研究与个人学习使用。「网页版账号」功能通过本地浏览器（CDP）登录第三方 AI 平台的网页版，收集登录凭证并保存在本机，把网页版对话包装成 API 供网关调用。个人使用者请在使用前认真阅读并充分理解以下条款，以及所涉平台服务条款等法律相关信息。</p>
+    </div>
+
+    <div class="faq reveal" data-page-node-id="disclaimerList">
+      <details class="qa" open data-page-node-id="disclaimerItem1">
+        <summary data-page-node-id="disclaimerSummary1">仅供技术研究与个人学习</summary>
+        <div class="qa-body" data-page-node-id="disclaimerBody1">
+          本应用定位为技术研究项目。本功能仅面向技术研究、个人学习与个人效率工具场景，是对「你已经拥有合法账号」的网页会话做本地封装，<strong>不是</strong>任何平台官方 API 的替代品，也不构成平台服务的正式接入方式。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="disclaimerItem2">
+        <summary data-page-node-id="disclaimerSummary2">遵守平台服务条款，风险自担</summary>
+        <div class="qa-body" data-page-node-id="disclaimerBody2">
+          以程序化方式使用网页版会话，可能违反相关平台（含其关联公司）的服务条款（Terms of Service）。你应在使用前自行阅读并评估所涉及平台的条款；<strong>因违反平台条款引发的一切后果（包括但不限于账号警告、功能限制、封禁），由你自行承担</strong>。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="disclaimerItem3">
+        <summary data-page-node-id="disclaimerSummary3">合理使用，严禁滥用</summary>
+        <div class="qa-body" data-page-node-id="disclaimerBody3">
+          登录凭证（cookie / session）仅保存在你的本机、不上传任何服务器，但会话行为发生在你的平台账号上，平台可能将非浏览器标准的调用行为识别为异常。请合理控制调用频率与并发；<strong>严禁</strong>用于批量注册、账号出租、额度转售、对外提供商业服务或其他规模化滥用。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="disclaimerItem4">
+        <summary data-page-node-id="disclaimerSummary4">非官方项目，与平台无关联</summary>
+        <div class="qa-body" data-page-node-id="disclaimerBody4">
+          Vortex 是独立开源项目，与 OpenAI、Anthropic、字节跳动（豆包）、DeepSeek、阿里巴巴（通义千问）、月之暗面（Kimi）等任何平台均无关联，未获得其授权、合作或背书；项目中出现的平台名称与商标归各自权利人所有。
+        </div>
+      </details>
+
+      <details class="qa" data-page-node-id="disclaimerItem5">
+        <summary data-page-node-id="disclaimerSummary5">不提供任何保证</summary>
+        <div class="qa-body" data-page-node-id="disclaimerBody5">
+          本软件按「现状」基于 MIT 许可证提供，不对可用性、稳定性、适售性或特定用途适用性作任何明示或默示的保证；对因使用或无法使用本软件（包括「网页版账号」功能）造成的任何直接或间接损失，作者不承担责任。你同时承诺遵守所在司法辖区的适用法律法规及平台规则，不将本软件用于任何违法违规用途。
+        </div>
+      </details>
+
+      <p style="margin-top:18px;font-size:13px;line-height:1.8;color:var(--ink-3)" data-page-node-id="disclaimerFootNote">
+        <strong>如果你不接受上述条款，请勿使用「网页版账号」相关功能</strong>（不授权、不调用 <code>web-*</code> 提供商即可，Vortex 其余功能不受影响）；一旦使用，即视为你已充分阅读、理解并同意全部条款。个人使用者应在使用前认真阅读并充分理解本申明及所涉平台服务条款等法律相关信息。完整文本同步维护于
+        <a href="https://github.com/ht-shaipe/vortex/blob/main/README.md#免责申明" target="_blank" rel="noopener" style="color:var(--accent-ink)">README 的「免责申明」章节</a>。
+      </p>
+    </div>
+  </div>
+</section>
+
 <!-- ========== 页脚 ========== -->
 <footer class="foot" data-page-node-id="ZVEZIziftV7fZ9RyvvaF1B">
   <div class="container" data-page-node-id="VGDST2ShacPAjPH4rfUWv3">
@@ -694,6 +772,7 @@ for await (const chunk of stream) {
           <a href="#preview" data-page-node-id="tsx8x6dxnjzvCViiUzlmPS">界面预览</a>
           <a href="#download">下载</a>
           <a href="#faq" data-page-node-id="EPGNHBBut9LpNud8T2H1P5">常见问题</a>
+          <a href="#disclaimer">免责申明</a>
         </div>
       </div>
 
@@ -720,7 +799,7 @@ for await (const chunk of stream) {
 
     <div class="foot-bottom" data-page-node-id="AltKUxUkDI0kuHtpcwXyZj">
       <span data-page-node-id="OF3pexaIWN7v5FEdBFghMT">© 2026 Vortex · MIT License</span>
-      <span data-page-node-id="6pHyOBQ7KIGBx1OMJvq6I3">本站为 Vortex 项目官网 · 应用数据全部保存在你的本机</span>
+      <span data-page-node-id="6pHyOBQ7KIGBx1OMJvq6I3">本站为 Vortex 项目官网 · 应用数据全部保存在你的本机 · 网页版账号功能使用前请阅读<a href="#disclaimer" style="color:var(--accent-ink)">免责申明</a></span>
     </div>
   </div>
 </footer>

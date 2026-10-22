@@ -35,12 +35,11 @@ use vortex_gateway::{create_app_state, start_api_server, AppState};
 use vortex_store::config::AppConfig;
 
 fn main() {
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(vortex_gateway::DEFAULT_LOG_FILTER),
-    )
-    .try_init();
-
     let cfg = AppConfig::load();
+
+    // 日志：默认过滤器 + stderr 与数据目录 logs/vortex.log 双写（超限自动截断）
+    vortex_gateway::logging::init_logging(&cfg.data_dir);
+
     let port = cfg.port;
 
     log::info!("Vortex Gateway 启动中 — 端口 {port}");

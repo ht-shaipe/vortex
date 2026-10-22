@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod agent_integrations;
+pub mod logging;
 pub mod services;
 pub mod tls;
 
@@ -253,6 +254,7 @@ pub fn start_api_server(
                             .route("/model-catalog/cleanup", web::post().to(api::management::model_catalog::cleanup_catalog))
                             .route("/maintenance/storage", web::get().to(api::management::maintenance::storage_info))
                             .route("/maintenance/storage/cleanup", web::post().to(api::management::maintenance::storage_cleanup))
+                            .route("/maintenance/log/clear", web::post().to(api::management::maintenance::log_clear))
                             .route("/latency-stats", web::get().to(api::management::latency_stats::latency_stats))
                             .route("/playground", web::post().to(api::management::playground::playground))
                             .route("/cost-analysis", web::get().to(api::management::cost_analysis::cost_analysis))

@@ -204,10 +204,10 @@
           </div>
         </div>
 
-        <!-- 存储维护：大表限额清理 -->
+        <!-- 存储维护：大表限额清理 + 运行日志 -->
         <div class="card section mb-[var(--gap-lg)]">
           <div class="card-head">
-            <div><div class="card-title">存储维护</div><div class="card-sub">统计数据永久保留；压缩存档与请求日志超过预算自动清理（每 6 小时巡检）</div></div>
+            <div><div class="card-title">存储维护</div><div class="card-sub">统计数据永久保留；压缩存档与请求日志超过预算自动清理（每 6 小时巡检）；运行日志落盘并超限自动截断</div></div>
           </div>
           <div class="card-body">
             <div class="setting-row">
@@ -225,6 +225,19 @@
                 <el-icon v-if="storageBusy" class="spin" :size="13"><Loading /></el-icon>
                 <el-icon v-else :size="13"><Delete /></el-icon>
                 {{ storageBusy ? '清理中…' : '立即清理' }}
+              </button>
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">运行日志</div>
+                <div class="setting-desc">
+                  当前 {{ storageLoading ? '…' : fmtSize(storage.logFileBytes) }} / 上限 {{ fmtSize(storage.logMaxBytes) }}（超限自动截断）· 数据目录 logs/vortex.log
+                </div>
+              </div>
+              <button type="button" class="btn" :disabled="logBusy" @click="clearLog">
+                <el-icon v-if="logBusy" class="spin" :size="13"><Loading /></el-icon>
+                <el-icon v-else :size="13"><Delete /></el-icon>
+                {{ logBusy ? '清空中…' : '清空日志' }}
               </button>
             </div>
           </div>
@@ -536,12 +549,15 @@ watch(active, (v) => {
 // ── 存储维护（大表限额清理） ──
 
 /** 存储占用与预算（高级设置页卡片） */
-const storage = reactive<{ budgetMb: number; stats: StorageStats | null }>({
+const storage = reactive<{ budgetMb: number; stats: StorageStats | null; logFileBytes: number; logMaxBytes: number }>({
   budgetMb: 200,
   stats: null,
+  logFileBytes: 0,
+  logMaxBytes: 5 * 1024 * 1024,
 })
 const storageLoading = ref(false)
 const storageBusy = ref(false)
+const logBusy = ref(false)
 
 /** 字节数人类可读化 */
 function fmtSize(bytes: number): string {
@@ -558,6 +574,8 @@ async function loadStorage() {
     const r = await maintenanceApi.info()
     storage.budgetMb = r.budgetMb
     storage.stats = r.stats
+    storage.logFileBytes = r.logFileBytes
+    storage.logMaxBytes = r.logMaxBytes
   } catch {
     // 静默：老版本网关无此端点时卡片显示预算默认值
   } finally {
@@ -596,6 +614,27 @@ async function runStorageCleanup() {
     ElMessage.error(`存储清理失败：${msg}`)
   } finally {
     storageBusy.value = false
+  }
+}
+
+/** 清空运行日志：确认 → 执行 → 刷新统计 */
+async function clearLog() {
+  const proceed = await ElMessageBox.confirm(
+    `将清空运行日志（当前 ${fmtSize(storage.logFileBytes)}），不影响数据库与其他数据。`,
+    '清空运行日志',
+    { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' },
+  ).then(() => true).catch(() => false)
+  if (!proceed) return
+  logBusy.value = true
+  try {
+    const r = await maintenanceApi.clearLog()
+    ElMessage.success(`运行日志已清空（释放 ${fmtSize(r.beforeBytes)}）`)
+    await loadStorage()
+  } catch (e: any) {
+    const msg = e?.response?.data?.error || e?.message || '清空失败'
+    ElMessage.error(`清空运行日志失败：${msg}`)
+  } finally {
+    logBusy.value = false
   }
 }
 </script>

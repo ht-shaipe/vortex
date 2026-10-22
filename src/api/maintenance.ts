@@ -29,14 +29,23 @@ export interface StorageCleanupReport {
 }
 
 export const maintenanceApi = {
-  /** 当前存储占用与预算配置 */
+  /** 当前存储占用与预算配置（含运行日志文件大小） */
   info: () => api.get('/maintenance/storage').then(r => r.data as {
     stats: StorageStats
     budgetMb: number
+    /** 运行日志文件当前大小（字节） */
+    logFileBytes: number
+    /** 运行日志文件大小上限（字节，超限自动截断） */
+    logMaxBytes: number
   }),
   /** 执行存储预算清理。先 dryRun=true 预览，确认后传 false 执行 */
   cleanup: (dryRun: boolean) => api.post('/maintenance/storage/cleanup', { dryRun }).then(r => r.data as {
     budgetMb: number
     report: StorageCleanupReport
+  }),
+  /** 清空运行日志文件，返回清理前后大小（字节） */
+  clearLog: () => api.post('/maintenance/log/clear').then(r => r.data as {
+    beforeBytes: number
+    afterBytes: number
   }),
 }

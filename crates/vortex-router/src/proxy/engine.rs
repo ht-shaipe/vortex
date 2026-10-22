@@ -280,8 +280,8 @@ impl ProxyEngine {
             });
         }
 
-        // auto 模型：按优先级遍历所有活跃连接与模型
-        if request.model == "auto" {
+        // auto 模型：按优先级遍历所有活跃连接与模型（大小写不敏感，兼容 Auto / AUTO 等写法）
+        if request.model.trim().eq_ignore_ascii_case("auto") {
             return self.handle_auto_route(state, client, &conn, &request, start).await;
         }
 
@@ -494,7 +494,11 @@ impl ProxyEngine {
     ///
     /// 当请求模型为 `auto` 时，查询所有活跃连接（按优先级降序），
     /// 遍历每个连接的模型列表，检查熔断器状态后依次尝试。
-    /// 失败的模型使用更长的冷静期（300秒）以避免反复命中故障目标。
+    /// 第一个模型失败自动切换下一个，直到某个模型成功返回内容；
+    /// 整体时间预算自请求开始最高 15 秒（剩余不足一次尝试保底时间时
+    /// 不再启动新尝试，单次执行以剩余预算为超时上限）。
+    /// 失败的模型使用 auto 专用熔断器标记：单次失败即熔断，
+    /// 冷静期 600 秒（10 分钟）内直接跳过，冷却后半开探测恢复。
     ///
     /// # 参数
     /// - `state`：应用全局状态
@@ -510,10 +514,28 @@ impl ProxyEngine {
         request: &ProxyRequest,
         start: Instant,
     ) -> Result<ProxyOutput> {
-        // 查询所有活跃连接，已按 priority DESC 排序
-        let all_connections = db_providers::list_all_active(conn, &state.encryption_key())?;
+        // auto 整体时间预算：自请求开始最高 15 秒，
+        // 预算内按候选顺序尝试，预算耗尽返回最后错误
+        const AUTO_BUDGET_SECS: u64 = 15;
+        // 预算剩余不足一次尝试的保底时间时不再启动新尝试
+        const MIN_ATTEMPT_SECS: u64 = 2;
+        let deadline = start + std::time::Duration::from_secs(AUTO_BUDGET_SECS);
+
+        // 查询所有活跃连接（已按 priority DESC 排序），排除网页版账号（web 格式）连接：
+        // 网页会话有副作用（重试会往网页会话重复提问）、响应慢且多为登录态/风控问题，
+        // 不参与 auto 自动路由；网页版模型仍可通过显式模型名（如 doubao）或模型映射使用
+        let all_connections: Vec<_> = db_providers::list_all_active(conn, &state.encryption_key())?
+            .into_iter()
+            .filter(|c| {
+                state.provider_registry().get(&c.provider)
+                    .map(|def| def.api_format != "web")
+                    .unwrap_or(true) // 未注册 provider 交由后续候选循环跳过并告警
+            })
+            .collect();
         if all_connections.is_empty() {
-            return Err(AppError::Routing("No active connections for auto routing".into()));
+            return Err(AppError::Routing(
+                "No active connections for auto routing (web providers excluded)".into(),
+            ));
         }
 
         // 读取 auto 路由策略：model-first（模型优先）或 provider-first（提供方优先，默认）
@@ -620,12 +642,14 @@ impl ProxyEngine {
                 }
                 log::info!("auto 粘性：优先尝试上次成功的 {}/{}/{}", last_provider, pconn.name, last_model);
                 let result = self
-                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start, None)
+                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start, Some(deadline))
                     .await;
                 match result {
                     Ok(output) => {
                         let latency_ms = start.elapsed().as_millis() as f64;
                         state.bandit_router().record_success(&pconn.provider, model.as_str(), Some(&pconn.id), latency_ms);
+                        // 成功回写 auto 熔断器：半开态连续成功 3 次完全恢复
+                        state.resilience_manager().record_success(&auto_model_breaker);
                         log::info!("auto 粘性：成功 {}/{}/{}", last_provider, pconn.name, last_model);
                         return Ok(output);
                     }
@@ -633,7 +657,8 @@ impl ProxyEngine {
                         log::warn!("auto 粘性：{}/{}/{} 失败: {}，回退到 bandit 排序", last_provider, pconn.name, last_model, e);
                         state.bandit_router().clear_last_success();
                         state.bandit_router().record_failure(&pconn.provider, model.as_str(), Some(&pconn.id));
-                        state.resilience_manager().record_failure_cfg(&auto_model_breaker, 2, 300);
+                        // 粘性候选失败同样标记：单次失败即熔断，10 分钟内直接跳过
+                        state.resilience_manager().record_failure_cfg(&auto_model_breaker, 1, 600);
                         break;
                     }
                 }
@@ -672,6 +697,16 @@ impl ProxyEngine {
         for &idx in &ranked_indices {
             let (ci, model) = &candidates[idx];
             let connection = &all_connections[*ci];
+
+            // 时间预算检查：剩余不足一次尝试的保底时间时停止尝试
+            if Instant::now() + std::time::Duration::from_secs(MIN_ATTEMPT_SECS) >= deadline {
+                log::warn!(
+                    "auto: 时间预算（{}s）即将耗尽，停止尝试剩余候选",
+                    AUTO_BUDGET_SECS
+                );
+                break;
+            }
+
             // 获取提供商定义
             let Some(provider_def) = state.provider_registry().get(&connection.provider) else {
                 log::warn!("auto: provider '{}' 未注册，跳过连接 {}", connection.provider, connection.name);
@@ -686,7 +721,7 @@ impl ProxyEngine {
                 continue;
             }
 
-            // 模型级熔断器检查（auto 专用，冷静期 300 秒）
+            // 模型级熔断器检查（auto 专用，单次失败即熔断，冷静期 600 秒）
             let auto_model_breaker = format!("auto:{}:{}:{}", provider_def.id, connection.id, model);
             if !state.resilience_manager().is_available(&auto_model_breaker) {
                 log::warn!("auto: 模型熔断器打开，跳过 {}/{}/{}", provider_def.id, connection.name, model);
@@ -698,7 +733,7 @@ impl ProxyEngine {
                 provider_def.id, model, connection.name, connection.id, connection.priority);
 
             let result = self
-                .handle_single_with_retry(state, client, conn, request, provider_def, connection, model.as_str(), start, None)
+                .handle_single_with_retry(state, client, conn, request, provider_def, connection, model.as_str(), start, Some(deadline))
                 .await;
 
             match result {
@@ -707,6 +742,8 @@ impl ProxyEngine {
                     state.bandit_router().record_success(
                         &connection.provider, model.as_str(), Some(&connection.id), latency_ms,
                     );
+                    // 成功回写 auto 熔断器：半开态连续成功 3 次完全恢复
+                    state.resilience_manager().record_success(&auto_model_breaker);
                     log::info!("auto: 成功 {}/{}/{}", provider_def.id, connection.name, model);
                     return Ok(output);
                 }
@@ -745,25 +782,28 @@ impl ProxyEngine {
                     };
                     let _ = db_usage::record(conn, &entry);
 
-                    // 模型级熔断：auto 专用，冷静期 300 秒（比普通模型级 60 秒更长）
+                    // 模型级熔断：auto 专用，单次失败即熔断、冷静期 600 秒（10 分钟，比普通模型级 60 秒更长）
                     if let AppError::CircuitOpen(ref name) = e {
                         last_circuit = Some(name.clone());
                     } else {
-                        // 非熔断错误也记录到 auto 专用熔断器，冷静期 300 秒
-                        state.resilience_manager().record_failure_cfg(&auto_model_breaker, 2, 300);
+                        // 非熔断错误也记录到 auto 专用熔断器：单次失败即标记，10 分钟内直接跳过
+                        state.resilience_manager().record_failure_cfg(&auto_model_breaker, 1, 600);
                         last_err = Some(e);
                     }
                 }
             }
         }
 
-        // 所有候选均失败
+        // 所有候选均失败或时间预算耗尽
         Err(if let Some(e) = last_err {
             e
         } else if let Some(name) = last_circuit {
             AppError::CircuitOpen(name)
         } else {
-            AppError::Routing("All candidates failed for auto routing".into())
+            AppError::Routing(format!(
+                "All candidates failed for auto routing (budget {}s)",
+                AUTO_BUDGET_SECS
+            ))
         })
     }
 
@@ -788,6 +828,8 @@ impl ProxyEngine {
     /// 上游错误直接抛回，而是后台遍历其余候选（bandit 排序 + 占用避让），
     /// 成功后直接返回结果。10 秒预算耗尽或候选耗尽时放弃，由调用方返回
     /// 原始错误（比"所有候选失败"更有排查价值）。
+    /// 与 auto 路由一致，排除网页版账号（web 格式）连接：网页会话响应慢，
+    /// 10 秒转移预算内大概率超时，避免烧光紧急转移预算。
     // 各参数承担独立职责（状态/客户端/连接/请求/失败目标/会话），拆分结构体收益有限。
     #[allow(clippy::too_many_arguments)]
     async fn handle_emergency_failover(
@@ -807,8 +849,16 @@ impl ProxyEngine {
         const MIN_ATTEMPT_SECS: u64 = 2;
         let deadline = Instant::now() + std::time::Duration::from_secs(FAILOVER_BUDGET_SECS);
 
-        // 收集所有活跃连接的全部模型候选，排除刚失败过的组合
-        let all_connections = db_providers::list_all_active(conn, &state.encryption_key())?;
+        // 收集所有活跃连接的全部模型候选，排除刚失败过的组合；
+        // 排除网页版账号（web 格式）连接，避免慢速网页会话烧光 10 秒转移预算
+        let all_connections: Vec<_> = db_providers::list_all_active(conn, &state.encryption_key())?
+            .into_iter()
+            .filter(|c| {
+                state.provider_registry().get(&c.provider)
+                    .map(|def| def.api_format != "web")
+                    .unwrap_or(true) // 未注册 provider 交由后续循环跳过
+            })
+            .collect();
         let mut candidates: Vec<(usize, String)> = Vec::new();
         for (ci, connection) in all_connections.iter().enumerate() {
             let models: Vec<String> = match &connection.models {
@@ -1094,7 +1144,39 @@ impl ProxyEngine {
                 let _ = db_rate_limits::record_usage(&c, &cb_provider_id, &cb_model, Some(&cb_conn), total_tokens);
             });
 
-            match executor.execute(client, request, def, connection, model, Some(usage_cb)).await {
+            // 时间预算封顶：传入 deadline（auto 路由 15s / 紧急故障转移 10s）时，
+            // 单次上游执行以剩余预算为超时上限，防止首字节 60s 超时拖垮整体预算；
+            // deadline 为 None（常规路由）时行为不变
+            let execute_fut = executor.execute(client, request, def, connection, model, Some(usage_cb));
+            let exec_result = match deadline {
+                Some(d) => {
+                    let remaining = d.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        last_err = Some(AppError::Routing("time budget exhausted".into()));
+                        break;
+                    }
+                    match tokio::time::timeout(remaining, execute_fut).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            log::warn!(
+                                "时间预算耗尽：{}/{}（连接 {}）本次尝试被截断（上限 {:.1}s）",
+                                def.id,
+                                model,
+                                connection.id,
+                                remaining.as_secs_f32()
+                            );
+                            last_err = Some(AppError::Provider(format!(
+                                "上游响应超出剩余时间预算（{:.1}s）",
+                                remaining.as_secs_f32()
+                            )));
+                            break;
+                        }
+                    }
+                }
+                None => execute_fut.await,
+            };
+
+            match exec_result {
                 Ok(ExecutorOutput::Json(body)) => {
                     // 非流式成功：提取用量、记录成功、写入用量条目
                     let extracted = extract_usage_from_response(&body, def.api_format.as_str());
@@ -1187,8 +1269,14 @@ impl ProxyEngine {
                         return Err(AppError::Upstream { status: status_code, body });
                     }
 
-                    // 可重试：指数退避等待后继续
+                    // 可重试：指数退避等待后继续（剩余预算不足"等待+重试"时不再等待）
                     let delay = self.retry_policy.delay_for_attempt(attempt);
+                    if let Some(d) = deadline
+                        && Instant::now() + delay >= d
+                    {
+                        log::warn!("剩余时间预算不足退避重试：{}/{}，停止重试", def.id, model);
+                        break;
+                    }
                     tokio::time::sleep(delay).await;
                     last_err = Some(AppError::Upstream { status: status_code, body });
                 }
@@ -1211,8 +1299,15 @@ impl ProxyEngine {
                     if attempt >= max_attempts || !self.retry_policy.should_retry(attempt, None) {
                         return Err(e);
                     }
-                    // 指数退避等待后继续
+                    // 剩余预算不足"等待+重试"时不再等待，保证不超出整体时间预算
                     let delay = self.retry_policy.delay_for_attempt(attempt);
+                    if let Some(d) = deadline
+                        && Instant::now() + delay >= d
+                    {
+                        log::warn!("剩余时间预算不足退避重试：{}/{}，停止重试", def.id, model);
+                        break;
+                    }
+                    // 指数退避等待后继续
                     tokio::time::sleep(delay).await;
                     last_err = Some(e);
                 }

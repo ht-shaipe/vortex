@@ -7,7 +7,7 @@ Vortex 是一个 AI 网关应用，后端使用 **Rust**（Actix-Web + SQLite）
 - **桌面模式**（`src-tauri`）— 基于 **Tauri 2** 的桌面应用，内嵌 HTTP 服务器 + 系统托盘 + IPC 命令
 - **Web 模式**（`vortex-server`）— 纯 actix-web 服务器，不依赖 Tauri，适合服务器部署
 
-后端 Rust 代码按功能拆分为 4 个 crate（依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`），核心层可独立复用于 Web 项目。
+后端 Rust 代码按功能拆分为 5 个 crate（依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`；`ai-web-provider` 由 `vortex-gateway` 按需调用），核心层可独立复用于 Web 项目。
 
 ## Crate 结构
 
@@ -16,8 +16,9 @@ vortex/
 ├── crates/
 │   ├── vortex-store/       # 数据层：SQLite、配置、加密、错误
 │   ├── vortex-router/      # 路由层：代理引擎、提供商注册表、弹性路由、格式转换
-│   └── vortex-gateway/     # 网关层：HTTP API 服务器、services、智能体集成
-│       └── src/bin/vortex-server.rs  # 独立 Web 服务器入口
+│   ├── vortex-gateway/     # 网关层：HTTP API 服务器、services、智能体集成
+│   │   └── src/bin/vortex-server.rs  # 独立 Web 服务器入口
+│   └── ai-web-provider/    # 网页版平台桥接：CDP 授权、cookie 导入、浏览器自动化对话
 └── src-tauri/              # 桌面应用：Tauri IPC 命令（薄包装）、托盘、窗口
 ```
 
@@ -26,6 +27,7 @@ vortex/
 | `vortex-store` | 数据库（r2d2 连接池 + 18 个迁移）、配置加载、AES-256-GCM 加密、错误类型 | ✓ |
 | `vortex-router` | 代理引擎（ProxyEngine）、提供商注册表、熔断器/重试/速率限制、SSE 流式、格式转换器 | ✓ |
 | `vortex-gateway` | AppState + EngineContext 实现、actix-web 路由注册、services 业务逻辑层、智能体集成 | ✓（vortex-server） |
+| `ai-web-provider` | 网页版平台（豆包 / DeepSeek / 千问 / Kimi / ChatGPT / Claude）worker：CDP 登录编排、cookie 收集持久化、网页对话转 API | ✓（库依赖） |
 | `src-tauri` | Tauri 命令薄包装（委托 services）、系统托盘、窗口管理、自动更新 | ✗（依赖 Tauri） |
 
 ## 系统架构
@@ -140,7 +142,8 @@ pub trait EngineContext: Send + Sync {
 
 - `handle_request()` — 入口，协调整个流程
 - `resolve_route()` — 路由解析：解析 `provider/model` 格式，定位提供商定义与连接
-- `handle_single_with_retry()` — 单一提供商请求，带重试和熔断器
+- `handle_auto_route()` — `auto` 模型路由：按连接优先级与 bandit 历史成功率排序所有候选（粘性会话优先复用上次成功模型，占用追踪软避让），单个失败自动切换下一个直到成功；失败模型经 auto 专用熔断器（`auto:{provider}:{connection}:{model}`，阈值 1、冷静期 600 秒）标记，10 分钟内直接跳过；排除网页版账号（web 格式）连接；整体时间预算自请求开始 15 秒，剩余不足一次尝试保底时间（2 秒）时不再启动新候选
+- `handle_single_with_retry()` — 单一提供商请求，带重试和熔断器；`deadline` 存在时（auto 路由 15s / 紧急故障转移 10s）单次上游执行以剩余预算为超时上限，防止首字节 60s 超时拖垮整体预算
 - `extract_usage_from_response()` — 从响应中提取 token 用量（支持 openai/anthropic/gemini 格式）
 
 ### 3. 执行器 (`proxy/executor.rs`)
@@ -390,6 +393,16 @@ pub struct ProviderDef {
 - **信任安装**：macOS 上后台线程执行 `security add-trusted-cert` 装入用户钥匙串（可能等待 GUI 授权，故不阻塞启动；已信任时跳过）
 - **绑定策略**：先绑主端口 HTTP，再用本进程持有的 `std::net::TcpListener` 经 `listen_rustls` 交给 actix（消除端口竞态）；HTTPS 端口被占时降级仅 HTTP 并告警，不 panic
 - **TLS 栈**：actix-web `rustls` feature（rustls 0.20，与 awc 客户端依赖树一致）
+
+### 15. 网页版平台桥接（`ai-web-provider` + `web_provider_service`）
+
+把「网页版登录后的对话」包装成 API 的完整链路：
+
+- **`ai-web-provider` crate**：每平台一个 worker 线程（豆包 / DeepSeek / 千问 / Kimi / ChatGPT / Claude），负责 CDP 浏览器登录编排、cookie 收集与持久化导入、网页对话的发送与流式回复捕获（DeepSeek 网页版另含 DSML 工具调用文本 ↔ 结构化 `tool_calls` 互转）。存储布局 `<data_dir>/web-providers/<platform>/`，凭证只落本机。
+- **解耦接口**：`vortex-router` 不直接依赖浏览器自动化技术栈，通过 `proxy/web_bridge.rs` 的 `WebChatBridge` trait 与 worker 命令通道解耦；`proxy/executor.rs` 中 web 格式执行器不发 HTTP，而是把 OpenAI 请求转换为对 worker 的 `ask` 命令。
+- **服务编排**：`vortex-gateway/src/services/web_provider_service.rs` 持有 worker 集合，实现 CDP 授权流程（`/api/web-providers/*` 端点）与按需启动（选择平台授权或首次聊天请求时拉起 worker）。
+- **注册表**：网页版平台以 `web-<platform>` id 注册进 `providers/registry.rs`（别名 `db/wd/wq/wk/wg/wc`），模型名即平台名，无远程模型列表（`catalog_sync` 跳过）。
+- **风险提示**：该功能可能违反相关平台服务条款，仅供技术研究与个人学习 —— 完整条款见 README「免责申明」章节。
 
 ## 前端架构
 
