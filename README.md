@@ -212,7 +212,10 @@ curl http://localhost:10168/v1/chat/completions \
 
 证书管理：
 
-- 未提供外部证书时，首次启用自动生成本地 CA（10 年有效期）+ 服务器证书（SAN 覆盖 `localhost` / `127.0.0.1` / `::1` / 本机主机名），持久化到 `<数据目录>/tls/`（私钥 0600）；
+- 未提供外部证书时，首次启用自动生成本地 CA（10 年有效期）+ 服务器证书，持久化到 `<数据目录>/tls/`（私钥 0600）；
+  - 服务器证书 SAN 覆盖 `localhost` / `127.0.0.1` / `::1` / 本机主机名及 `.local`（mDNS）/ 本机私网 IP（局域网、Tailscale 等）；
+  - SAN 集合变化（如 IP 变动）时自动重签服务器证书，CA 不变，已信任的根不受影响；
+- HTTPS 握手会下发完整证书链（叶子 + CA），客户端持有 CA 时无需自行拼接中间证书；
 - macOS 上启动后自动尝试将 CA 装入用户登录钥匙串（可能弹出系统授权确认）；若自动安装未完成，可手动信任：
 
   ```bash
@@ -221,7 +224,10 @@ curl http://localhost:10168/v1/chat/completions \
   ```
 
 - 需要使用正式证书时设置 `VORTEX_TLS_CERT` / `VORTEX_TLS_KEY` 指向 PEM 文件即可；
-- 客户端兼容性提示：部分 CLI（如基于 Node.js 的工具）只信任内置根证书、不读系统钥匙串，连不上 HTTPS 时改用 HTTP 主端口即可。
+- 客户端兼容性提示：部分 CLI（基于 Node.js 的工具，或使用 webpki 内置根证书的 Rust 工具）只信任内置根证书、不读系统钥匙串，连 https 出现 TLS 校验失败时：
+  - 最简单：改用 HTTP 主端口（`http://localhost:10168`），功能完全一致；
+  - Node 系工具：启动前设置 `NODE_EXTRA_CA_CERTS=~/Library/Application\ Support/vortex/tls/ca.pem` 即可信任自签 CA；
+  - Rust 系工具（如 Codex CLI / 看到 `MODEL_TLS_VALIDATION_FAILED` 的客户端）：同样改用 HTTP 主端口，或为其配置导入 `tls/ca.pem` 的开关（如有）。
 
 ### 管理界面
 

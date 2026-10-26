@@ -41,6 +41,9 @@
             <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">HTTPS 地址</span>
             <CopyableBlock :text="`${httpsBase}/v1`" variant="inline">{{ httpsBase }}/v1</CopyableBlock>
           </div>
+          <div v-if="httpsBase" class="text-12px text-ink-4 leading-[1.6] mb-12px">
+            提示：部分 CLI 工具不读系统钥匙串，填 HTTPS 地址可能报 TLS 校验失败（如 <code class="font-mono">MODEL_TLS_VALIDATION_FAILED</code>）。此时请改用上方 HTTP 地址，或将 Node.js 工具的环境变量 <code class="font-mono">NODE_EXTRA_CA_CERTS</code> 指向 <code class="font-mono">~/Library/Application Support/vortex/tls/ca.pem</code>。
+          </div>
           <div class="url-row flex items-center gap-12px mb-8px">
             <span class="url-label w-90px shrink-0 text-12px font-medium text-ink-3">访问令牌</span>
             <CopyableBlock :text="token" variant="inline">

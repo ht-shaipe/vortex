@@ -1,0 +1,94 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Vortex 远程节点协议 v1（gRPC，极简版）
+//
+// 调用方向：Vortex 网关（客户端） → 远程节点（服务端，另行实现）。
+// 节点职责：上报自身在线状态，并向网关推送少量类型化消息
+// （通知 / 心跳状态 / 模型目录变化），由前端以消息形式展示给用户。
+//
+// 设计约定：
+// 1. 在线判定：Subscribe 流保持连接即在线；流断开（含重连失败）即离线。
+//    心跳帧携带健康/负载快照，客户端按最近一帧渲染状态。
+// 2. 推送为主：节点侧发生变化（目录变更、需要告知用户的告警）时通过
+//    Subscribe 流主动推送，客户端无需轮询。
+// 3. 字段只增不改不删；破坏性变更升版本包（vortex.node.v2）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+syntax = "proto3";
+
+package vortex.node.v1;
+
+service VortexNode {
+  // 节点自述：标识与版本。客户端接入时必调一次并缓存。
+  rpc GetNodeInfo(GetNodeInfoRequest) returns (NodeInfo);
+
+  // 订阅节点推送（服务端流）。连接存续期间节点持续推送三类消息：
+  // Heartbeat（心跳/状态）、Notification（通知）、ModelsChanged（模型目录变化）。
+  // 客户端以该流的有无作为节点在线/离线判定依据。
+  rpc Subscribe(SubscribeRequest) returns (stream NodeMessage);
+}
+
+message GetNodeInfoRequest {}
+
+message NodeInfo {
+  // 节点稳定标识（建议 uuid），客户端用它做多节点去重。
+  string node_id = 1;
+  // 展示名（如 "shaipe-relay-01"）。
+  string node_name = 2;
+  // 实现方软件及版本，如 "relay-rs 0.2.0"（排障用，可空）。
+  string software_version = 3;
+}
+
+message SubscribeRequest {}
+
+// 节点 → 客户端的推送消息帧。
+message NodeMessage {
+  // 消息 id（节点侧生成，建议 uuid），客户端去重用。
+  string message_id = 1;
+  // 生成时刻（Unix 毫秒）。
+  int64 timestamp_ms = 2;
+  oneof payload {
+    Heartbeat heartbeat = 3;
+    Notification notification = 4;
+    ModelsChanged models_changed = 5;
+  }
+}
+
+// 心跳/状态：节点健康与负载快照，按固定间隔推送（建议 10~30 秒）。
+message Heartbeat {
+  // true = 节点正常；false = 过载/维护中，前端可标记降级。
+  bool ok = 1;
+  // 当前在途请求数（尽力快照，0 表示未知）。
+  uint32 in_flight = 2;
+}
+
+// 通知消息：以消息卡片形式展示给用户。
+enum NotificationLevel {
+  NOTIFICATION_LEVEL_UNSPECIFIED = 0;
+  NOTIFICATION_LEVEL_INFO = 1;
+  NOTIFICATION_LEVEL_WARNING = 2;
+  NOTIFICATION_LEVEL_ERROR = 3;
+}
+
+message Notification {
+  NotificationLevel level = 1;
+  // 标题（短句，展示用）。
+  string title = 2;
+  // 正文（可空）。
+  string body = 3;
+  // 业务类型标识（如 "quota"/"update"/"security"），前端可按类型路由展示，可空。
+  string kind = 4;
+}
+
+// 模型目录变化：节点侧模型列表发生变化时全量推送（含首次订阅后的初始目录）。
+message ModelsChanged {
+  repeated ModelEntry models = 1;
+  // 目录版本号，节点侧单调递增；客户端可据此忽略乱序到达的旧推送。
+  int32 revision = 2;
+}
+
+message ModelEntry {
+  // 模型规范 id。
+  string id = 1;
+  // 展示名。
+  string display_name = 2;
+}

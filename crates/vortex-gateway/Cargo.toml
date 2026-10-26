@@ -33,6 +33,8 @@ log = "0.4"
 parking_lot = "0.12"
 # 时间
 chrono = { version = "0.4", features = ["serde"] }
+# 精确时间戳（叶子证书 notBefore 用签发瞬间，time::OffsetDateTime；rcgen 同款时间类型）
+time = "0.3"
 # UUID
 uuid = { version = "1", features = ["v4"] }
 # URL

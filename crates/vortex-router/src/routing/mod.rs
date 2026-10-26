@@ -10,3 +10,5 @@ pub mod rate_limiter;
 pub mod bandit;
 /// 模型占用追踪器，auto 路由跨智能体软避让
 pub mod occupancy;
+/// 终端粘性模型追踪器，auto 路由按终端（agent 指纹）粘合模型
+pub mod agent_sticky;

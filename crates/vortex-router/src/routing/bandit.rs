@@ -84,8 +84,6 @@ pub struct BanditRouter {
     c: Arc<RwLock<f64>>,
     /// 总轮次
     rounds: Arc<RwLock<u32>>,
-    /// auto 路由最近成功的候选 key，用于粘性优先
-    last_success: Arc<RwLock<Option<String>>>,
 }
 
 impl BanditRouter {
@@ -94,7 +92,6 @@ impl BanditRouter {
             arms: Arc::new(RwLock::new(HashMap::new())),
             c: Arc::new(RwLock::new(std::f64::consts::SQRT_2)),
             rounds: Arc::new(RwLock::new(0)),
-            last_success: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -156,29 +153,8 @@ impl BanditRouter {
         let arm = arms.entry(key.clone()).or_insert_with(ScoreArm::new);
         arm.record_success(latency_ms);
         *self.rounds.write() += 1;
-        *self.last_success.write() = Some(key);
         drop(arms);
         self.auto_tune();
-    }
-
-    /// 获取 auto 路由最近成功的候选
-    pub fn get_last_success(&self) -> Option<(String, String, Option<String>)> {
-        let key = self.last_success.read().clone()?;
-        let parts: Vec<&str> = key.splitn(3, ':').collect();
-        if parts.len() < 3 {
-            return None;
-        }
-        let connection_id = if parts[2].is_empty() {
-            None
-        } else {
-            Some(parts[2].to_string())
-        };
-        Some((parts[0].to_string(), parts[1].to_string(), connection_id))
-    }
-
-    /// 清除最近成功记忆（当该模型失败时调用）
-    pub fn clear_last_success(&self) {
-        *self.last_success.write() = None;
     }
 
     /// 计数失败

@@ -50,6 +50,8 @@ pub struct AppState {
     pub bandit_router: routing::bandit::BanditRouter,
     /// 模型占用追踪器，auto 路由跨智能体软避让
     pub occupancy: routing::occupancy::OccupancyTracker,
+    /// 终端粘性模型追踪器，auto 路由按终端（agent 指纹）粘合最近成功的模型
+    pub agent_sticky: routing::agent_sticky::AgentStickyTracker,
     /// 粘性会话管理器
     pub sticky_session: proxy::sticky_session::StickySessionManager,
     /// 网页版平台桥接（obscura worker 集合 + CDP 授权）
@@ -89,6 +91,9 @@ impl EngineContext for AppState {
     }
     fn occupancy(&self) -> &routing::occupancy::OccupancyTracker {
         &self.occupancy
+    }
+    fn agent_sticky(&self) -> &routing::agent_sticky::AgentStickyTracker {
+        &self.agent_sticky
     }
     fn web_bridge(&self) -> Option<Arc<dyn WebChatBridge>> {
         Some(self.web_bridge.clone())
@@ -159,6 +164,7 @@ pub fn create_app_state(cfg: AppConfig) -> vortex_store::error::Result<Arc<AppSt
         rate_limiter,
         bandit_router,
         occupancy: routing::occupancy::OccupancyTracker::new(),
+        agent_sticky: routing::agent_sticky::AgentStickyTracker::new(),
         sticky_session,
         web_bridge,
         encryption_key,
@@ -294,6 +300,12 @@ pub fn start_api_server(
                 match std::net::TcpListener::bind(("0.0.0.0", https_port)) {
                     Ok(lst) => {
                         log::info!("[TLS] HTTPS 已启用，监听 0.0.0.0:{}（HTTP 继续保留在 0.0.0.0:{}）", https_port, port);
+                        log::info!(
+                            "[TLS] 提示: 基于 Node.js / rustls-webpki 的 CLI 工具不读系统钥匙串，连接 https 失败（MODEL_TLS_VALIDATION_FAILED / UnknownCA）时可改用 http://localhost:{}；\
+                             Node 系工具也可设 NODE_EXTRA_CA_CERTS=\"{}\" 后使用 https",
+                            port,
+                            state.config.data_dir.join("tls").join("ca.pem").display()
+                        );
                         server
                             .listen_rustls(lst, tls_cfg)
                             .expect("Failed to attach TLS listener")

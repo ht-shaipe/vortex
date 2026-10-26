@@ -4,12 +4,12 @@
       <div class="flex items-center flex-wrap gap-[var(--gap-lg)]">
         <!-- 顶部页面切换标签（由父级通过插槽传入，与操作按钮同行） -->
         <slot name="top-tabs" />
-        <div class="tabs slim mb-0 border-b-none [&_.tab]:px-12px [&_.tab]:py-5px overflow-x-auto shrink min-w-0 [&::-webkit-scrollbar]:h-0">
+        <div class="tabs slim mb-0 border-b-none [&_.tab]:px-12px [&_.tab]:py-5px flex-wrap shrink min-w-0">
           <button
             v-for="t in appTabs"
             :key="t.key"
             type="button"
-            class="tab shrink-0"
+            class="tab"
             :class="{ active: app === t.key }"
             @click="app = t.key"
           >

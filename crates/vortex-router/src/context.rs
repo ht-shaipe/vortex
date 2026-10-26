@@ -15,6 +15,7 @@ use crate::routing::resilience::ResilienceManager;
 use crate::routing::rate_limiter::RateLimiter;
 use crate::routing::bandit::BanditRouter;
 use crate::routing::occupancy::OccupancyTracker;
+use crate::routing::agent_sticky::AgentStickyTracker;
 
 /// 代理引擎上下文。
 ///
@@ -40,6 +41,8 @@ pub trait EngineContext {
     fn bandit_router(&self) -> &BanditRouter;
     /// 模型占用追踪器
     fn occupancy(&self) -> &OccupancyTracker;
+    /// 终端粘性模型追踪器，auto 路由按终端粘合最近成功的模型
+    fn agent_sticky(&self) -> &AgentStickyTracker;
     /// 网页版平台聊天桥接（浏览器自动化提供商）。
     /// 未启用 web 提供商的实现返回 None，WebExecutor 相应报上游错误。
     fn web_bridge(&self) -> Option<Arc<dyn WebChatBridge>> {

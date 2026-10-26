@@ -66,7 +66,7 @@
             <span class="alias-name font-mono text-15px font-semibold">{{ a.alias }}</span>
             <span class="pill" :class="a.is_active ? 'ok' : 'neutral'">{{ a.is_active ? '启用' : '停用' }}</span>
             <span class="pill" :class="a.source === 'auto' ? 'info' : 'neutral'">{{ a.source === 'auto' ? '自动' : '手动' }}</span>
-            <span class="text-12px text-ink-4">{{ a.targets.length }} 个目标</span>
+            <span class="text-12px text-ink-4" :title="`共 ${a.targets.length} 个目标`">{{ aliasProviderNames(a) }}</span>
           </div>
           <div class="flex items-center gap-8px">
             <span class="cursor-move text-ink-4 hover:text-ink-2 shrink-0 touch-action-none select-none" title="按住拖拽调整列表顺序"
@@ -404,6 +404,16 @@ interface ProviderGroupEntry {
   is_active: boolean
   source: string
 }
+
+/** 别名目标对应的供应商/连接名（去重，连接名优先），用 " · " 连接。 */
+function aliasProviderNames(a: ModelAlias): string {
+  const seen = new Set<string>()
+  for (const t of a.targets) {
+    seen.add((t.connection_id && connNameMap.value[t.connection_id]) || t.provider)
+  }
+  return [...seen].join(' · ')
+}
+
 const providerGroups = computed(() => {
   const map = new Map<string, { name: string; provider: string; connectionId?: string; priority: number; isActive: boolean; entries: ProviderGroupEntry[] }>()
   for (const a of aliases.value) {

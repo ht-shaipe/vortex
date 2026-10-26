@@ -608,8 +608,15 @@ impl ProxyEngine {
             }
         }
 
-        // auto 粘性：优先尝试最近成功的模型，保持 agent 连续性
-        if let Some((last_provider, last_model, last_conn_id)) = state.bandit_router().get_last_success() {
+        // 终端粘性（轮循式粘合）：同一终端（agent 指纹，如 zcode/codex）的
+        // auto 请求优先复用上次成功的模型，保持终端会话连续性。
+        // 失败时在粘性模型上重试（STICKY_RETRIES 次），全部失败才回退
+        // bandit 排序，并熔断（封冻）该模型；成功则刷新绑定。
+        if let Some(ref agent) = request.agent
+            && let Some((last_provider, last_model, last_conn_id)) = state.agent_sticky().get(agent)
+        {
+            // 粘性模型失败后的重试次数（不含首次尝试）
+            const STICKY_RETRIES: u32 = 3;
             for (ci, model) in &candidates {
                 let pconn = &all_connections[*ci];
                 if pconn.provider != last_provider || model != &last_model {
@@ -618,15 +625,15 @@ impl ProxyEngine {
                 if let Some(ref cid) = last_conn_id
                     && &pconn.id != cid {
                         continue;
-                    }
+                }
                 let Some(provider_def) = state.provider_registry().get(&pconn.provider) else {
                     break;
                 };
-                // 粘性候选正被其他智能体占用时避让，回退 bandit 排序（软避让）
+                // 粘性候选正被其他智能体占用时避让，回退 bandit 排序（软避让，保留绑定）
                 let occ_key = format!("{}:{}:{}", pconn.provider, pconn.id, model);
                 if state.occupancy().busy_by_others(&occ_key, request.agent.as_deref()) {
                     log::info!(
-                        "auto 粘性：{}/{} 正被其他智能体使用，避让并回退 bandit 排序",
+                        "终端粘性：{}/{} 正被其他智能体使用，本轮避让（保留绑定）",
                         last_provider, last_model
                     );
                     break;
@@ -636,32 +643,113 @@ impl ProxyEngine {
                 if !state.resilience_manager().is_available(&breaker_name)
                     || !state.resilience_manager().is_available(&auto_model_breaker)
                 {
-                    log::info!("auto 粘性：上次模型 {}/{}/{} 熔断中，回退到 bandit 排序", last_provider, pconn.name, last_model);
-                    state.bandit_router().clear_last_success();
+                    log::info!(
+                        "终端粘性：上次模型 {}/{}/{} 熔断中，清除绑定并回退 bandit 排序",
+                        last_provider, pconn.name, last_model
+                    );
+                    state.agent_sticky().clear(agent);
                     break;
                 }
-                log::info!("auto 粘性：优先尝试上次成功的 {}/{}/{}", last_provider, pconn.name, last_model);
-                let result = self
-                    .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start, Some(deadline))
-                    .await;
-                match result {
-                    Ok(output) => {
-                        let latency_ms = start.elapsed().as_millis() as f64;
-                        state.bandit_router().record_success(&pconn.provider, model.as_str(), Some(&pconn.id), latency_ms);
-                        // 成功回写 auto 熔断器：半开态连续成功 3 次完全恢复
-                        state.resilience_manager().record_success(&auto_model_breaker);
-                        log::info!("auto 粘性：成功 {}/{}/{}", last_provider, pconn.name, last_model);
-                        return Ok(output);
-                    }
-                    Err(e) => {
-                        log::warn!("auto 粘性：{}/{}/{} 失败: {}，回退到 bandit 排序", last_provider, pconn.name, last_model, e);
-                        state.bandit_router().clear_last_success();
-                        state.bandit_router().record_failure(&pconn.provider, model.as_str(), Some(&pconn.id));
-                        // 粘性候选失败同样标记：单次失败即熔断，10 分钟内直接跳过
-                        state.resilience_manager().record_failure_cfg(&auto_model_breaker, 1, 600);
+                log::info!(
+                    "终端粘性：{} 优先尝试上次成功的 {}/{}/{}",
+                    agent, last_provider, pconn.name, last_model
+                );
+                let mut sticky_failed = false;
+                for attempt in 0..=STICKY_RETRIES {
+                    // 时间预算检查：剩余不足一次尝试的保底时间时停止重试
+                    if Instant::now() + std::time::Duration::from_secs(MIN_ATTEMPT_SECS) >= deadline {
+                        log::warn!(
+                            "终端粘性：时间预算即将耗尽，停止重试 {}/{}",
+                            last_provider, last_model
+                        );
                         break;
                     }
+                    // 首次尝试后按指数退避重试
+                    if attempt > 0 {
+                        let delay = self.retry_policy.delay_for_attempt(attempt - 1);
+                        if Instant::now() + delay >= deadline {
+                            log::warn!(
+                                "终端粘性：剩余时间预算不足退避重试，停止重试 {}/{}",
+                                last_provider, last_model
+                            );
+                            break;
+                        }
+                        tokio::time::sleep(delay).await;
+                        log::info!(
+                            "终端粘性：第 {}/{} 次重试 {}/{}/{}",
+                            attempt, STICKY_RETRIES, last_provider, pconn.name, last_model
+                        );
+                    }
+                    let result = self
+                        .handle_single_with_retry(state, client, conn, request, provider_def, pconn, model.as_str(), start, Some(deadline))
+                        .await;
+                    match result {
+                        Ok(output) => {
+                            let latency_ms = start.elapsed().as_millis() as f64;
+                            state.bandit_router().record_success(&pconn.provider, model.as_str(), Some(&pconn.id), latency_ms);
+                            // 成功回写 auto 熔断器：半开态连续成功 3 次完全恢复
+                            state.resilience_manager().record_success(&auto_model_breaker);
+                            // 刷新终端粘性绑定：下一轮直接复用该模型
+                            state.agent_sticky().set(agent, &pconn.provider, model.as_str(), Some(&pconn.id));
+                            log::info!(
+                                "终端粘性：{} 成功 {}/{}/{}（第 {} 次尝试）",
+                                agent, last_provider, pconn.name, last_model, attempt + 1
+                            );
+                            return Ok(output);
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "终端粘性：{}/{} 第 {}/{} 次尝试失败: {}",
+                                agent, model, attempt + 1, STICKY_RETRIES + 1, e
+                            );
+                            // 与主候选循环对齐：记录错误用量条目，保证统计可见
+                            let err_str = format!("{}", e);
+                            let latency = start.elapsed().as_millis() as i64;
+                            let entry = UsageEntry {
+                                id: 0,
+                                provider: Some(pconn.name.clone()),
+                                model: Some(model.to_string()),
+                                connection_id: Some(pconn.id.clone()),
+                                api_key_id: request.api_key.clone(),
+                                api_key_name: None,
+                                tokens_input: 0,
+                                tokens_output: 0,
+                                tokens_cache_read: 0,
+                                tokens_cache_creation: 0,
+                                tokens_reasoning: 0,
+                                service_tier: "standard".to_string(),
+                                status: "error".to_string(),
+                                success: false,
+                                error_code: Some(err_str),
+                                latency_ms: Some(latency),
+                                ttft_ms: None,
+                                cost: 0.0,
+                                usage_estimated: false,
+                                saved_tokens: request.saved_tokens,
+                                agent: request.agent.clone(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                            };
+                            let _ = db_usage::record(conn, &entry);
+                            // 熔断打开（重试期间被其他请求触发）时继续重试无意义
+                            if matches!(e, AppError::CircuitOpen(_)) {
+                                break;
+                            }
+                            sticky_failed = true;
+                        }
+                    }
                 }
+                // 粘性模型重试耗尽：清除绑定、封冻（熔断）该模型，回退 bandit 排序
+                if sticky_failed {
+                    log::warn!(
+                        "终端粘性：{}/{} 重试 {} 次仍失败，封冻该模型并回退 bandit 排序",
+                        last_provider, last_model, STICKY_RETRIES
+                    );
+                    state.agent_sticky().clear(agent);
+                    state.bandit_router().record_failure(&pconn.provider, model.as_str(), Some(&pconn.id));
+                    // 粘性重试已消耗完重试额度：单次失败即熔断，10 分钟内直接跳过
+                    state.resilience_manager().record_failure_cfg(&auto_model_breaker, 1, 600);
+                }
+                break;
             }
         }
 
@@ -744,6 +832,12 @@ impl ProxyEngine {
                     );
                     // 成功回写 auto 熔断器：半开态连续成功 3 次完全恢复
                     state.resilience_manager().record_success(&auto_model_breaker);
+                    // 记录终端粘性绑定：该终端下一轮 auto 请求直接复用此模型
+                    if let Some(ref agent) = request.agent {
+                        state
+                            .agent_sticky()
+                            .set(agent, &connection.provider, model.as_str(), Some(&connection.id));
+                    }
                     log::info!("auto: 成功 {}/{}/{}", provider_def.id, connection.name, model);
                     return Ok(output);
                 }

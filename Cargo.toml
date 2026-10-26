@@ -4,6 +4,7 @@ members = [
     "crates/vortex-router",
     "crates/vortex-gateway",
     "crates/ai-web-provider",
+    "crates/vortex-node",
     "src-tauri",
 ]
 resolver = "2"

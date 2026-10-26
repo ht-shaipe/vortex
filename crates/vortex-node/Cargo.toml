@@ -1,0 +1,31 @@
+[package]
+name = "vortex-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Vortex 远程节点 gRPC 协议 v1（极简：在线状态 + 推送消息）与 tonic 客户端"
+
+[dependencies]
+# gRPC 栈：transport 含 TLS/server；prost 供生成代码的 codec 使用
+tonic = { version = "0.12", default-features = false, features = [
+    "transport",
+    "codegen",
+    "prost",
+    "tls",
+    "tls-webpki-roots",
+] }
+prost = "0.13"
+# 异步运行时（客户端只需 runtime/time/macros/net）
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros"] }
+# 日志
+log = "0.4"
+# 错误
+thiserror = "1"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+# 集成测试里的标准 tonic 服务端骨架
+futures = "0.3"
