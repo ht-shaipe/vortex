@@ -135,11 +135,12 @@
                 <span
                   v-for="(m, i) in visibleModels(conn)"
                   :key="m.id"
-                  class="model-tag inline-flex items-center gap-4px text-11px leading-[1.55] py-1px px-6px bg-surface-2 border border-solid border-line rounded-8px text-ink-2 whitespace-nowrap max-w-150px overflow-hidden text-ellipsis"
+                  class="model-tag copy-host inline-flex items-center gap-4px text-11px leading-[1.55] py-1px px-6px bg-surface-2 border border-solid border-line rounded-8px text-ink-2 whitespace-nowrap max-w-150px overflow-hidden"
                   :title="modelTagTitle(m)"
                 >
                   <i v-if="i === 0" class="def-dot w-5px h-5px rounded-full bg-accent shrink-0" aria-hidden="true" />
-                  {{ modelTagLabel(m) }}
+                  <span class="overflow-hidden text-ellipsis min-w-0">{{ modelTagLabel(m) }}</span>
+                  <el-icon class="copy-icon shrink-0" :size="11" @click.stop="copyModelName(m.id)"><CopyDocument /></el-icon>
                 </span>
                 <el-tooltip
                   v-if="conn.models.length > maxTags"
@@ -152,7 +153,7 @@
               <!-- 无模型列表时回退展示默认模型 -->
               <div
                 v-else
-                class="model-cell text-12.5px text-ink-2 whitespace-nowrap overflow-hidden text-ellipsis tabular-nums [&.empty]:text-ink-4"
+                class="model-cell copy-host flex items-center gap-4px text-12.5px text-ink-2 whitespace-nowrap overflow-hidden tabular-nums [&.empty]:text-ink-4"
                 :class="{ empty: !conn.defaultModel }"
               >
                 <el-tooltip
@@ -160,8 +161,9 @@
                   :content="conn.defaultModel"
                   placement="top"
                 >
-                  <span>{{ conn.defaultModel }}</span>
+                  <span class="truncate min-w-0">{{ conn.defaultModel }}</span>
                 </el-tooltip>
+                <el-icon v-if="conn.defaultModel" class="copy-icon shrink-0" :size="11" @click.stop="copyModelName(conn.defaultModel)"><CopyDocument /></el-icon>
                 <span v-else>—</span>
               </div>
             </td>
@@ -238,7 +240,12 @@
         <tbody>
           <tr v-for="cap in rateLimits" :key="cap.id">
             <td><span class="pill info mono">{{ cap.provider }}</span></td>
-            <td><span class="font-mono text-12.5px text-ink-2">{{ cap.model }}</span></td>
+            <td>
+              <span class="copy-host inline-flex items-center gap-4px max-w-full">
+                <span class="font-mono text-12.5px text-ink-2 truncate min-w-0" :title="cap.model">{{ cap.model }}</span>
+                <el-icon class="copy-icon shrink-0" :size="11" @click="copyModelName(cap.model)"><CopyDocument /></el-icon>
+              </span>
+            </td>
             <td class="num">{{ cap.rpm ?? '—' }}</td>
             <td class="num">{{ cap.rpd ?? '—' }}</td>
             <td class="num">{{ cap.tpm ?? '—' }}</td>
@@ -331,7 +338,10 @@
             >
               <!-- 模型名 -->
               <div class="min-w-0 w-240px shrink-0">
-                <div class="mono text-12.5px text-ink font-medium truncate" :title="m.model">{{ m.model }}</div>
+                <div class="copy-host flex items-center gap-4px min-w-0">
+                  <div class="mono text-12.5px text-ink font-medium truncate min-w-0" :title="m.model">{{ m.model }}</div>
+                  <el-icon class="copy-icon shrink-0" :size="11" @click="copyModelName(m.model)"><CopyDocument /></el-icon>
+                </div>
                 <div v-if="m.name" class="text-11px text-ink-4 truncate">{{ m.name }}</div>
               </div>
 
@@ -459,7 +469,7 @@
  */
 import { computed, onMounted, ref, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading, Plus, Connection, Refresh, WarningFilled, InfoFilled, Delete } from '@element-plus/icons-vue'
+import { Loading, Plus, Connection, Refresh, WarningFilled, InfoFilled, Delete, CopyDocument } from '@element-plus/icons-vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ProviderLogo from '@/components/ui/ProviderLogo.vue'
@@ -755,6 +765,20 @@ function overflowModels(conn: ProviderConnection): string {
 }
 
 /**
+ * 复制模型名到剪贴板。
+ * @param name 模型名
+ */
+async function copyModelName(name: string) {
+  if (!name) return
+  try {
+    await navigator.clipboard.writeText(name)
+    ElMessage.success(`已复制：${name}`)
+  } catch {
+    ElMessage.error('复制失败，请手动选择复制')
+  }
+}
+
+/**
  * 加载内置提供商定义与连接列表。
  */
 async function load() {
@@ -1025,6 +1049,16 @@ watch(tab, (t) => {
 .tos-pill.tos-warn { background: var(--warn-bg); color: var(--warn); }
 .tos-pill.tos-err { background: var(--err-bg); color: var(--err); }
 .tos-pill.tos-neutral { background: var(--surface-3); color: var(--ink-4); }
+
+/* 模型名复制图标：悬浮宿主时浮现，点击复制 */
+.copy-icon {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+  color: var(--ink-4);
+}
+.copy-icon:hover { color: var(--accent); }
+.copy-host:hover .copy-icon { opacity: 1; }
 
 /* 模型目录能力标签 */
 .cap-tag {

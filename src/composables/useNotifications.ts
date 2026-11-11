@@ -5,12 +5,29 @@
  */
 import { ref, readonly } from 'vue'
 import { fetchNotifications, type NotificationItem } from '@/api/notifications'
+import api from '@/api/client'
 import router from '@/router'
 
 /** localStorage 中存储已读通知 ID 的键名。 */
 const READ_KEY = 'vortex-read-notifications'
 /** 轮询间隔：5 分钟。 */
 const POLL_INTERVAL = 5 * 60 * 1000
+
+/** 后端 gRPC 推送的事件载荷（Tauri `hub-push` 事件，Rust PushEvent 投影）。 */
+export interface PushEventPayload {
+  /** 消息 id（服务器生成），去重键：重连重放不重复弹 */
+  id: string
+  title: string
+  body: string
+  /** "info" | "warning" | "error" */
+  level: string
+  /** 业务类型（如 "free-token"），可空 */
+  kind?: string
+  /** 点击跳转链接，可空；缺省跳薅羊毛页 */
+  url?: string
+  /** 服务器生成时刻（Unix 毫秒） */
+  timestampMs: number
+}
 
 // 未读通知数量
 const unreadCount = ref(0)
@@ -113,6 +130,63 @@ async function checkNotifications(silent = false): Promise<void> {
   }
 }
 
+/** 推送载荷 → 收件箱条目（level 映射：前端 type 无 error，error 按 warning 展示）。 */
+function toNotificationItem(p: PushEventPayload): NotificationItem {
+  return {
+    id: p.id,
+    title: p.title,
+    body: p.body,
+    type: p.level === 'warning' || p.level === 'error' ? 'warning' : 'info',
+    url: p.url || undefined,
+    createdAt: p.timestampMs ? new Date(p.timestampMs).toISOString() : new Date().toISOString(),
+  }
+}
+
+/**
+ * 接收一条后端 gRPC 实时推送（hub-push 事件）。
+ * 与轮询共用已读集合去重（重连重放不重复弹），
+ * 插入收件箱列表并弹出提示；已读语义与轮询一致（弹出即标记）。
+ * @param p - 推送事件载荷
+ */
+function ingestPush(p: PushEventPayload): void {
+  if (!p || !p.id) return
+  if (getReadIds().has(p.id)) return
+  const item = toNotificationItem(p)
+  latestNotifications.value = [item, ...latestNotifications.value].slice(0, 50)
+  showNotification(item)
+  markRead([p.id])
+}
+
+/**
+ * 启动/刷新时从网关回填最近的 channel 推送（GET /api/push-events）。
+ * channel 推送不经过轮询通道，webview 未挂载期间收到的推送靠这里恢复进收件箱；
+ * 已读过的只补列表不重弹，已在收件箱里的不重复插入（轮询场景反复拉取同一份历史）。
+ */
+async function loadRecentPush(): Promise<void> {
+  try {
+    const { data } = await api.get<{ events?: PushEventPayload[] }>('/push-events')
+    const items = (data?.events ?? []).filter((p) => p && p.id)
+    if (items.length === 0) return
+    const readIds = getReadIds()
+    const fresh = items.filter((p) => !readIds.has(p.id))
+    const existing = new Set(latestNotifications.value.map((n) => n.id))
+    const newItems = items.filter((p) => !existing.has(p.id))
+    if (newItems.length > 0) {
+      latestNotifications.value = [
+        ...newItems.map(toNotificationItem),
+        ...latestNotifications.value,
+      ].slice(0, 50)
+    }
+    // 未读的按时间正序逐条弹出（新→旧列表反转后即旧→新）
+    for (const p of [...fresh].reverse()) {
+      showNotification(toNotificationItem(p))
+      markRead([p.id])
+    }
+  } catch {
+    /* 静默：网关未启动/未启用推送时无需提示 */
+  }
+}
+
 /**
  * 发送一条测试通知（用于调试）。
  */
@@ -134,10 +208,14 @@ function testNotification(): void {
 function startPolling(): void {
   if (_started) return
   _started = true
-  // 立即检查一次
+  // 立即检查一次（远程 CMS 通知 + 网关推送历史兜底）
   checkNotifications(true)
-  // 设置定时轮询
-  _timer = setInterval(() => checkNotifications(true), POLL_INTERVAL)
+  void loadRecentPush()
+  // 设置定时轮询：Web 模式无实时事件通道，靠本定时器让 channel 推送最终可见
+  _timer = setInterval(() => {
+    checkNotifications(true)
+    void loadRecentPush()
+  }, POLL_INTERVAL)
 }
 
 /**
@@ -169,6 +247,8 @@ export function useNotifications() {
     unreadCount: readonly(unreadCount),
     latestNotifications: readonly(latestNotifications),
     checkNotifications,
+    ingestPush,
+    loadRecentPush,
     testNotification,
     startPolling,
     stopPolling,

@@ -129,7 +129,7 @@ impl ProxyEngine {
             let original_messages = request.messages.clone();
             let (compressed, saved) = crate::proxy::prompt_compression::compress_messages(&request.messages, &comp_config);
             if saved > 0 {
-                log::info!("Prompt 压缩：节省 ~{} tokens", saved);
+                log::debug!("Prompt 压缩：节省 ~{} tokens", saved);
                 // 存储原始内容到回忆系统（best-effort，失败不影响请求）
                 let pool = state.db_pool().clone();
                 let model = request.model.clone();
@@ -150,7 +150,7 @@ impl ProxyEngine {
         let session_id = request.extra.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
         if let Some(ref sid) = session_id
             && let Some((provider, model, connection_id)) = state.sticky_session().get(sid) {
-                log::info!("粘性会话 '{}' 命中：{}/{}/{:?}", sid, provider, model, connection_id);
+                log::debug!("粘性会话 '{}' 命中：{}/{}/{:?}", sid, provider, model, connection_id);
                 if let Some(def) = state.provider_registry().get(&provider) {
                     let connection = if let Some(ref cid) = connection_id {
                         db_providers::list_by_provider(&conn, &provider, &state.encryption_key())?
@@ -181,9 +181,19 @@ impl ProxyEngine {
                 }
             }
 
-        // 虚拟模型别名：检查请求模型是否匹配某个别名，若匹配则按 targets 顺序故障转移
-        if let Some(alias) = db_aliases::get_by_alias(&conn, &request.model)? {
-            log::info!("模型别名 '{}' 命中，共 {} 个目标", alias.alias, alias.targets.len());
+        // 虚拟模型别名：检查请求模型是否匹配某个别名，若匹配则按 targets 顺序故障转移。
+        // 查询含已停用条目：停用别名必须硬拒绝（404 model_not_found），
+        // 不能坠入 resolve_route 的 default_model 兜底——否则请求仍会被
+        // 静默路由到同一底层模型，表现为“停用后仍在使用”。
+        if let Some(alias) = db_aliases::get_by_alias_include_inactive(&conn, &request.model)? {
+            if !alias.is_active {
+                log::warn!("模型别名 '{}' 已停用，拒绝请求", alias.alias);
+                return Err(AppError::Routing(format!(
+                    "Model '{}' is disabled (alias inactive)",
+                    alias.alias
+                )));
+            }
+            log::debug!("模型别名 '{}' 命中，共 {} 个目标", alias.alias, alias.targets.len());
             // 真实错误（上游/网络），优先返回给下游便于排查
             let mut last_err: Option<AppError> = None;
             // 熔断器名称：所有目标均因熔断不可用时，以熔断错误兜底（下游转友好提示）
@@ -223,13 +233,13 @@ impl ProxyEngine {
                     continue;
                 }
 
-                log::info!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
+                log::debug!("别名 '{}' 尝试目标 {}/{} (连接: {})", alias.alias, target.provider, target.model, conn_obj.name);
                 let result = self
                     .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start, None)
                     .await;
                 match result {
                     Ok(output) => {
-                        log::info!("别名 '{}' 目标 {}/{} 成功", alias.alias, target.provider, target.model);
+                        log::debug!("别名 '{}' 目标 {}/{} 成功", alias.alias, target.provider, target.model);
                         return Ok(output);
                     }
                     Err(e) => {
@@ -288,7 +298,7 @@ impl ProxyEngine {
         // 路由配置 profile：auto:<profile_name> 使用命名回退链
         if let Some(profile_name) = request.model.strip_prefix("auto:")
             && let Some(profile) = db_routing_profiles::get_by_name(&conn, profile_name)? {
-                log::info!("路由配置 '{}' 命中，共 {} 个目标", profile.name, profile.targets.len());
+                log::debug!("路由配置 '{}' 命中，共 {} 个目标", profile.name, profile.targets.len());
                 let mut last_err: Option<AppError> = None;
                 let mut last_circuit: Option<String> = None;
                 for target in &profile.targets {
@@ -315,13 +325,13 @@ impl ProxyEngine {
                         last_circuit = Some(breaker_name);
                         continue;
                     }
-                    log::info!("配置 '{}' 尝试目标 {}/{}", profile.name, target.provider, target.model);
+                    log::debug!("配置 '{}' 尝试目标 {}/{}", profile.name, target.provider, target.model);
                     let result = self
                         .handle_single_with_retry(state, client, &conn, &request, def, &conn_obj, &target.model, start, None)
                         .await;
                     match result {
                         Ok(output) => {
-                            log::info!("配置 '{}' 目标 {}/{} 成功", profile.name, target.provider, target.model);
+                            log::debug!("配置 '{}' 目标 {}/{} 成功", profile.name, target.provider, target.model);
                             if let Some(ref sid) = session_id {
                                 state.sticky_session().set(sid, &target.provider, &target.model, Some(&conn_obj.id));
                             }
@@ -506,6 +516,30 @@ impl ProxyEngine {
     /// - `conn`：数据库连接
     /// - `request`：代理请求
     /// - `start`：请求起始时间
+    /// 计算被停用映射排除的 (provider, model) 集合。
+    ///
+    /// 语义：模型映射（别名）是用户对"该模型是否可用"的意图表达——
+    /// 某 (provider, model) 只要还被任何**启用**映射引用就保持可用；
+    /// 仅当引用它的映射**全部停用**时才从 auto / 紧急故障转移候选中剔除。
+    /// 不影响显式模型名请求与启用映射自身的目标遍历顺序。
+    fn auto_excluded_pairs(
+        aliases: &[vortex_store::db::models::ModelAlias],
+    ) -> std::collections::HashSet<(String, String)> {
+        let mut active: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let mut inactive: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        for alias in aliases {
+            for t in &alias.targets {
+                let key = (t.provider.clone(), t.model.clone());
+                if alias.is_active {
+                    active.insert(key);
+                } else {
+                    inactive.insert(key);
+                }
+            }
+        }
+        inactive.difference(&active).cloned().collect()
+    }
+
     async fn handle_auto_route(
         &self,
         state: &dyn EngineContext,
@@ -545,16 +579,25 @@ impl ProxyEngine {
             .and_then(|s| s.get("autoRouteStrategy").and_then(|v| v.as_str()).map(|s| s.to_string()))
             .unwrap_or_else(|| "provider-first".to_string());
 
-        log::info!("auto 路由：共 {} 个活跃连接，策略: {}", all_connections.len(), auto_strategy);
+        log::debug!("auto 路由：共 {} 个活跃连接，策略: {}", all_connections.len(), auto_strategy);
+
+        // 模型映射（别名）停用的目标不参与 auto 候选：否则映射关闭后
+        // provider-first 仍会尝试其底层模型，表现为"停用后还在用"。
+        // 只要 (provider, model) 还被任何启用映射引用就保持可用。
+        let aliases = db_aliases::list(conn).unwrap_or_default();
+        let excluded = Self::auto_excluded_pairs(&aliases);
+        if !excluded.is_empty() {
+            log::debug!("auto 路由：{} 个 (provider, model) 因映射停用被排除", excluded.len());
+        }
 
         // 收集所有候选 (connection_index, model)
         let mut candidates: Vec<(usize, String)> = Vec::new();
 
         if auto_strategy == "model-first" {
             // 模型优先：按模型映射（alias targets）顺序收集候选，同模型内按连接优先级排序
-            let aliases = db_aliases::list(conn).unwrap_or_default();
+            let aliases = &aliases;
             let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-            for alias in &aliases {
+            for alias in aliases.iter() {
                 if !alias.is_active { continue; }
                 for target in &alias.targets {
                     // 找到匹配的连接（按 connection_id 精确匹配，或按 provider+model 模糊匹配）
@@ -608,6 +651,23 @@ impl ProxyEngine {
             }
         }
 
+        // 应用停用映射排除（对两种策略与回退路径统一生效）
+        if !excluded.is_empty() {
+            let before = candidates.len();
+            candidates.retain(|(ci, model)| {
+                let c = &all_connections[*ci];
+                !excluded.contains(&(c.provider.clone(), model.clone()))
+            });
+            if candidates.len() != before {
+                log::debug!("auto 路由：剔除停用映射候选 {} 个（剩余 {}）", before - candidates.len(), candidates.len());
+            }
+        }
+        if candidates.is_empty() {
+            return Err(AppError::Routing(
+                "No auto candidates: all mounted models are excluded by disabled model mappings".into(),
+            ));
+        }
+
         // 终端粘性（轮循式粘合）：同一终端（agent 指纹，如 zcode/codex）的
         // auto 请求优先复用上次成功的模型，保持终端会话连续性。
         // 失败时在粘性模型上重试（STICKY_RETRIES 次），全部失败才回退
@@ -632,7 +692,7 @@ impl ProxyEngine {
                 // 粘性候选正被其他智能体占用时避让，回退 bandit 排序（软避让，保留绑定）
                 let occ_key = format!("{}:{}:{}", pconn.provider, pconn.id, model);
                 if state.occupancy().busy_by_others(&occ_key, request.agent.as_deref()) {
-                    log::info!(
+                    log::debug!(
                         "终端粘性：{}/{} 正被其他智能体使用，本轮避让（保留绑定）",
                         last_provider, last_model
                     );
@@ -643,14 +703,14 @@ impl ProxyEngine {
                 if !state.resilience_manager().is_available(&breaker_name)
                     || !state.resilience_manager().is_available(&auto_model_breaker)
                 {
-                    log::info!(
+                    log::debug!(
                         "终端粘性：上次模型 {}/{}/{} 熔断中，清除绑定并回退 bandit 排序",
                         last_provider, pconn.name, last_model
                     );
                     state.agent_sticky().clear(agent);
                     break;
                 }
-                log::info!(
+                log::debug!(
                     "终端粘性：{} 优先尝试上次成功的 {}/{}/{}",
                     agent, last_provider, pconn.name, last_model
                 );
@@ -675,7 +735,7 @@ impl ProxyEngine {
                             break;
                         }
                         tokio::time::sleep(delay).await;
-                        log::info!(
+                        log::debug!(
                             "终端粘性：第 {}/{} 次重试 {}/{}/{}",
                             attempt, STICKY_RETRIES, last_provider, pconn.name, last_model
                         );
@@ -691,7 +751,7 @@ impl ProxyEngine {
                             state.resilience_manager().record_success(&auto_model_breaker);
                             // 刷新终端粘性绑定：下一轮直接复用该模型
                             state.agent_sticky().set(agent, &pconn.provider, model.as_str(), Some(&pconn.id));
-                            log::info!(
+                            log::debug!(
                                 "终端粘性：{} 成功 {}/{}/{}（第 {} 次尝试）",
                                 agent, last_provider, pconn.name, last_model, attempt + 1
                             );
@@ -817,7 +877,7 @@ impl ProxyEngine {
                 continue;
             }
 
-            log::info!("auto: 尝试 {}/{}/{} (连接: {}, 优先级: {})", 
+            log::debug!("auto: 尝试 {}/{}/{} (连接: {}, 优先级: {})",
                 provider_def.id, model, connection.name, connection.id, connection.priority);
 
             let result = self
@@ -838,7 +898,7 @@ impl ProxyEngine {
                             .agent_sticky()
                             .set(agent, &connection.provider, model.as_str(), Some(&connection.id));
                     }
-                    log::info!("auto: 成功 {}/{}/{}", provider_def.id, connection.name, model);
+                    log::debug!("auto: 成功 {}/{}/{}", provider_def.id, connection.name, model);
                     return Ok(output);
                 }
                 Err(e) => {
@@ -966,6 +1026,14 @@ impl ProxyEngine {
                 candidates.push((ci, model));
             }
         }
+        // 停用映射的目标同样不参与紧急故障转移（与 auto 路由同一语义）
+        let excluded = Self::auto_excluded_pairs(&db_aliases::list(conn).unwrap_or_default());
+        if !excluded.is_empty() {
+            candidates.retain(|(ci, model)| {
+                let c = &all_connections[*ci];
+                !excluded.contains(&(c.provider.clone(), model.clone()))
+            });
+        }
         if candidates.is_empty() {
             return Err(AppError::Routing("no failover candidates".into()));
         }
@@ -1054,7 +1122,7 @@ impl ProxyEngine {
             }
 
             tried += 1;
-            log::info!(
+            log::debug!(
                 "紧急故障转移：尝试 {}/{}/{}",
                 provider_def.id, model, connection.name
             );
@@ -1073,7 +1141,7 @@ impl ProxyEngine {
                     if let Some(sid) = session_id {
                         state.sticky_session().set(sid, &provider_def.id, model, Some(&connection.id));
                     }
-                    log::info!(
+                    log::debug!(
                         "紧急故障转移：成功切换到 {}/{}/{}",
                         provider_def.id, model, connection.name
                     );
@@ -1577,3 +1645,68 @@ fn collect_text(v: &serde_json::Value, out: &mut String) {
 }
 
 use vortex_store::db::api_keys as db_api_keys;
+
+#[cfg(test)]
+mod auto_exclusion_tests {
+    use super::ProxyEngine;
+    use vortex_store::db::models::{ModelAlias, ModelAliasTarget};
+
+    fn alias(id: &str, is_active: bool, targets: Vec<(&str, &str)>) -> ModelAlias {
+        ModelAlias {
+            id: id.into(),
+            alias: id.into(),
+            targets: targets
+                .into_iter()
+                .map(|(p, m)| ModelAliasTarget { provider: p.into(), model: m.into(), connection_id: None })
+                .collect(),
+            is_active,
+            source: "manual".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            sort_order: 0,
+        }
+    }
+
+    #[test]
+    fn inactive_alias_targets_are_excluded() {
+        let aliases = vec![alias("a1", false, vec![("openai", "gpt-x")])];
+        let excluded = ProxyEngine::auto_excluded_pairs(&aliases);
+        assert!(excluded.contains(&("openai".into(), "gpt-x".into())));
+        assert_eq!(excluded.len(), 1);
+    }
+
+    #[test]
+    fn active_alias_targets_are_never_excluded() {
+        let aliases = vec![alias("a1", true, vec![("openai", "gpt-x")])];
+        assert!(ProxyEngine::auto_excluded_pairs(&aliases).is_empty());
+    }
+
+    #[test]
+    fn active_reference_keeps_target_usable() {
+        // 同一 (provider, model) 被停用映射与启用映射同时引用：保持可用
+        let aliases = vec![
+            alias("off", false, vec![("openai", "gpt-x")]),
+            alias("on", true, vec![("openai", "gpt-x")]),
+        ];
+        assert!(ProxyEngine::auto_excluded_pairs(&aliases).is_empty());
+    }
+
+    #[test]
+    fn only_all_inactive_references_are_excluded() {
+        // 模型 A 仅被停用映射引用 → 排除；模型 B 另有启用引用 → 保留；
+        // 模型 C 无任何映射引用 → 不受映射语义影响
+        let aliases = vec![
+            alias("off", false, vec![("openai", "model-a"), ("openai", "model-b")]),
+            alias("on", true, vec![("openai", "model-b")]),
+        ];
+        let excluded = ProxyEngine::auto_excluded_pairs(&aliases);
+        assert!(excluded.contains(&("openai".into(), "model-a".into())));
+        assert!(!excluded.contains(&("openai".into(), "model-b".into())));
+        assert!(!excluded.contains(&("openai".into(), "model-c".into())));
+    }
+
+    #[test]
+    fn empty_aliases_exclude_nothing() {
+        assert!(ProxyEngine::auto_excluded_pairs(&[]).is_empty());
+    }
+}

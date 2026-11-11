@@ -16,6 +16,8 @@ pub mod keys;
 pub mod usage;
 /// 设置管理端点
 pub mod settings;
+/// 中央推送事件回填端点
+pub mod push_events;
 /// 健康检查端点
 pub mod health;
 /// 免费 Token 站点管理端点

@@ -7,7 +7,7 @@ Vortex 是一个 AI 网关应用，后端使用 **Rust**（Actix-Web + SQLite）
 - **桌面模式**（`src-tauri`）— 基于 **Tauri 2** 的桌面应用，内嵌 HTTP 服务器 + 系统托盘 + IPC 命令
 - **Web 模式**（`vortex-server`）— 纯 actix-web 服务器，不依赖 Tauri，适合服务器部署
 
-后端 Rust 代码按功能拆分为 5 个 crate（依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`；`ai-web-provider` 由 `vortex-gateway` 按需调用），核心层可独立复用于 Web 项目。
+后端 Rust 代码按功能拆分为 5 个 crate（依赖链：`vortex-store ← vortex-router ← vortex-gateway ← src-tauri`；`ai-web-provider` 由 `vortex-gateway` 按需调用），核心层可独立复用于 Web 项目。中央推送依赖外部的 `channel-client` crate（kit 仓库 `kit/channel/client`，path 依赖），服务端由 `kit/channel-server` 独立部署。
 
 ## Crate 结构
 
@@ -28,6 +28,7 @@ vortex/
 | `vortex-router` | 代理引擎（ProxyEngine）、提供商注册表、熔断器/重试/速率限制、SSE 流式、格式转换器 | ✓ |
 | `vortex-gateway` | AppState + EngineContext 实现、actix-web 路由注册、services 业务逻辑层、智能体集成 | ✓（vortex-server） |
 | `ai-web-provider` | 网页版平台（豆包 / DeepSeek / 千问 / Kimi / ChatGPT / Claude）worker：CDP 登录编排、cookie 收集持久化、网页对话转 API | ✓（库依赖） |
+| `channel-client`（外部 path 依赖） | 中央推送客户端（kit 仓库 `kit/channel/client`）：`channel.v1/ChannelService/Open` 双向长连接封装（Hello 握手 / 心跳 / 鉴权 metadata / TLS），心跳、重连与消息分发由 `push_service` 驱动；服务端由 `kit/channel-server` 独立部署 | ✓（外部仓库） |
 | `src-tauri` | Tauri 命令薄包装（委托 services）、系统托盘、窗口管理、自动更新 | ✗（依赖 Tauri） |
 
 ## 系统架构

@@ -196,6 +196,8 @@ curl http://localhost:10168/v1/chat/completions \
 | `VORTEX_FREE_TOKENS_REMOTE` | `https://hub.htui.cc/api/cms/token_site` | 免费 Token 提交 / 删除接口地址 |
 | `VORTEX_FREE_TOKENS_PAGE_URL` | `https://hub.htui.cc/api/cms/token_site/page` | 免费 Token 分页列表接口（POST） |
 | `VORTEX_HUB_TOKEN` | 空 | hub 管理接口认证令牌（可选，Bearer 方式携带） |
+| `VORTEX_PUSH_ENABLED` | `true` | 活动推送连接开关（显式设置时优先于设置页开关，见 [活动推送与在线统计](#活动推送与在线统计)） |
+| `VORTEX_PUSH_ENDPOINT` | `https://hub.htui.cc` | 推送服务器 gRPC 地址（默认公网域名 TLS 零配置；本地明文测试显式写 `http://host:port`） |
 | `VORTEX_LOG_LEVEL` | `info` | 日志级别 |
 | `VORTEX_TLS` | `false` | 启用本地 HTTPS（双端口，见下方 [HTTPS 访问](#https-访问)） |
 | `VORTEX_TLS_HTTPS_PORT` | `VORTEX_PORT + 1` | HTTPS 监听端口（双端口模式） |
@@ -228,6 +230,44 @@ curl http://localhost:10168/v1/chat/completions \
   - 最简单：改用 HTTP 主端口（`http://localhost:10168`），功能完全一致；
   - Node 系工具：启动前设置 `NODE_EXTRA_CA_CERTS=~/Library/Application\ Support/vortex/tls/ca.pem` 即可信任自签 CA；
   - Rust 系工具（如 Codex CLI / 看到 `MODEL_TLS_VALIDATION_FAILED` 的客户端）：同样改用 HTTP 主端口，或为其配置导入 `tls/ca.pem` 的开关（如有）。
+
+### 活动推送与在线统计
+
+桌面端与中央推送服务器（hub）保持一条 gRPC 双向长连接（`channel.v1/ChannelService/Open`，客户端封装为 `channel-client` crate，path 依赖本机 kit 仓库 `kit/channel/client`；连接管理见 `crates/vortex-gateway/src/services/push_service.rs`），实现两件事：
+
+1. **在线统计**：连接首帧 `Hello` 携带匿名安装 ID + 设备信息快照（品牌 / 机型 / 形态 / 主屏分辨率 / 系统版本 / Wi-Fi 与蓝牙开关状态，均为设备属性、不含任何个人信息），连接存续即在线、按安装 ID 去重（重连不重复计数），客户端每 25 秒发送一帧心跳保活；
+2. **活动实时推送**：新的免费额度 / 薅羊毛活动经下行 `Push` 消息即时下发，客户端弹通知并可跳转活动页，替代轮询的分钟级延迟。
+
+客户端侧：设置 → 通用 → 「活动推送与在线状态」开关（默认开启，重启应用生效）；`VORTEX_PUSH_ENABLED` / `VORTEX_PUSH_ENDPOINT` 环境变量可覆盖。默认连接公网域名 `https://hub.htui.cc`（TLS 由服务端反代终结，客户端信任系统根证书零配置，与 geo-pet 同款）；本地明文冒烟显式写 `http://127.0.0.1:19999`。客户端保留最近 50 条推送的内存缓冲，应用启动或窗口刷新后自动回填收件箱（`GET /api/push-events`），已读去重不重复弹窗。
+
+推送契约：下行 `Push` 消息的 `payload` 为 JSON 对象 `{"title":"标题","body":"正文","level":"info|warning|error","url":"跳转链接"}`（缺字段时客户端宽容回退，纯文本整串作正文），`message_type` 即业务类型（前端 kind，如 `free-token`；`notify` 为无类型默认值）。
+
+服务器侧（自行部署，基于 kit 仓库的 `channel-server`）：
+
+```bash
+# kit/channel workspace 内本地冒烟（空业务后端，仅握手/心跳/推送传输层）
+cd /path/to/kit/channel
+cargo run -p channel-server --example local_server -- 127.0.0.1:19999
+# 客户端验证：VORTEX_PUSH_ENDPOINT=http://127.0.0.1:19999 启动 Vortex，日志出现「hub 握手成功」
+
+# 生产部署：实现 ChannelBackend 回调（设备登记/在线统计）后 start_grpc 监听，
+# 业务 HTTP 侧调用 channel_server::push_message_all 广播推送，协议细节见 kit/channel/README.md
+```
+
+TLS 部署推荐反向代理终结（Caddy 示例：`hub.example.com { reverse_proxy / h2c://127.0.0.1:9090 }`，公网证书下客户端填 `https://hub.example.com` 零配置）。
+
+发布活动与查看在线（由服务端业务侧实现，示例为 hub 管理接口约定）：
+
+```bash
+# 发一条活动通知（payload 按上述推送契约编码，message_type 携带业务类型）
+curl -X POST http://127.0.0.1:9091/admin/notify \
+  -H "Authorization: Bearer sk-your-admin-token" -H "Content-Type: application/json" \
+  -d '{"title":"新活动上线","body":"OpenRouter 限时免费额度","level":"warning","kind":"free-token","url":"https://..."}'
+# → {"messageId":"...","delivered":128}
+
+# 查看在线人数与客户端明细（ID / 版本 / 平台 / 连接时长）
+curl -H "Authorization: Bearer sk-your-admin-token" http://127.0.0.1:9091/admin/stats
+```
 
 ### 管理界面
 
@@ -268,6 +308,7 @@ curl http://localhost:10168/v1/chat/completions \
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/push-events` | 最近推送的活动通知（内存缓冲，新→旧，至多 50 条，供前端回填收件箱） |
 | GET/POST | `/api/providers` | 提供商连接列表/创建 |
 | GET/PATCH/DELETE | `/api/providers/{id}` | 单个提供商连接操作 |
 | POST | `/api/providers/{id}/test` | 测试提供商连接 |

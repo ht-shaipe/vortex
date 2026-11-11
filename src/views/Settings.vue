@@ -72,6 +72,14 @@
             </div>
             <el-switch v-model="form.hide_mapped_models" @change="saveField('hideMappedModels', form.hide_mapped_models)" />
           </div>
+          <!-- 活动推送：与 hub 保持 gRPC 长连接（在线统计 + 薅羊毛活动实时推送），重启应用后生效 -->
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">活动推送与在线状态</div>
+              <div class="setting-desc">与推送服务器保持连接，第一时间接收免费额度等新活动通知（仅上报匿名安装标识与应用版本，不上报个人信息），重启应用后生效</div>
+            </div>
+            <el-switch v-model="form.push_enabled" @change="saveField('pushEnabled', form.push_enabled)" />
+          </div>
           <!-- Prompt 压缩级别 -->
           <div class="setting-row">
             <div>
@@ -330,6 +338,7 @@ const form = reactive({
   anthropic_ua: '',
   hide_mapped_models: true,
   compression_level: 'minimal',
+  push_enabled: true,
   security: {
     tokenAuth: false,
     token: '',
@@ -389,6 +398,7 @@ function applySettings(data: Record<string, unknown>) {
   if (g.anthropic_ua != null) form.anthropic_ua = String(g.anthropic_ua)
   if (g.hideMappedModels != null) form.hide_mapped_models = Boolean(g.hideMappedModels)
   if (g.compressionLevel != null) form.compression_level = String(g.compressionLevel)
+  if (g.pushEnabled != null) form.push_enabled = Boolean(g.pushEnabled)
 
   const s = (data.security ?? {}) as Record<string, unknown>
   if (s.tokenAuth != null) form.security.tokenAuth = Boolean(s.tokenAuth)

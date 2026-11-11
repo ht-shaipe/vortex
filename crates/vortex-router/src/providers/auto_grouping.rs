@@ -10,7 +10,8 @@ use vortex_store::db::models::ModelAliasTarget;
 use std::collections::HashMap;
 
 /// 执行自动归纳全流程：读取所有活跃连接的模型 → 按家族分组 →
-/// 删除旧 auto 别名 → 批量创建新别名（跳过与 manual 同名的）。
+/// **按名同步** auto 别名（同名原地更新 targets，保留 id 与启停状态；
+/// 新家族新建，消失家族删除；跳过与 manual 同名的）。
 ///
 /// 供保存订阅后自动调用，以及 `/api/model-aliases/auto-generate` 端点调用。
 pub fn run_auto_grouping(
@@ -36,9 +37,8 @@ pub fn run_auto_grouping(
     // 按家族分组
     let groups = group_by_family(&models);
 
-    // 删除旧 auto 别名 + 创建新别名
-    vortex_store::db::model_aliases::delete_all_auto(conn)?;
-    vortex_store::db::model_aliases::create_auto_batch(conn, &groups)?;
+    // 按名同步 auto 别名（不删除重建：保留 id 与用户设置的启停状态）
+    vortex_store::db::model_aliases::sync_auto_batch(conn, &groups)?;
 
     Ok(groups)
 }

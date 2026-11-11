@@ -71,6 +71,31 @@ pub fn run() {
                 });
             }
 
+            // 中央 hub 推送事件转发：gRPC Notification → webview "hub-push" 事件。
+            // 前端 useNotifications.ingestPush 消费（弹 toast + 进铃铛收件箱）；
+            // 通道积压时丢弃旧事件（通知类消息可容忍，广播容量 16）。
+            {
+                let app_handle = app.handle().clone();
+                let push_tx = app.state::<Arc<AppState>>().inner().push_events.clone();
+                let mut push_rx = push_tx.subscribe();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    loop {
+                        match push_rx.recv().await {
+                            Ok(ev) => {
+                                if let Err(e) = app_handle.emit("hub-push", &ev) {
+                                    log::warn!("[push] 前端事件发送失败: {e}");
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                log::warn!("[push] 前端事件通道积压，丢弃 {n} 条旧事件");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                });
+            }
+
             #[cfg(unix)]
             {
                 let signal_handle = app.handle().clone();

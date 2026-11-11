@@ -405,6 +405,12 @@ interface ProviderGroupEntry {
   source: string
 }
 
+/** 从 axios 错误中提取后端错误详情（error.response.data.error 或 message）。 */
+function apiErrMsg(e: unknown): string {
+  const anyErr = e as { response?: { data?: { error?: string } }; message?: string }
+  return anyErr?.response?.data?.error || anyErr?.message || '未知错误'
+}
+
 /** 别名目标对应的供应商/连接名（去重，连接名优先），用 " · " 连接。 */
 function aliasProviderNames(a: ModelAlias): string {
   const seen = new Set<string>()
@@ -464,8 +470,8 @@ async function persistMoveAlias(from: number, to: number) {
   try {
     const orders = arr.map((a, i) => ({ id: a.id, sort_order: arr.length - i }))
     await reorderAliases(orders)
-  } catch {
-    ElMessage.error('排序失败')
+  } catch (e) {
+    ElMessage.error(`排序失败：${apiErrMsg(e)}`)
     await load()
   }
 }
@@ -480,8 +486,8 @@ async function persistMoveTarget(a: ModelAlias, from: number, to: number) {
   try {
     const updated = await updateAlias(a.id, { targets })
     a.targets = updated.targets
-  } catch {
-    ElMessage.error('保存优先级失败')
+  } catch (e) {
+    ElMessage.error(`保存优先级失败：${apiErrMsg(e)}`)
     await load()
   }
 }
@@ -695,9 +701,9 @@ async function toggleProviderActive(g: { connectionId?: string; isActive: boolea
   if (!g.connectionId) return
   try {
     await updateProvider(g.connectionId, { isActive: !g.isActive })
-    await loadModelOptions()
-  } catch {
-    ElMessage.error('切换失败')
+    await Promise.all([loadModelOptions(), load(true)])
+  } catch (e) {
+    ElMessage.error(`切换失败：${apiErrMsg(e)}`)
   }
 }
 
@@ -715,10 +721,11 @@ async function persistProviderMove(from: number, to: number) {
         await updateProvider(g.connectionId, { priority: arr.length - i })
       }
     }
-    await loadModelOptions()
-  } catch {
-    ElMessage.error('调整优先级失败')
-    await loadModelOptions()
+    // 连接更新会触发模型自动归纳（targets 可能变化），一并静默刷新别名
+    await Promise.all([loadModelOptions(), load(true)])
+  } catch (e) {
+    ElMessage.error(`调整优先级失败：${apiErrMsg(e)}`)
+    await Promise.all([loadModelOptions(), load(true)])
   }
 }
 
@@ -811,7 +818,20 @@ const profileForm = reactive({
 })
 
 /** 加载别名列表。 */
-async function load() {
+/**
+ * 加载别名列表。
+ * @param silent - 静默模式：不切换 loading 标志（拖拽/开关后的后台刷新，
+ * 避免整个列表被 spinner 顶替造成闪烁）
+ */
+async function load(silent = false) {
+  if (silent) {
+    try {
+      aliases.value = await listAliases()
+    } catch {
+      /* ignore */
+    }
+    return
+  }
   loading.value = true
   try {
     aliases.value = await listAliases()

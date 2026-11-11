@@ -66,9 +66,9 @@ pub fn detect_agent(headers: &HeaderMap) -> Option<String> {
     if detected.is_none() {
         // 诊断：未识别的调用方打印 UA，便于扩充指纹规则
         if ua.is_empty() {
-            log::info!("agent 指纹：请求未携带 User-Agent 头（originator 未命中），视为未知来源");
+            log::debug!("agent 指纹：请求未携带 User-Agent 头（originator 未命中），视为未知来源");
         } else {
-            log::info!("agent 指纹：未识别的 User-Agent: {}", ua);
+            log::debug!("agent 指纹：未识别的 User-Agent: {}", ua);
         }
     }
     detected
@@ -102,7 +102,7 @@ fn parse_agent_from_ua(ua: &str) -> Option<String> {
     if name.len() < 2 || !has_alpha || is_generic_client(name) {
         return None;
     }
-    log::info!("agent 指纹：按 UA 产品名归为 {}（UA: {}）", name, ua);
+    log::debug!("agent 指纹：按 UA 产品名归为 {}（UA: {}）", name, ua);
     Some(name.to_string())
 }
 

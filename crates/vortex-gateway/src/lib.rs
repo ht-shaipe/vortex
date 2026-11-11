@@ -56,6 +56,14 @@ pub struct AppState {
     pub sticky_session: proxy::sticky_session::StickySessionManager,
     /// 网页版平台桥接（obscura worker 集合 + CDP 授权）
     pub web_bridge: Arc<services::web_provider_service::WebProviderBridge>,
+    /// 中央 hub 推送事件广播（gRPC Notification → 前端 toast/收件箱；
+    /// src-tauri 订阅后 emit 给 webview，Web 模式无订阅者时事件自然丢弃）
+    pub push_events: services::push_service::PushEventTx,
+    /// 最近推送事件内存缓冲：前端启动/刷新时经 GET /api/push-events 回填收件箱
+    pub push_history: services::push_service::PushHistory,
+    /// hub 推送连接状态（HelloAck 成功置 true，断流置 false），
+    /// 随 GET /api/push-events 返回供前端/运维确认通道连通性
+    pub push_connected: services::push_service::PushConnected,
     /// 加密密钥的字节序列，用于加密/解密存储中的敏感数据。
     pub encryption_key: Vec<u8>,
     /// 代理服务器的句柄，存储在互斥锁中以便启停控制。
@@ -167,6 +175,9 @@ pub fn create_app_state(cfg: AppConfig) -> vortex_store::error::Result<Arc<AppSt
         agent_sticky: routing::agent_sticky::AgentStickyTracker::new(),
         sticky_session,
         web_bridge,
+        push_events: services::push_service::push_channel(),
+        push_history: services::push_service::push_history(),
+        push_connected: services::push_service::push_connected(),
         encryption_key,
         proxy_handle: parking_lot::Mutex::new(None),
         proxy_port,
@@ -226,6 +237,7 @@ pub fn start_api_server(
                             .route("/usage/stats", web::get().to(api::management::usage::get_stats))
                             .route("/settings", web::get().to(api::management::settings::get_settings))
                             .route("/settings", web::patch().to(api::management::settings::update_settings))
+                            .route("/push-events", web::get().to(api::management::push_events::list_recent))
                             .route("/free-tokens", web::get().to(api::management::free_tokens::list_sites))
                             .route("/free-tokens", web::post().to(api::management::free_tokens::create_site))
                             .route("/free-tokens/{id}", web::delete().to(api::management::free_tokens::delete_site))
@@ -388,6 +400,17 @@ pub fn start_api_server(
                         tokio::time::sleep(std::time::Duration::from_secs(21600)).await;
                     }
                 });
+            }
+
+            // 中央 hub 推送连接：channel.v1 双向流保活（在线统计）+ 下行 Push
+            // 转发到 AppState.push_events（桌面端由 src-tauri emit 给前端）。
+            // 开关/地址来自设置与环境变量，改动需重启生效。
+            {
+                let push_cfg = services::push_service::resolve_push_config(&state.config, &state.db_pool);
+                let push_tx = state.push_events.clone();
+                let push_history = state.push_history.clone();
+                let push_connected = state.push_connected.clone();
+                actix_rt::spawn(services::push_service::run_push_loop(push_cfg, push_tx, push_history, push_connected));
             }
 
             srv.await.expect("Server error");

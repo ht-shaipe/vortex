@@ -420,7 +420,7 @@ impl ProviderExecutor for OpenAIExecutor {
 
         let url = build_upstream_url(base_url, chat_path);
 
-        log::info!("上游请求: POST {} (model: {}, stream: {})", url, model, request.stream);
+        log::debug!("上游请求: POST {} (model: {}, stream: {})", url, model, request.stream);
 
         // 构建请求体：在原始消息基础上注入模型与采样参数
         let mut body = request.messages.clone();
@@ -880,13 +880,13 @@ impl ProviderExecutor for WebExecutor {
                 body: "messages 中没有可用的用户问题文本".into(),
             });
         };
-        log::info!(
+        log::debug!(
             "web question extracted: len={} preview={:?}",
             question.len(),
             question.chars().take(200).collect::<String>(),
         );
 
-        log::info!(
+        log::debug!(
             "web ask: platform={} model={} stream={} has_tools={} tools_count={} has_role_tool={} dsml_always_parse={}",
             platform,
             request.model,
@@ -1154,15 +1154,11 @@ async fn handle_web_return_trip(
         }
     }
 
-    log::info!(
+    log::debug!(
         "web return_trip: tool_count={} return_text_len={} return_text_preview={:?}",
         tool_messages.len(),
         return_text.len(),
         return_text.chars().take(200).collect::<String>(),
-    );
-    let _ = std::fs::write(
-        "/tmp/vortex_debug.log",
-        format!("[return_trip] tool_count={} return_text_len={} preview={:?}\n", tool_messages.len(), return_text.len(), return_text.chars().take(500).collect::<String>()),
     );
 
     let reply = bridge
