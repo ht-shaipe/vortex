@@ -1,0 +1,23 @@
+[package]
+name = "channel-client"
+version = "0.1.0"
+description = "应用通道客户端：gRPC 双向长连接封装"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ht-shaipe/kit"
+keywords = ["grpc", "tonic", "channel", "client"]
+categories = ["network-programming", "asynchronous"]
+
+[dependencies]
+tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
+tonic-prost = "0.14"
+prost = "0.14"
+tokio-stream = { version = "0.1", features = ["sync"] }
+thiserror = "2"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[dev-dependencies]
+# examples/smoke.rs 需要: 运行时/心跳定时/下行流收发
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }

@@ -4,6 +4,7 @@ members = [
     "crates/vortex-router",
     "crates/vortex-gateway",
     "crates/ai-web-provider",
+    "crates/channel-client",
     "src-tauri",
 ]
 resolver = "2"
@@ -16,5 +17,5 @@ authors = ["Vortex"]
 
 [workspace.dependencies]
 # 中央推送客户端（channel.v1 双向流长连接，kit/channel/server 独立部署服务端；
-# path 指向本机 kit 仓库，与 geo-pet 项目共用同一份实现）
-channel-client = { path = "../../../rust/kit/channel/client" }
+# vendor 副本，源实现位于本机 kit 仓库（与 geo-pet 共用），更新时手动同步）
+channel-client = { path = "crates/channel-client" }

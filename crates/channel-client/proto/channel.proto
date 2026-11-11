@@ -1,0 +1,145 @@
+// 通用终端通道协议，客户端与服务端共用此契约。
+// 后续协议演进请直接维护本文件。
+syntax = "proto3";
+
+package channel.v1;
+
+// 终端双向长连接服务
+service ChannelService {
+  // 双向通道: 上行 Hello/Heartbeat/TaskAck/TaskProgress/UserInfo, 下行 HelloAck/HeartbeatAck/TaskAssign/TaskCancel/Push
+  rpc Open (stream ClientMessage) returns (stream ServerMessage) {}
+}
+
+// ===== 通用枚举 =====
+
+// 任务类型(下发方向: TaskAssign.task_type)
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;   // 未指定
+  TASK_TYPE_UPGRADE = 1;       // 升级
+  TASK_TYPE_CONFIG = 2;        // 配置下发
+  TASK_TYPE_COMMAND = 3;       // 指令
+  TASK_TYPE_CHECK_UPDATE = 4;  // 检查更新
+}
+
+// 任务执行状态(上行方向: TaskProgress.status)
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;  // 未指定
+  TASK_STATUS_RUNNING = 3;      // 执行中
+  TASK_STATUS_SUCCESS = 4;      // 成功
+  TASK_STATUS_FAILED = 5;       // 失败
+}
+
+// ===== 双向通道消息 =====
+
+// 上行消息
+message ClientMessage {
+  oneof payload {
+    Hello hello = 1;                  // 首帧握手
+    Heartbeat heartbeat = 2;          // 心跳
+    TaskAck task_ack = 3;             // 任务回执(收到/拒绝)
+    TaskProgress task_progress = 4;   // 任务执行进度/结果
+    UserInfo user_info = 5;           // 用户资料补报(登录后/变更时; user_id 空 = 解绑)
+  }
+}
+
+// 握手: 连接建立后客户端必须先发送 Hello
+message Hello {
+  string device_id = 1;     // 设备唯一标识(必填, 业务侧设备指纹)
+  string app_key = 2;       // 应用标识
+  string version = 3;       // 客户端版本
+  // 4 原为客户端自报 IP(预留字段), 已废弃: 服务端恒取传输层对端地址,
+  // 终端无需自报 IP; 字段号 4 永久保留, 不得复用
+  DeviceInfo device_info = 5; // 设备信息快照(连接时上报)
+  UserInfo user_info = 6;   // 登录态用户资料(未登录不填; user_id 为空视为未绑定, 不产生解绑事件——登出解绑请发上行 user_info 空)
+}
+
+// 终端当前登录的用户资料(业务侧关联设备归属; 未登录时不上报)
+message UserInfo {
+  string user_id = 1;       // 用户唯一标识(业务侧账号体系)
+  string username = 2;      // 登录账号
+  string nickname = 3;      // 昵称/展示名
+  string mobile = 4;        // 手机号
+  string avatar = 5;        // 头像 URL
+}
+
+// 终端设备信息快照(随 Hello 上报, 业务侧登记/入库)
+message DeviceInfo {
+  string device_brand = 1;      // 品牌厂商(如 Apple)
+  string device_model = 2;      // 机型型号(如 Mac16,8)
+  string device_type = 3;       // 设备形态(如 laptop/desktop)
+  int32 screen_width = 4;       // 主屏宽(物理像素)
+  int32 screen_height = 5;      // 主屏高(物理像素)
+  string os_name = 6;           // 操作系统(如 macos)
+  string os_version = 7;        // 系统版本(如 27.0.1)
+  bool wifi_enabled = 8;        // Wi-Fi 开关状态
+  bool bluetooth_enabled = 9;   // 蓝牙开关状态
+  string host_version = 10;     // 宿主应用版本
+}
+
+// 通道内心跳
+message Heartbeat {
+  int64 seq = 1;            // 心跳序号(客户端自增, 服务端暂不校验)
+}
+
+// 任务回执(幂等键: task_id + attempt)
+message TaskAck {
+  int64 task_id = 1;        // 任务id
+  int32 attempt = 2;        // 投递次数(与服务端记录一致才生效)
+  bool success = 3;         // 是否接收成功
+  string message = 4;       // 失败原因
+}
+
+// 任务执行进度/结果
+message TaskProgress {
+  int64 task_id = 1;        // 任务id
+  TaskStatus status = 2;    // 执行状态(枚举值, 见 TaskStatus)
+  string result = 3;        // 执行结果/错误信息
+}
+
+// 下行消息
+message ServerMessage {
+  oneof payload {
+    HelloAck hello_ack = 1;             // 握手应答
+    HeartbeatAck heartbeat_ack = 2;     // 心跳应答
+    TaskAssign task_assign = 3;         // 任务下发
+    TaskCancel task_cancel = 4;         // 任务取消
+    // 5 原为 Upgrade 便捷消息, 已废弃: 升级统一走 TaskAssign(task_type=TASK_TYPE_UPGRADE),
+    // 服务端从未实现 Upgrade 发送路径; 字段号 5 永久保留, 不得复用
+    PushMessage push = 6;               // 直接推送的业务消息(不落库)
+  }
+}
+
+// 握手应答
+message HelloAck {
+  bool success = 1;
+  string message = 2;
+  int64 server_time = 3;        // 服务器时间戳(秒)
+  repeated TaskAssign pending_tasks = 4; // 重连补执行清单
+}
+
+// 心跳应答
+message HeartbeatAck {
+  int64 server_time = 1;        // 服务器时间戳(秒)
+}
+
+// 任务下发
+message TaskAssign {
+  int64 task_id = 1;
+  TaskType task_type = 2;      // 任务类型(枚举值, 见 TaskType)
+  int32 attempt = 3;           // 本次投递的序号
+  string payload = 4;          // 任务参数JSON
+}
+
+// 任务取消
+message TaskCancel {
+  int64 task_id = 1;
+}
+
+// 直接推送的业务消息
+// 由 HTTP /client/push 触发，发送到当前在线会话；不落库、不重试。
+message PushMessage {
+  string message_id = 1;      // 消息标识(服务端生成，或调用方指定用于业务关联)
+  string message_type = 2;    // 业务消息类型(如 notify/config/command)
+  string payload = 3;         // 消息内容(JSON 字符串或普通文本)
+  int64 server_time = 4;      // 服务器时间戳(秒)
+}
