@@ -4,6 +4,10 @@
 //! 单个字段失败不影响其余字段，返回默认值（空串/false）。
 //! 含少量系统命令调用，同步阻塞——调用方应避免在 async 上下文直接调用
 //! （经 `spawn_blocking` 执行）。
+//!
+//! 注意：禁止直连 IOBluetooth 等隐私框架 API——打包后的 .app 缺少
+//! NSBluetoothAlwaysUsageDescription，macOS TCC 会直接终止进程（SIGABRT，
+//! v0.1.42 发版即因此必崩）。
 
 /// 设备信息快照（连接握手时上报）。
 #[derive(Debug, Clone, Default)]
@@ -24,7 +28,7 @@ pub struct DeviceSnapshot {
     pub os_version: String,
     /// Wi-Fi 开关状态
     pub wifi_enabled: bool,
-    /// 蓝牙开关状态
+    /// 蓝牙开关状态（不再采集，恒为 false；直连 IOBluetooth 会触发 macOS TCC 终止）
     pub bluetooth_enabled: bool,
 }
 
@@ -36,12 +40,6 @@ pub fn snapshot() -> DeviceSnapshot {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::DeviceSnapshot;
-
-    // 蓝牙控制器电源状态查询（blueutil 同款 API，1=开）
-    #[link(name = "IOBluetooth", kind = "framework")]
-    unsafe extern "C" {
-        fn IOBluetoothPreferenceGetControllerPowerState() -> i32;
-    }
 
     // 主显示器物理像素尺寸（Tauri primary_monitor 的网关侧等价实现，
     // 桌面/Web 两种运行模式均可用）
@@ -68,7 +66,8 @@ mod imp {
             os_name: std::env::consts::OS.into(),
             os_version: sysctl("kern.osproductversion").unwrap_or_default(),
             wifi_enabled: wifi_enabled(),
-            bluetooth_enabled: bluetooth_enabled(),
+            // 不采集：IOBluetooth API 触发 TCC 隐私终止（见模块注释）
+            bluetooth_enabled: false,
         }
     }
 
@@ -116,12 +115,6 @@ mod imp {
             return false;
         };
         String::from_utf8_lossy(&out.stdout).contains(": On")
-    }
-
-    /// 蓝牙电源状态：IOBluetoothPreferenceGetControllerPowerState（1=开）。
-    fn bluetooth_enabled() -> bool {
-        // SAFETY: 无参 C 查询函数；IOBluetooth 框架由上方链接声明引入
-        unsafe { IOBluetoothPreferenceGetControllerPowerState() == 1 }
     }
 }
 

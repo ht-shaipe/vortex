@@ -358,3 +358,20 @@ jobs:
             [ -n "$ASSET_ID" ] && gh api --method DELETE repos/${REPO}/releases/assets/$ASSET_ID 2>/dev/null || true
           done
           echo "✓ Fragment files cleaned up"
+
+  # 发布产物推送 hub：复用可复用工作流 hub-upload.yml，把 latest.json +
+  # 各平台安装包上传到 hub.htui.cc 发版接口（appKey 默认取仓库名 vortex）。
+  # 需要 secret HUB_UPLOAD_TOKEN（hub 后台 release.upload_token）。
+  hub-upload:
+    name: Push artifacts to hub
+    needs: [publish, merge-manifest]
+    if: ${{ needs.publish.result == 'success' && needs['merge-manifest'].result == 'success' }}
+    uses: ./.github/workflows/hub-upload.yml
+    permissions:
+      contents: read
+    with:
+      # tag 推送事件取 ref 名；手动 dispatch 取输入版本号补 v 前缀
+      tag: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+    secrets:
+      # 显式映射（不继承全量 secrets）：只有上传令牌会传给可复用工作流
+      hub_token: ${{ secrets.HUB_UPLOAD_TOKEN }}

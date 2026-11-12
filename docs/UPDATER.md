@@ -62,6 +62,7 @@ bash scripts/generate-updater-key.sh
 |-----------|-----|------|
 | `TAURI_SIGNING_PRIVATE_KEY` | 私钥文件内容 | 用于签名更新包 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码 | 如果私钥有密码 |
+| `HUB_UPLOAD_TOKEN` | hub 发版上传令牌 | 推送产物到 hub.htui.cc（`X-Upload-Token` 请求头） |
 
 ## 发布新版本
 
@@ -77,6 +78,7 @@ GitHub Actions 会自动：
 2. 签名更新包
 3. 创建 GitHub Release
 4. 上传 `latest.json` 和各平台安装包
+5. 推送 `latest.json` + 各平台安装包到 hub.htui.cc 发版接口（`hub-upload` job，appKey 为 `vortex`，可在 hub 后台下载/展示最新版本）
 
 ### 方式二：手动触发
 
@@ -120,6 +122,7 @@ src/composables/useUpdater.ts     # 更新检查 composable（启动检查 + 周
 src/views/About.vue               # 「关于」页检查更新 UI
 src-tauri/tauri.conf.json         # updater 插件配置
 .github/workflows/release.yml     # 自动发布 workflow
+.github/workflows/hub-upload.yml  # 可复用工作流：发版产物推送 hub.htui.cc
 scripts/generate-updater-key.sh   # 密钥生成脚本
 ```
 

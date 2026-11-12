@@ -1,0 +1,220 @@
+name: Hub Upload
+
+# 可复用工作流：把指定 Release 的各平台安装包 + latest.json 推送到 hub 发版接口。
+#
+# 接口契约（core 服务 POST /api/core/release/upload，multipart）：
+# - 鉴权：请求头 X-Upload-Token，与服务端 release.upload_token 严格相等
+# - 字段：file（单文件/次）、appKey、version（兼容 v 前缀）、platform、changelog
+# - platform：0 通用 / 1 iOS / 2 Android / 3 Web / 4 Windows / 5 Linux / 6 macOS
+# - 幂等：同 appKey+version+platform 重复上传为更新记录（CI 重跑安全），文件按目标名覆盖落盘
+# - 存储：文件名不带版本号，服务端只保留最新版本产物并自动清理老版本文件
+#   · 清单(latest.json) → apps/{appKey}/latest.json（每次发版覆盖，永远是最新）
+#   · 安装包 → apps/{appKey}/{appKey}_{平台后缀}{ext}（如 vortex_macos.dmg / vortex_windows.exe，
+#     下载地址跨版本稳定；同平台多次上传按顺序后传覆盖前传）
+# - 成功响应 {code:0, result:{filePath, fileMd5, ...}}
+#
+# 上传清单与顺序（顺序决定 platform 记录最终指向，后传覆盖前传）：
+#   1. latest.json            → platform 0
+#   2. dmg(aarch64)           → platform 6
+#   3. dmg(x86_64)            → platform 6（macOS 记录最终指向 x64 安装包）
+#   4. msi                    → platform 4
+#   5. exe(nsis setup)        → platform 4（Windows 记录最终指向 nsis 安装包）
+#   6. deb                    → platform 5
+#   7. AppImage               → platform 5（Linux 记录最终指向 AppImage，免安装免 root）
+# .sig / .app.tar.gz / .rpm 等 updater 归档不上传（仍留 GitHub Release 托管）。
+# changelog 自动取 GitHub Release notes；token 缺失时直接报错（服务端 401）。
+#
+# 本仓库调用（release.yml）：
+#   hub-upload:
+#     needs: [publish, merge-manifest]
+#     if: ${{ needs.publish.result == 'success' && needs['merge-manifest'].result == 'success' }}
+#     uses: ./.github/workflows/hub-upload.yml
+#     permissions:
+#       contents: read
+#     with:
+#       tag: v0.1.43
+#     secrets:
+#       hub_token: ${{ secrets.HUB_UPLOAD_TOKEN }}
+#
+# 跨项目复用（要求本仓库对目标仓库可访问：公开仓库，或同组织/账号下已放行 Actions）：
+#   hub-upload:
+#     uses: ht-shaipe/vortex/.github/workflows/hub-upload.yml@main
+#     permissions:
+#       contents: read
+#     with:
+#       tag: v0.1.43
+#       app-key: your-app-key
+#     secrets:
+#       hub_token: ${{ secrets.HUB_UPLOAD_TOKEN }}
+#
+# 各接入仓库自行设置 secret：gh secret set HUB_UPLOAD_TOKEN
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release 标签（如 v0.1.43，version 字段兼容 v 前缀）'
+        required: true
+        type: string
+      app-key:
+        description: '应用标识（hub 后台 cor_app.app_key）；留空回退取仓库名'
+        required: false
+        type: string
+        default: ''
+      upload-url:
+        description: '发版上传接口地址'
+        required: false
+        type: string
+        default: 'https://hub.htui.cc/api/core/release/upload'
+    secrets:
+      hub_token:
+        description: '上传令牌，以 X-Upload-Token 请求头携带'
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release 标签（如 v0.1.43）'
+        required: true
+      app-key:
+        description: '应用标识（hub 后台 cor_app.app_key）；留空回退取仓库名'
+        required: false
+        type: string
+        default: ''
+      upload-url:
+        description: '发版上传接口地址'
+        required: false
+        type: string
+        default: 'https://hub.htui.cc/api/core/release/upload'
+
+jobs:
+  hub-upload:
+    name: Push release artifacts of ${{ inputs.tag }} to hub
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    env:
+      UPLOAD_URL: ${{ inputs.upload-url }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      APP_KEY_INPUT: ${{ inputs.app-key }}
+      # 被调用时取调用方传入的 hub_token；直接 dispatch 时回退取仓库 secret HUB_UPLOAD_TOKEN
+      HUB_TOKEN: ${{ secrets.hub_token || secrets.HUB_UPLOAD_TOKEN }}
+    steps:
+      - name: Resolve app key and changelog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$HUB_TOKEN" ]; then
+            echo "::error::未配置上传令牌：请设置仓库 secret HUB_UPLOAD_TOKEN（gh secret set HUB_UPLOAD_TOKEN），服务端要求 X-Upload-Token 鉴权"
+            exit 1
+          fi
+          # app-key 回退取仓库名
+          APP_KEY="${APP_KEY_INPUT:-${GITHUB_REPOSITORY#*/}}"
+          # changelog 取 GitHub Release notes（服务端空值不写，幂等更新保留旧值）
+          CHANGELOG=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json body -q '.body' 2>/dev/null | sed -e 's/[[:space:]]*$//') || CHANGELOG=""
+          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
+          echo "CHANGELOG=$CHANGELOG" >> "$GITHUB_ENV"
+          echo "APP_KEY=$APP_KEY, tag=$RELEASE_TAG, changelog=${#CHANGELOG} chars"
+
+      - name: Download release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          # 只取要上传的产物：清单 + 安装包（sig/updater 归档不上传）
+          n=0
+          until gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --dir assets --clobber \
+              --pattern "latest.json" --pattern "*.dmg" --pattern "*.msi" \
+              --pattern "*.exe" --pattern "*.deb" --pattern "*.AppImage"; do
+            n=$((n+1))
+            if [ "$n" -ge 5 ]; then
+              echo "::error::Release 资产下载失败（已重试 $n 次）"
+              exit 1
+            fi
+            echo "::warning::资产下载失败（第 $n/5 次），15s 后重试"
+            sleep 15
+          done
+          echo "Downloaded assets from $RELEASE_TAG:"
+          ls -lh assets
+          if [ ! -f "assets/latest.json" ]; then
+            echo "::error::assets/latest.json 缺失，拒绝推送不完整的产物集"
+            exit 1
+          fi
+          if ! ls assets/*.dmg assets/*.msi assets/*.exe assets/*.deb assets/*.AppImage >/dev/null 2>&1; then
+            echo "::error::未找到任何平台安装包（*.dmg/*.msi/*.exe/*.deb/*.AppImage）"
+            exit 1
+          fi
+
+      - name: Upload artifacts to hub
+        shell: bash
+        run: |
+          shopt -s nullglob
+          # 有序清单 "路径|platform"：后传覆盖前传（幂等更新语义），
+          # 顺序保证 macOS 记录最终指向 x64 dmg、Windows 记录最终指向 nsis exe、
+          # Linux 记录最终指向 AppImage
+          UPLOADS=()
+          UPLOADS+=("assets/latest.json|0")
+          for f in assets/*aarch64*.dmg; do UPLOADS+=("$f|6"); done
+          for f in assets/*x86_64*.dmg assets/*x64*.dmg; do UPLOADS+=("$f|6"); done
+          for f in assets/*.dmg; do
+            case "$f" in *aarch64*|*x86_64*|*x64*) continue ;; esac
+            UPLOADS+=("$f|6")
+          done
+          for f in assets/*.msi; do UPLOADS+=("$f|4"); done
+          for f in assets/*.exe; do UPLOADS+=("$f|4"); done
+          for f in assets/*.deb; do UPLOADS+=("$f|5"); done
+          for f in assets/*.AppImage; do UPLOADS+=("$f|5"); done
+
+          echo "Upload plan (${#UPLOADS[@]} file(s)):"
+          for e in "${UPLOADS[@]}"; do echo "  platform=${e#*|}  ${e%|*}"; done
+
+          FAIL=0
+          for entry in "${UPLOADS[@]}"; do
+            FILE="${entry%|*}"
+            PLATFORM="${entry#*|}"
+            BASENAME=$(basename "$FILE")
+            SIZE=$(du -h "$FILE" | cut -f1)
+            echo "→ Uploading $BASENAME ($SIZE) as platform=$PLATFORM"
+            FORM=(-H "X-Upload-Token: ${HUB_TOKEN}"
+              -F "appKey=${APP_KEY}"
+              -F "version=${RELEASE_TAG}"
+              -F "platform=${PLATFORM}")
+            if [ -n "${CHANGELOG:-}" ]; then
+              FORM+=(-F "changelog=${CHANGELOG}")
+            fi
+            FORM+=(-F "file=@${FILE}")
+            OK=false
+            for i in 1 2 3 4 5; do
+              HTTP_CODE=$(curl -sS -o hub-response.json -w '%{http_code}' \
+                --connect-timeout 10 --max-time 900 \
+                -X POST "$UPLOAD_URL" "${FORM[@]}") || {
+                echo "::warning::$BASENAME 网络错误（第 $i/5 次），10s 后重试"
+                sleep 10
+                continue
+              }
+              RESP_CODE=$(jq -r '.code' hub-response.json 2>/dev/null || echo "")
+              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ "$RESP_CODE" = "0" ]; then
+                FILE_PATH=$(jq -r '.result.filePath // "?"' hub-response.json)
+                echo "  OK $BASENAME → $FILE_PATH"
+                OK=true
+                break
+              fi
+              echo "::warning::$BASENAME 上传失败（HTTP $HTTP_CODE / code=${RESP_CODE:-?}，第 $i/5 次），10s 后重试"
+              cat hub-response.json 2>/dev/null || true
+              echo ""
+              sleep 10
+            done
+            if [ "$OK" != "true" ]; then
+              echo "::error::$BASENAME 上传 hub 失败（已重试 5 次）"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::部分产物上传 hub 失败，详见上方日志"
+            exit 1
+          fi
+          echo "OK All artifacts uploaded to hub"
