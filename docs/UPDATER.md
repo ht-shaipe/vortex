@@ -18,17 +18,18 @@ Vortex 使用 [Tauri 2 Updater 插件](https://v2.tauri.app/plugin/updater/) 实
 
 ## 更新源
 
-当前更新源配置在 `tauri.conf.json` 中：
+当前更新源配置在 `tauri.conf.json` 中（hub 优先、GitHub 兜底，依次尝试）：
 
 ```json
 "endpoints": [
-  "https://github.com/th-shaipe/vortex/releases/latest/download/latest.json"
+  "https://hub.htui.cc/apps/vortex/latest.json",
+  "https://github.com/ht-shaipe/vortex/releases/latest/download/latest.json"
 ]
 ```
 
-`latest.json` 由 GitHub Actions 在发布时自动生成并上传到 Release assets。
-
-> **后续可切换到国内镜像**：只需将 `endpoints` 改为国内 CDN/Gitee Release 地址即可，无需修改代码。
+`latest.json` 由 GitHub Actions 在发布时自动生成：清单内的下载地址全部指向 hub 扁平路径
+（`vortex_windows.exe` / `vortex_macos_{arch}.app.tar.gz` / `vortex_linux.AppImage`），
+对应产物由 `hub-upload` 任务上传到 hub，国内下载走 hub、海外走 GitHub 双保险。
 
 ## 首次配置
 
@@ -56,7 +57,7 @@ bash scripts/generate-updater-key.sh
 
 ### 3. 配置 GitHub Secrets
 
-在 [GitHub 仓库设置页面](https://github.com/th-shaipe/vortex/settings/secrets/actions) 添加以下 Secrets：
+在 [GitHub 仓库设置页面](https://github.com/ht-shaipe/vortex/settings/secrets/actions) 添加以下 Secrets：
 
 | Secret 名 | 值 | 说明 |
 |-----------|-----|------|
@@ -82,36 +83,16 @@ GitHub Actions 会自动：
 
 ### 方式二：手动触发
 
-在 [GitHub Actions 页面](https://github.com/th-shaipe/vortex/actions/workflows/release.yml) 点击 "Run workflow"，输入版本号即可。
+在 [GitHub Actions 页面](https://github.com/ht-shaipe/vortex/actions/workflows/release.yml) 点击 "Run workflow"，输入版本号即可。
 
-## 切换到国内更新源
+## 切换更新源
 
-当 GitHub 访问困难时，可将更新源切换到国内镜像：
-
-### 方案 A：Gitee 镜像
-
-1. 在 Gitee 创建同名仓库并同步 Release
-2. 修改 `tauri.conf.json`：
-
-```json
-"endpoints": [
-  "https://gitee.com/th-shaipe/vortex/releases/latest/download/latest.json"
-]
-```
-
-### 方案 B：自建 CDN
-
-1. 将 `latest.json` 和更新包上传到 CDN
-2. 修改 `endpoints` 为 CDN 地址
-
-### 方案 C：多源回退
-
-Tauri 支持多个 endpoints，会依次尝试：
+当 hub/GitHub 访问困难时，可调整 `endpoints` 顺序或增删源，Tauri 支持多个 endpoints 并依次尝试：
 
 ```json
 "endpoints": [
   "https://cdn.example.com/vortex/latest.json",
-  "https://github.com/th-shaipe/vortex/releases/latest/download/latest.json"
+  "https://hub.htui.cc/apps/vortex/latest.json"
 ]
 ```
 

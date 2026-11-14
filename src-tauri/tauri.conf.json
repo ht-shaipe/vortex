@@ -1,6 +1,6 @@
 {
   "productName": "Vortex",
-  "version": "0.1.22",
+  "version": "0.1.43",
   "identifier": "com.vortex.gateway",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -63,6 +63,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://hub.htui.cc/apps/vortex/latest.json",
         "https://github.com/ht-shaipe/vortex/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwOTQ2NDVBMTYxRURFOEIKUldTTDNoNFdXbVNVb00rNjZyVnQxRmtUVmhLZlZzU1hCTHlISmlac1UyZnozSlo3cm5VdjFJZUwK",

@@ -76,19 +76,20 @@ current-version:
 	@echo "$(C_GREEN)远程:$(C_RESET)       $(REPO_URL)"
 
 # ── 版本号同步 ───────────────────────────────────────────
-# 更新 4 个文件: package.json, Cargo.toml, tauri.conf.json, docs/index.html
+# 更新 4 个文件: package.json, Cargo.toml(工作区版本), tauri.conf.json, docs/index.html
+# 正则不锚定旧版本号（匹配任意当前值），文件间版本漂移也能拉齐，避免同步静默失效
 
 sync-version:
 	@test -n "$(VERSION)" || (echo "$(C_RED)错误: 请指定版本号。用法: make sync-version VERSION=0.1.4$(C_RESET)" && exit 1)
 	@test "$(VERSION)" != "$(CURRENT_VERSION)" || (echo "$(C_YELLOW)版本号未变更（当前已是 $(CURRENT_VERSION)）$(C_RESET)" && exit 0)
 	@echo "$(C_CYAN)同步版本号: $(CURRENT_VERSION) → $(VERSION)$(C_RESET)"
-	@perl -i -pe 's/"version": "\Q$(CURRENT_VERSION)\E"/"version": "$(VERSION)"/' package.json
-	@perl -i -pe 's/^version = "\Q$(CURRENT_VERSION)\E"/version = "$(VERSION)"/' src-tauri/Cargo.toml
-	@perl -i -pe 's/"version": "\Q$(CURRENT_VERSION)\E"/"version": "$(VERSION)"/' src-tauri/tauri.conf.json
-	@perl -i -pe 's/v\Q$(CURRENT_VERSION)\E/v$(VERSION)/' docs/index.html
+	@perl -i -pe 's/"version": "[^"]*"/"version": "$(VERSION)"/' package.json
+	@perl -i -pe 's/^version = ".*"/version = "$(VERSION)"/' Cargo.toml
+	@perl -i -pe 's/"version": "[^"]*"/"version": "$(VERSION)"/' src-tauri/tauri.conf.json
+	@perl -i -pe 's/v0\.\d+\.\d+/v$(VERSION)/' docs/index.html
 	@echo "$(C_GREEN)✓ 已更新:$(C_RESET)"
 	@echo "    package.json"
-	@echo "    src-tauri/Cargo.toml"
+	@echo "    Cargo.toml (workspace)"
 	@echo "    src-tauri/tauri.conf.json"
 	@echo "    docs/index.html"
 
@@ -126,7 +127,7 @@ release:
 	@echo "$(C_CYAN)▶ 更新 Cargo.lock...$(C_RESET)"
 	@cd src-tauri && cargo check 2>/dev/null
 	@echo "$(C_CYAN)▶ 提交版本变更...$(C_RESET)"
-	@git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json docs/index.html
+	@git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json docs/index.html
 	@git commit -m "v$(RELEASE_VERSION): bump version"
 	@git tag "v$(RELEASE_VERSION)"
 	@echo "$(C_GREEN)✓ 已提交并打标签 v$(RELEASE_VERSION)$(C_RESET)"
@@ -161,7 +162,7 @@ dry-run:
 	@echo ""
 	@echo "$(C_CYAN)将更新文件:$(C_RESET)"
 	@echo "    package.json              \"version\": \"$(RELEASE_VERSION)\""
-	@echo "    src-tauri/Cargo.toml      version = \"$(RELEASE_VERSION)\""
+	@echo "    Cargo.toml (workspace)    version = \"$(RELEASE_VERSION)\""
 	@echo "    src-tauri/tauri.conf.json \"version\": \"$(RELEASE_VERSION)\""
 	@echo "    docs/index.html           v$(RELEASE_VERSION) · MIT 开源"
 	@echo ""

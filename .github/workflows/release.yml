@@ -11,7 +11,34 @@ on:
         required: true
 
 jobs:
+  # 版本解析：全 workflow 单一来源（发布 tag 或手动输入 → 归一化校验 semver）。
+  # 下游 job 统一经 needs.resolve.outputs.version / .tag 消费，不再各自重复解析。
+  resolve:
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: v${{ steps.ver.outputs.version }}
+    steps:
+      - name: Determine version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          # 规范化：去掉可能的 v 前缀与首尾空白，保证是合法 semver
+          VERSION=$(printf '%s' "$VERSION" | sed 's/^v//' | tr -d '[:space:]')
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::Determined version '$VERSION' is not a valid semver (expect e.g. 0.1.1, do NOT include a leading v)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
   publish:
+    needs: resolve
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
@@ -57,6 +84,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
       - name: Install Linux deps
         if: matrix.os == 'ubuntu-22.04'
         run: |
@@ -83,27 +115,10 @@ jobs:
       - name: Build frontend
         run: bun run build
 
-      - name: Determine version
-        id: ver
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          fi
-          # 规范化：去掉可能的 v 前缀与首尾空白，保证是合法 semver
-          VERSION=$(printf '%s' "$VERSION" | sed 's/^v//' | tr -d '[:space:]')
-          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "::error::Determined version '$VERSION' is not a valid semver (expect e.g. 0.1.1, do NOT include a leading v)"
-            exit 1
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Sync tauri version
         shell: bash
         env:
-          APP_VERSION: ${{ steps.ver.outputs.version }}
+          APP_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.env.APP_VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2));"
           echo "tauri.conf.json version synced to $APP_VERSION"
@@ -113,17 +128,59 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          # 幂等创建：多平台并发时可能已被其他 job 创建，忽略 422 冲突
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists"
-          else
-            gh release create "$TAG" \
-              --title "Vortex v${{ steps.ver.outputs.version }}" \
+          TAG="v${{ needs.resolve.outputs.version }}"
+          # 幂等创建 + 重试：并发 job 竞态（already exists）与 GitHub API 瞬时 404/5xx 均靠重试兜底
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG already exists"
+              echo "Release $TAG ready"
+              exit 0
+            fi
+            if gh release create "$TAG" \
+              --title "Vortex v${{ needs.resolve.outputs.version }}" \
               --notes "See the assets below to download and install this version." \
-              --draft=false 2>&1 || true
-          fi
-          echo "Release $TAG ready"
+              --draft=false; then
+              echo "Release $TAG created"
+              echo "Release $TAG ready"
+              exit 0
+            fi
+            echo "::warning::release 查询/创建失败（第 $i/5 次），10s 后重试"
+            sleep 10
+          done
+          echo "::error::无法创建或定位 Release $TAG（GitHub API 持续不可用？）"
+          exit 1
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node -e "
+            const key = process.env.TAURI_SIGNING_PRIVATE_KEY || '';
+            const fail = (msg) => { console.error('::error::' + msg); process.exit(1); };
+            if (!key.trim()) {
+              fail('secrets.TAURI_SIGNING_PRIVATE_KEY 为空。请用私钥文件的原始内容（本身即单行 base64，无需任何转换）重新保存：gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.vortex-updater.key');
+            }
+            if (/\s/.test(key)) {
+              fail('secrets.TAURI_SIGNING_PRIVATE_KEY 含空白字符（空格/换行），Tauri 使用的严格 base64 解码会失败。请保存纯单行 base64 内容。');
+            }
+            if (!/^[A-Za-z0-9+/]+={0,2}$/.test(key)) {
+              fail('secrets.TAURI_SIGNING_PRIVATE_KEY 不是合法的 base64 字符串。Secret 应为 tauri signer generate 生成的 .key 文件内容（单行 base64），不要手动解码或重新编码。');
+            }
+            const decoded = Buffer.from(key, 'base64').toString('utf8');
+            if (!decoded.startsWith('untrusted comment:')) {
+              fail('私钥解码后不以 untrusted comment: 开头，内容不正确。Secret 应为 tauri signer generate 生成的 .key 文件原始内容。');
+            }
+            const lines = decoded.trim().split('\n');
+            if (lines.length < 2 || !lines[1].trim()) {
+              fail('私钥解码后缺少第二行密钥数据（应为两行 minisign 格式）。');
+            }
+            const bin = Buffer.from(lines[1].trim(), 'base64');
+            if (bin.length > 4 && bin.slice(2, 4).toString('latin1') === 'Sc') {
+              console.log('::notice::私钥为密码加密（scrypt）。若密码非空需配置 secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD；本密钥为空密码则无需配置。');
+            }
+            console.log('签名私钥 Secret 格式校验通过');
+          "
 
       - name: Build Tauri app
         shell: bash
@@ -140,33 +197,32 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
+          TAG="v${{ needs.resolve.outputs.version }}"
           TARGET="${{ matrix.target }}"
           BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
 
           echo "=== Collecting artifacts for $TARGET ==="
           FILES=()
 
-          # macOS: .app.tar.gz + .sig, .dmg
-          # 两个 macOS target（aarch64/x86_64）生成的 .app.tar.gz 同名，
-          # 必须按架构重命名避免互相覆盖
+          # macOS: .app.tar.gz + .sig + .dmg（两个 target 同名，按架构重命名避免互相覆盖）
           if [ "${{ runner.os }}" = "macOS" ]; then
             ARCH_SUFFIX=""
             case "$TARGET" in
               aarch64-apple-darwin) ARCH_SUFFIX="-aarch64" ;;
               x86_64-apple-darwin)  ARCH_SUFFIX="-x86_64" ;;
             esac
-            for f in "$BUNDLE_DIR"/macos/*.tar.gz "$BUNDLE_DIR"/macos/*.tar.gz.sig; do
+            for f in "$BUNDLE_DIR"/macos/*.app.tar.gz "$BUNDLE_DIR"/macos/*.app.tar.gz.sig; do
               if [ -f "$f" ]; then
                 BASENAME=$(basename "$f")
-                # 在扩展名前插入架构后缀：Vortex.app.tar.gz → Vortex-aarch64.app.tar.gz
+                # 空格归一化：productName 带空格时 bundler 对不同产物的转写可能不一致，
+                # 统一的资产名保证清单 URL 与实际上传资产永远匹配
                 if [[ "$BASENAME" == *.sig ]]; then
                   ROOT="${BASENAME%.sig}"
                   ROOTNAME="${ROOT%.app.tar.gz}"
-                  NEWNAME="${ROOTNAME}${ARCH_SUFFIX}.app.tar.gz.sig"
+                  NEWNAME="${ROOTNAME// /.}${ARCH_SUFFIX}.app.tar.gz.sig"
                 else
                   ROOTNAME="${BASENAME%.app.tar.gz}"
-                  NEWNAME="${ROOTNAME}${ARCH_SUFFIX}.app.tar.gz"
+                  NEWNAME="${ROOTNAME// /.}${ARCH_SUFFIX}.app.tar.gz"
                 fi
                 cp "$f" "/tmp/$NEWNAME"
                 FILES+=("/tmp/$NEWNAME")
@@ -176,14 +232,14 @@ jobs:
               [ -f "$f" ] && FILES+=("$f")
             done
           fi
-          # Linux: .tar.gz + .sig (updater), .deb, .appimage, .rpm
+          # Linux: .tar.gz + .sig（updater 用），.deb，.appimage，.rpm
           if [ "${{ runner.os }}" = "Linux" ]; then
             for f in "$BUNDLE_DIR"/appimage/*.tar.gz "$BUNDLE_DIR"/appimage/*.tar.gz.sig \
                      "$BUNDLE_DIR"/deb/*.deb "$BUNDLE_DIR"/appimage/*.AppImage "$BUNDLE_DIR"/rpm/*.rpm; do
               [ -f "$f" ] && FILES+=("$f")
             done
           fi
-          # Windows: .tar.gz + .sig (updater), .msi, .exe (nsis)
+          # Windows: .tar.gz + .sig（updater 用），.msi，.exe（nsis）
           if [ "${{ runner.os }}" = "Windows" ]; then
             for f in "$BUNDLE_DIR"/msi/*.tar.gz "$BUNDLE_DIR"/msi/*.tar.gz.sig \
                      "$BUNDLE_DIR"/msi/*.msi "$BUNDLE_DIR"/nsis/*.exe; do
@@ -199,16 +255,25 @@ jobs:
 
           echo "Uploading ${#FILES[@]} file(s) to $TAG:"
           printf '  %s\n' "${FILES[@]}"
-          gh release upload "$TAG" "${FILES[@]}" --clobber --repo "${{ github.repository }}"
-          echo "✓ Upload complete"
+          n=0
+          until gh release upload "$TAG" "${FILES[@]}" --clobber --repo "${{ github.repository }}"; do
+            n=$((n+1))
+            if [ "$n" -ge 5 ]; then
+              echo "::error::资产上传失败（已重试 $n 次）"
+              exit 1
+            fi
+            echo "::warning::资产上传失败（第 $n/5 次，release not found 为 API 瞬时 404），15s 后重试"
+            sleep 15
+          done
+          echo "OK Upload complete"
 
       - name: Upload updater manifest fragment
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="v${{ needs.resolve.outputs.version }}"
+          VERSION="${{ needs.resolve.outputs.version }}"
           TARGET="${{ matrix.target }}"
           REPO="${{ github.repository }}"
           BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
@@ -221,7 +286,17 @@ jobs:
             *) echo "::error::Unknown target $TARGET"; exit 1 ;;
           esac
 
-          SIG_FILE=$(find "$BUNDLE_DIR" -name "*.sig" -type f | head -1)
+          # 确定性取签名文件（与清单 url 指向的产物严格同源，不能 find|head -1 碰运气）：
+          # - macOS：bundle/macos 下唯一的 .sig（.app.tar.gz.sig）
+          # - Windows：明确取 nsis 的 setup.exe.sig（清单 url 指向 setup.exe）
+          # - Linux：bundle/appimage 下的 .sig（AppImage.sig）
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            SIG_FILE=$(find "$BUNDLE_DIR/nsis" -name "*-setup.exe.sig" -type f | head -1)
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            SIG_FILE=$(find "$BUNDLE_DIR/appimage" -name "*.AppImage.sig" -type f | head -1)
+          else
+            SIG_FILE=$(find "$BUNDLE_DIR/macos" -name "*.sig" -type f | head -1)
+          fi
           if [ -z "$SIG_FILE" ]; then
             echo "::error::No .sig file found in $BUNDLE_DIR"
             find "$BUNDLE_DIR" -type f
@@ -229,14 +304,25 @@ jobs:
           fi
           SIGNATURE=$(cat "$SIG_FILE")
 
-          SIG_BASENAME=$(basename "$SIG_FILE")
-          ARCHIVE_NAME="${SIG_BASENAME%.sig}"
-          # macOS 两个 target 上传时按架构重命名了，url 也要指向重命名后的文件
+          # 清单 url 指向 hub 静态下载地址（与服务端扁平落盘名一致，hub-upload 阶段
+          # 负责把对应产物传上去）：
+          # - Windows(nsis)：{appKey}_windows.exe（更新器直接下载 setup.exe）
+          # - macOS：{appKey}_macos_{arch}.app.tar.gz（更新器下载 .app.tar.gz 而非 dmg）
+          # - Linux：{appKey}_linux.AppImage（更新器下载 AppImage）
+          # 签名与托管地址无关（minisign 对文件内容签名），同一份产物字节换托管地签名依旧有效。
+          # 注意 1：HOST 必须与 hub-upload.yml 的 upload-url 同源。
+          # 注意 2：URL 不带版本号——服务端 build_saved_name 按扁平名落盘
+          #   （vortex_windows.exe / vortex_macos_aarch64.app.tar.gz），跨版本稳定；
+          #   带版本号会 404。
+          APP_KEY="${GITHUB_REPOSITORY#*/}"
+          HUB_BASE="https://hub.htui.cc/apps/${APP_KEY}"
           case "$TARGET" in
-            aarch64-apple-darwin) ARCHIVE_NAME="${ARCHIVE_NAME%.app.tar.gz}-aarch64.app.tar.gz" ;;
-            x86_64-apple-darwin)  ARCHIVE_NAME="${ARCHIVE_NAME%.app.tar.gz}-x86_64.app.tar.gz" ;;
+            x86_64-pc-windows-msvc)   DOWNLOAD_URL="${HUB_BASE}/${APP_KEY}_windows.exe" ;;
+            aarch64-apple-darwin)     DOWNLOAD_URL="${HUB_BASE}/${APP_KEY}_macos_aarch64.app.tar.gz" ;;
+            x86_64-apple-darwin)      DOWNLOAD_URL="${HUB_BASE}/${APP_KEY}_macos_x86_64.app.tar.gz" ;;
+            x86_64-unknown-linux-gnu) DOWNLOAD_URL="${HUB_BASE}/${APP_KEY}_linux.AppImage" ;;
+            *) echo "::error::Unknown target $TARGET"; exit 1 ;;
           esac
-          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE_NAME}"
 
           echo "Platform:  $PLATFORM_KEY"
           echo "Signature: ${SIGNATURE:0:20}..."
@@ -256,8 +342,17 @@ jobs:
             console.log(JSON.stringify(fragment, null, 2));
           " > "fragment-${PLATFORM_KEY}.json"
 
-          gh release upload "$TAG" "fragment-${PLATFORM_KEY}.json" --clobber --repo "$REPO"
-          echo "✓ Fragment uploaded for $PLATFORM_KEY"
+          n=0
+          until gh release upload "$TAG" "fragment-${PLATFORM_KEY}.json" --clobber --repo "$REPO"; do
+            n=$((n+1))
+            if [ "$n" -ge 5 ]; then
+              echo "::error::fragment 上传失败（已重试 $n 次）"
+              exit 1
+            fi
+            echo "::warning::fragment 上传失败（第 $n/5 次），15s 后重试"
+            sleep 15
+          done
+          echo "OK Fragment uploaded for $PLATFORM_KEY"
 
       - name: Inject usage notes into macOS DMG
         if: runner.os == 'macOS'
@@ -278,10 +373,22 @@ jobs:
           hdiutil convert "$DMG" -shadow "$SHADOW" -format UDZO -o "${DMG%.dmg}-notes.dmg" -ov
           mv "${DMG%.dmg}-notes.dmg" "$DMG"
           rm -f "$SHADOW"
-          gh release upload "v${{ steps.ver.outputs.version }}" "$DMG" --clobber --repo "${{ github.repository }}"
+          n=0
+          until gh release upload "v${{ needs.resolve.outputs.version }}" "$DMG" --clobber --repo "${{ github.repository }}"; do
+            n=$((n+1))
+            if [ "$n" -ge 5 ]; then
+              echo "::error::DMG 覆盖上传失败（已重试 $n 次）"
+              exit 1
+            fi
+            echo "::warning::DMG 覆盖上传失败（第 $n/5 次），15s 后重试"
+            sleep 15
+          done
           echo "✓ 使用说明已注入 DMG 并覆盖上传"
+
   merge-manifest:
-    needs: publish
+    # 必须显式列出 resolve：GitHub 只把直接依赖的 job 的 outputs 暴露给 needs 上下文，
+    # 仅写 needs: publish 时 needs.resolve.outputs.version 为空（曾导致 TAG="v" 下载 0 个 fragment）
+    needs: [publish, resolve]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -293,29 +400,27 @@ jobs:
         with:
           node-version: 20
 
-      - name: Determine version
-        id: ver
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          fi
-          VERSION=$(printf '%s' "$VERSION" | sed 's/^v//' | tr -d '[:space:]')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Merge fragments into latest.json
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="v${{ needs.resolve.outputs.version }}"
+          VERSION="${{ needs.resolve.outputs.version }}"
           REPO="${{ github.repository }}"
 
           mkdir -p fragments
-          gh release download "$TAG" --repo "$REPO" --pattern "fragment-*.json" --dir fragments 2>/dev/null || true
+          for i in 1 2 3 4 5; do
+            if gh release download "$TAG" --repo "$REPO" --pattern "fragment-*.json" --dir fragments; then
+              break
+            fi
+            if [ "$i" -eq 5 ]; then
+              echo "::warning::fragment 下载失败（已重试 $i 次），尝试用已下载结果继续"
+            else
+              echo "::warning::fragment 下载失败（第 $i/5 次），10s 后重试"
+              sleep 10
+            fi
+          done
 
           FRAGMENT_COUNT=$(find fragments -name "fragment-*.json" | wc -l)
           echo "Found $FRAGMENT_COUNT fragment(s)"
@@ -347,31 +452,149 @@ jobs:
             console.log(JSON.stringify(manifest, null, 2));
           "
 
-          gh release upload "$TAG" latest.json --clobber --repo "$REPO"
-          echo "✓ latest.json uploaded"
+          # 清单 url 指向 hub 扁平地址，对应文件在 hub-upload 阶段落盘，此处无法做
+          # 可达性校验；hub-upload 会在上传 latest.json 前校验所有 url 已在 hub 可达，
+          # 不可达则拒绝发布清单。
+          echo "Manifest URLs (reachability validated by hub-upload before publishing):"
+          node -e "
+            const m = JSON.parse(require('fs').readFileSync('latest.json', 'utf8'));
+            for (const p of Object.values(m.platforms)) console.log(' ', p.url);
+          "
 
-          # Clean up fragment files from release
+          n=0
+          until gh release upload "$TAG" latest.json --clobber --repo "$REPO"; do
+            n=$((n+1))
+            if [ "$n" -ge 5 ]; then
+              echo "::error::latest.json 上传失败（已重试 $n 次）"
+              exit 1
+            fi
+            echo "::warning::latest.json 上传失败（第 $n/5 次），15s 后重试"
+            sleep 15
+          done
+          echo "OK latest.json uploaded"
+
+          # 清理 release 中的 fragment 文件
           for f in fragments/fragment-*.json; do
             [ -f "$f" ] || continue
             BASENAME=$(basename "$f")
             ASSET_ID=$(gh api repos/${REPO}/releases --jq ".[] | select(.tag_name==\"$TAG\") | .assets[] | select(.name==\"$BASENAME\") | .id" 2>/dev/null)
             [ -n "$ASSET_ID" ] && gh api --method DELETE repos/${REPO}/releases/assets/$ASSET_ID 2>/dev/null || true
           done
-          echo "✓ Fragment files cleaned up"
+          echo "OK Fragment files cleaned up"
 
-  # 发布产物推送 hub：复用可复用工作流 hub-upload.yml，把 latest.json +
-  # 各平台安装包上传到 hub.htui.cc 发版接口（appKey 默认取仓库名 vortex）。
-  # 需要 secret HUB_UPLOAD_TOKEN（hub 后台 release.upload_token）。
+  # 发布产物推送 hub：复用可复用工作流 hub-upload.yml（其他项目可经
+  # uses: ht-shaipe/vortex/.github/workflows/hub-upload.yml@<ref> 直接引用）。
   hub-upload:
     name: Push artifacts to hub
-    needs: [publish, merge-manifest]
+    # 同 merge-manifest：needs.resolve.outputs.tag 只有显式依赖 resolve 才可读
+    needs: [publish, merge-manifest, resolve]
     if: ${{ needs.publish.result == 'success' && needs['merge-manifest'].result == 'success' }}
     uses: ./.github/workflows/hub-upload.yml
     permissions:
       contents: read
     with:
-      # tag 推送事件取 ref 名；手动 dispatch 取输入版本号补 v 前缀
-      tag: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+      tag: ${{ needs.resolve.outputs.tag }}
     secrets:
       # 显式映射（不继承全量 secrets）：只有上传令牌会传给可复用工作流
       hub_token: ${{ secrets.HUB_UPLOAD_TOKEN }}
+
+  # 所有打包（publish）与更新清单合并（merge-manifest）结束后回调外部接口。
+  # 依赖 secrets.CALLBACK_URL（必填）与 secrets.CALLBACK_TOKEN（可选，Bearer）。
+  # 未配置 CALLBACK_URL 时自动跳过；接口异常只记 warning，不会把已完成的发布标记为失败。
+  notify:
+    # 同上：显式依赖 resolve 才能读到 needs.resolve.outputs.version
+    needs: [publish, merge-manifest, resolve]
+    # 成功、失败都通知；workflow 被手动取消时不通知
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    env:
+      CALLBACK_URL: ${{ secrets.CALLBACK_URL }}
+      CALLBACK_TOKEN: ${{ secrets.CALLBACK_TOKEN }}
+      PUBLISH_RESULT: ${{ needs.publish.result }}
+      MERGE_RESULT: ${{ needs['merge-manifest'].result }}
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Warn when callback URL is missing
+        if: ${{ env.CALLBACK_URL == '' }}
+        run: echo "::warning::未配置 secrets.CALLBACK_URL，跳过发布回调接口"
+
+      - name: POST release callback
+        if: ${{ env.CALLBACK_URL != '' }}
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # resolve 失败（版本非法）时兜底取 ref 名，保证回调仍带可辨识信息；
+          # 归一化去掉 refs/tags/ 与 v 前缀（tag 推送时 GITHUB_REF_NAME 形如 v0.1.24）
+          VERSION="${VERSION:-${GITHUB_REF_NAME#refs/tags/}}"
+          VERSION="${VERSION#v}"
+          TAG="v${VERSION}"
+          SUCCESS=false
+          if [ "$PUBLISH_RESULT" = "success" ] && [ "$MERGE_RESULT" = "success" ]; then
+            SUCCESS=true
+          fi
+
+          BODY=$(jq -n \
+            --arg event "release.completed" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --arg ref "$GITHUB_REF" \
+            --arg sha "$GITHUB_SHA" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg eventName "$GITHUB_EVENT_NAME" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runNumber "$GITHUB_RUN_NUMBER" \
+            --arg runUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg releaseUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG" \
+            --arg occurredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson success "$SUCCESS" \
+            --argjson jobs "$NEEDS_JSON" \
+            '{
+               event: $event,
+               repository: $repository,
+               version: $version,
+               tag: $tag,
+               ref: $ref,
+               sha: $sha,
+               success: $success,
+               jobs: $jobs,
+               workflow: $workflow,
+               event_name: $eventName,
+               run_id: $runId,
+               run_number: $runNumber,
+               run_url: $runUrl,
+               release_url: $releaseUrl,
+               occurred_at: $occurredAt
+             }')
+
+          echo "POST $CALLBACK_URL"
+          echo "$BODY" | jq .
+
+          HEADERS=(-H "Content-Type: application/json"
+            -H "X-GitHub-Event: release.completed"
+            -H "Idempotency-Key: ${GITHUB_RUN_ID}")
+          if [ -n "${CALLBACK_TOKEN:-}" ]; then
+            HEADERS+=(-H "Authorization: Bearer ${CALLBACK_TOKEN}")
+          fi
+
+          HTTP_CODE=$(curl -sS -o callback-response.txt -w '%{http_code}' \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            --connect-timeout 5 --max-time 20 \
+            -X POST "$CALLBACK_URL" "${HEADERS[@]}" \
+            --data-binary "$BODY") || {
+            echo "::warning::回调请求失败（网络错误或超时）"
+            exit 1
+          }
+
+          echo "HTTP $HTTP_CODE"
+          cat callback-response.txt || true
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::warning::回调接口返回 HTTP $HTTP_CODE"
+            exit 1
+          fi

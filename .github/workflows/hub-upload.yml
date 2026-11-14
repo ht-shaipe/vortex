@@ -4,29 +4,32 @@ name: Hub Upload
 #
 # 接口契约（core 服务 POST /api/core/release/upload，multipart）：
 # - 鉴权：请求头 X-Upload-Token，与服务端 release.upload_token 严格相等
-# - 字段：file（单文件/次）、appKey、version（兼容 v 前缀）、platform、changelog
+# - 字段：file（单文件/次）、appKey、version（兼容 v 前缀）、platform、arch（macOS 双芯片必传）、changelog
 # - platform：0 通用 / 1 iOS / 2 Android / 3 Web / 4 Windows / 5 Linux / 6 macOS
-# - 幂等：同 appKey+version+platform 重复上传为更新记录（CI 重跑安全），文件按目标名覆盖落盘
+# - 幂等：同 appKey+version+platform+arch 重复上传为更新记录（CI 重跑安全），文件按目标名覆盖落盘
 # - 存储：文件名不带版本号，服务端只保留最新版本产物并自动清理老版本文件
 #   · 清单(latest.json) → apps/{appKey}/latest.json（每次发版覆盖，永远是最新）
-#   · 安装包 → apps/{appKey}/{appKey}_{平台后缀}{ext}（如 vortex_macos.dmg / vortex_windows.exe，
-#     下载地址跨版本稳定；同平台多次上传按顺序后传覆盖前传）
-# - 成功响应 {code:0, result:{filePath, fileMd5, ...}}
+#   · 安装包 → apps/{appKey}/{appKey}_{平台后缀}[_{arch}]{ext}（如 vortex_macos_aarch64.dmg /
+#     vortex_windows.exe / vortex_linux.AppImage，下载地址跨版本稳定；同平台多次上传按顺序后传覆盖前传）
+# - 成功响应 {code:200, result:{filePath, fileMd5, ...}}（兼容旧契约 code:0；HTTP 亦为 2xx）
 #
-# 上传清单与顺序（顺序决定 platform 记录最终指向，后传覆盖前传）：
-#   1. latest.json            → platform 0
-#   2. dmg(aarch64)           → platform 6
-#   3. dmg(x86_64)            → platform 6（macOS 记录最终指向 x64 安装包）
-#   4. msi                    → platform 4
-#   5. exe(nsis setup)        → platform 4（Windows 记录最终指向 nsis 安装包）
-#   6. deb                    → platform 5
-#   7. AppImage               → platform 5（Linux 记录最终指向 AppImage，免安装免 root）
-# .sig / .app.tar.gz / .rpm 等 updater 归档不上传（仍留 GitHub Release 托管）。
+# 上传方式（并行分组，安装包/更新器归档先传，latest.json 最后传——清单生效即所有下载文件已就位）：
+#   组间并行、组内串行（服务端同 app+version+platform+arch 后传覆盖前传，组内顺序保证
+#   记录最终指向 dmg 供下载页 / exe 供 Windows 更新器 / AppImage 供 Linux 更新器）：
+#   · macos-aarch64：.app.tar.gz → dmg（platform 6 / arch aarch64）
+#   · macos-x86_64： .app.tar.gz → dmg（platform 6 / arch x86_64）
+#   · windows：      msi → exe(nsis setup)（platform 4）
+#   · linux：        deb → AppImage（platform 5）
+#   全部组完成后：清单 URL 可达性校验（全部 200 且 content-type 非 text/html 才继续；
+#   不可达或返回前端页面都拒绝发布坏清单），最后传 latest.json（platform 0）。
+#   组间并行是必须的：实测 runner→hub 慢速链路下单文件 10-15min，串行 8 个文件
+#   会撞 job timeout。
+# .sig / .rpm 不上传（签名文本已嵌入 latest.json）；Windows 更新器直接下载 setup.exe。
 # changelog 自动取 GitHub Release notes；token 缺失时直接报错（服务端 401）。
 #
 # 本仓库调用（release.yml）：
 #   hub-upload:
-#     needs: [publish, merge-manifest]
+#     needs: [publish, merge-manifest, resolve]
 #     if: ${{ needs.publish.result == 'success' && needs['merge-manifest'].result == 'success' }}
 #     uses: ./.github/workflows/hub-upload.yml
 #     permissions:
@@ -92,7 +95,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 20
+    # 实测 runner→hub 上传吞吐可低至 ~18KB/s（跨境链路），vortex 单产物 40-116MB，
+    # 8 个安装包/归档串行可能超过 1 小时；20 分钟上限会把 job 掐死在半路，放宽到 90，
+    # 慢传由 curl --speed-limit 熔断重试兜底
+    timeout-minutes: 90
     env:
       UPLOAD_URL: ${{ inputs.upload-url }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -114,9 +120,15 @@ jobs:
           # changelog 取 GitHub Release notes（服务端空值不写，幂等更新保留旧值）
           CHANGELOG=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json body -q '.body' 2>/dev/null | sed -e 's/[[:space:]]*$//') || CHANGELOG=""
-          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
-          echo "CHANGELOG=$CHANGELOG" >> "$GITHUB_ENV"
           echo "APP_KEY=$APP_KEY, tag=$RELEASE_TAG, changelog=${#CHANGELOG} chars"
+          # changelog 是多行文本且后续上传步骤要用：必须经 heredoc 分隔符写入 GITHUB_ENV，
+          # 普通的 KEY=value 会丢换行、只 echo 则跨步骤不可见（此前 changelog 一直没真正带上）
+          {
+            echo "CHANGELOG<<CHANGELOG_EOF"
+            printf '%s' "$CHANGELOG"
+            echo ""
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Download release assets
         shell: bash
@@ -124,12 +136,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p assets
-          # 只取要上传的产物：清单 + 安装包（sig/updater 归档不上传）
+          # 只取要上传的产物：清单 + 更新器归档 + 安装包（sig/rpm 不上传，签名文本已嵌入 latest.json）
           n=0
           until gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --dir assets --clobber \
-              --pattern "latest.json" --pattern "*.dmg" --pattern "*.msi" \
-              --pattern "*.exe" --pattern "*.deb" --pattern "*.AppImage"; do
+              --pattern "latest.json" --pattern "*.dmg" --pattern "*.msi" --pattern "*.exe" \
+              --pattern "*.app.tar.gz" --pattern "*.deb" --pattern "*.AppImage"; do
             n=$((n+1))
             if [ "$n" -ge 5 ]; then
               echo "::error::Release 资产下载失败（已重试 $n 次）"
@@ -144,8 +156,8 @@ jobs:
             echo "::error::assets/latest.json 缺失，拒绝推送不完整的产物集"
             exit 1
           fi
-          if ! ls assets/*.dmg assets/*.msi assets/*.exe assets/*.deb assets/*.AppImage >/dev/null 2>&1; then
-            echo "::error::未找到任何平台安装包（*.dmg/*.msi/*.exe/*.deb/*.AppImage）"
+          if ! ls assets/*.dmg assets/*.msi assets/*.exe assets/*.app.tar.gz assets/*.deb assets/*.AppImage >/dev/null 2>&1; then
+            echo "::error::未找到任何平台安装包（*.dmg/*.msi/*.exe/*.app.tar.gz/*.deb/*.AppImage）"
             exit 1
           fi
 
@@ -153,66 +165,180 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          # 有序清单 "路径|platform"：后传覆盖前传（幂等更新语义），
-          # 顺序保证 macOS 记录最终指向 x64 dmg、Windows 记录最终指向 nsis exe、
-          # Linux 记录最终指向 AppImage
-          UPLOADS=()
-          UPLOADS+=("assets/latest.json|0")
-          for f in assets/*aarch64*.dmg; do UPLOADS+=("$f|6"); done
-          for f in assets/*x86_64*.dmg assets/*x64*.dmg; do UPLOADS+=("$f|6"); done
-          for f in assets/*.dmg; do
-            case "$f" in *aarch64*|*x86_64*|*x64*) continue ;; esac
-            UPLOADS+=("$f|6")
-          done
-          for f in assets/*.msi; do UPLOADS+=("$f|4"); done
-          for f in assets/*.exe; do UPLOADS+=("$f|4"); done
-          for f in assets/*.deb; do UPLOADS+=("$f|5"); done
-          for f in assets/*.AppImage; do UPLOADS+=("$f|5"); done
+          # 并行上传的响应文件彼此隔离（多个后台组同时 curl -o，不能用固定文件名）
+          RESP_DIR=$(mktemp -d)
 
-          echo "Upload plan (${#UPLOADS[@]} file(s)):"
-          for e in "${UPLOADS[@]}"; do echo "  platform=${e#*|}  ${e%|*}"; done
-
-          FAIL=0
-          for entry in "${UPLOADS[@]}"; do
-            FILE="${entry%|*}"
-            PLATFORM="${entry#*|}"
+          # 单文件上传：参数 "路径|platform|arch"（arch 空串=不区分）。
+          # 5 次重试；成功判定 HTTP 2xx 且业务 code 为 0（旧契约）或 2xx（现契约返回 200）。
+          upload_one() {
+            local entry="$1"
+            local FILE="${entry%%|*}"
+            local REST="${entry#*|}"
+            local PLATFORM="${REST%%|*}"
+            local ARCH="${REST#*|}"
+            local BASENAME SIZE FORM OK HTTP_CODE RESP_CODE BIZ_OK FILE_PATH i RESP_FILE
             BASENAME=$(basename "$FILE")
             SIZE=$(du -h "$FILE" | cut -f1)
-            echo "→ Uploading $BASENAME ($SIZE) as platform=$PLATFORM"
+            echo "→ Uploading $BASENAME ($SIZE) as platform=$PLATFORM arch=${ARCH:--}"
             FORM=(-H "X-Upload-Token: ${HUB_TOKEN}"
               -F "appKey=${APP_KEY}"
               -F "version=${RELEASE_TAG}"
               -F "platform=${PLATFORM}")
+            # version 为服务端必填字段，latest.json 同样带 version 上传：
+            # 服务端对「原始名为 latest.json 且版本不低于线上」的上传落规范路径
+            # /apps/{app}/latest.json（build_saved_name），更新器固定读该路径。
+            # arch 参与服务端文件命名与记录去重：macOS 双芯片 dmg/更新器归档必传，
+            # 否则 aarch64 与 x86_64 落盘同名互相覆盖
+            if [ -n "$ARCH" ]; then
+              FORM+=(-F "arch=${ARCH}")
+            fi
             if [ -n "${CHANGELOG:-}" ]; then
               FORM+=(-F "changelog=${CHANGELOG}")
             fi
             FORM+=(-F "file=@${FILE}")
             OK=false
             for i in 1 2 3 4 5; do
-              HTTP_CODE=$(curl -sS -o hub-response.json -w '%{http_code}' \
-                --connect-timeout 10 --max-time 900 \
+              # 每次尝试独立响应文件：并行组共享 $RESP_DIR，固定文件名会互相覆盖
+              RESP_FILE=$(mktemp "$RESP_DIR/resp.XXXXXX")
+              HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' \
+                --connect-timeout 10 --max-time 1200 \
+                --speed-limit 1024 --speed-time 60 \
                 -X POST "$UPLOAD_URL" "${FORM[@]}") || {
+                rm -f "$RESP_FILE"
                 echo "::warning::$BASENAME 网络错误（第 $i/5 次），10s 后重试"
                 sleep 10
                 continue
               }
-              RESP_CODE=$(jq -r '.code' hub-response.json 2>/dev/null || echo "")
-              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ "$RESP_CODE" = "0" ]; then
-                FILE_PATH=$(jq -r '.result.filePath // "?"' hub-response.json)
+              RESP_CODE=$(jq -r '.code' "$RESP_FILE" 2>/dev/null || echo "")
+              case "$RESP_CODE" in
+                0|2??) BIZ_OK=true ;;
+                *) BIZ_OK=false ;;
+              esac
+              if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ "$BIZ_OK" = "true" ]; then
+                FILE_PATH=$(jq -r '.result.filePath // "?"' "$RESP_FILE")
                 echo "  OK $BASENAME → $FILE_PATH"
                 OK=true
+                rm -f "$RESP_FILE"
                 break
               fi
               echo "::warning::$BASENAME 上传失败（HTTP $HTTP_CODE / code=${RESP_CODE:-?}，第 $i/5 次），10s 后重试"
-              cat hub-response.json 2>/dev/null || true
+              cat "$RESP_FILE" 2>/dev/null || true
+              rm -f "$RESP_FILE"
               echo ""
               sleep 10
             done
             if [ "$OK" != "true" ]; then
               echo "::error::$BASENAME 上传 hub 失败（已重试 5 次）"
+              return 1
+            fi
+            # 公网回读校验：hub 若把文件路径 fallback 到前端 SPA，HTTP 码仍是 200，
+            # 只有 content-type 能识破（2026-11 实际发生过，latest.json 公网取回的是 index.html）
+            local HUB_HOST PROBE_CTYPE
+            HUB_HOST=$(printf '%s' "$UPLOAD_URL" | sed -E 's#^(https?://[^/]+).*$#\1#')
+            PROBE_CTYPE=$(curl -sI --connect-timeout 10 --max-time 30 "${HUB_HOST}${FILE_PATH}" \
+              | tr -d '\r' | awk 'tolower($1)=="content-type:"{print $2; exit}') || PROBE_CTYPE=""
+            case "$PROBE_CTYPE" in
+              text/html*)
+                echo "::error::$BASENAME 回读校验失败：${HUB_HOST}${FILE_PATH} 返回 text/html"
+                echo "       hub 文件静态路由未生效（nginx 把 /apps/* fallback 到了前端页面），服务端需为文件存储目录配置 /apps/ 静态映射"
+                return 1 ;;
+            esac
+            # 清单必须能被更新器解析：回读全文并校验 version 与本次发布一致
+            if [ "$PLATFORM" = "0" ]; then
+              # 服务端必须把清单落到规范路径 /apps/{app}/latest.json（原始名 latest.json + 最新版本），更新器固定读该路径
+              if [ "$FILE_PATH" != "/apps/${APP_KEY}/latest.json" ]; then
+                echo "::error::latest.json 落盘路径非规范路径：${HUB_HOST}${FILE_PATH}（期望 /apps/${APP_KEY}/latest.json）"
+                echo "       服务端需对原始名为 latest.json 的上传以 latest.json 命名落盘，否则更新器永远读到旧版本"
+                return 1
+              fi
+              if ! curl -sS --connect-timeout 10 --max-time 60 "${HUB_HOST}${FILE_PATH}" -o /tmp/hub-latest.json.$$ \
+                || ! jq -e --arg v "${RELEASE_TAG#v}" '.version == $v' /tmp/hub-latest.json.$$ >/dev/null 2>&1; then
+                echo "::error::latest.json 回读校验失败：${HUB_HOST}${FILE_PATH} 内容缺失或 version 与 ${RELEASE_TAG} 不一致"
+                rm -f /tmp/hub-latest.json.$$
+                return 1
+              fi
+              rm -f /tmp/hub-latest.json.$$
+              echo "  Verified latest.json @ ${HUB_HOST}${FILE_PATH} (version matches)"
+            else
+              echo "  Verified $BASENAME @ ${HUB_HOST}${FILE_PATH} (${PROBE_CTYPE:-unknown-type})"
+            fi
+          }
+
+          # 按 (platform, arch) 分组并行上传，组内串行——
+          # 服务端记录按 app+version+platform+arch 去重，同组后传覆盖前传，
+          # 组内顺序保证记录最终指向（dmg 供下载页 / exe 供 Windows 更新器 / AppImage 供 Linux 更新器）：
+          #   macos-aarch64: .app.tar.gz → dmg   macos-x86_64: .app.tar.gz → dmg
+          #   windows:       msi → exe            linux:         deb → AppImage
+          # 组间并行把串行 Σ(每文件 10-15min) 压成 max(单组时长)，
+          # 否则慢速链路下 8 个文件串行会撞 job timeout
+          MAC_A=(); MAC_X=(); WIN=(); LINUX=(); MISC=()
+          for f in assets/*aarch64*.app.tar.gz assets/*aarch64*.dmg; do MAC_A+=("$f|6|aarch64"); done
+          for f in assets/*x86_64*.app.tar.gz assets/*x64*.app.tar.gz assets/*x86_64*.dmg assets/*x64*.dmg; do MAC_X+=("$f|6|x86_64"); done
+          for f in assets/*.app.tar.gz assets/*.dmg; do
+            case "$f" in *aarch64*|*x86_64*|*x64*) continue ;; esac
+            MISC+=("$f|6|")
+          done
+          for f in assets/*.msi; do WIN+=("$f|4|"); done
+          for f in assets/*.exe; do WIN+=("$f|4|"); done
+          for f in assets/*.deb; do LINUX+=("$f|5|"); done
+          for f in assets/*.AppImage; do LINUX+=("$f|5|"); done
+
+          echo "Upload plan (parallel groups):"
+          for e in ${MAC_A[@]+"${MAC_A[@]}"}; do echo "  [macos-aarch64] ${e%%|*}"; done
+          for e in ${MAC_X[@]+"${MAC_X[@]}"}; do echo "  [macos-x86_64]  ${e%%|*}"; done
+          for e in ${WIN[@]+"${WIN[@]}"};   do echo "  [windows]       ${e%%|*}"; done
+          for e in ${LINUX[@]+"${LINUX[@]}"}; do echo "  [linux]         ${e%%|*}"; done
+          for e in ${MISC[@]+"${MISC[@]}"}; do echo "  [misc]          ${e%%|*}"; done
+
+          FAIL=0
+          PIDS=(); GNAMES=()
+          launch_group() {
+            local gname="$1"; shift
+            [ $# -gt 0 ] || return 0
+            (
+              for e in "$@"; do
+                upload_one "$e" || exit 1
+              done
+            ) &
+            PIDS+=($!)
+            GNAMES+=("$gname")
+          }
+
+          launch_group "macos-aarch64" ${MAC_A[@]+"${MAC_A[@]}"}
+          launch_group "macos-x86_64" ${MAC_X[@]+"${MAC_X[@]}"}
+          launch_group "windows" ${WIN[@]+"${WIN[@]}"}
+          launch_group "linux" ${LINUX[@]+"${LINUX[@]}"}
+          launch_group "misc" ${MISC[@]+"${MISC[@]}"}
+
+          for i in "${!PIDS[@]}"; do
+            if ! wait "${PIDS[$i]}"; then
+              echo "::error::上传组 ${GNAMES[$i]} 存在失败文件"
               FAIL=1
             fi
           done
+
+          # 清单内所有下载地址必须已在 hub 可达（文件刚落盘；不可达说明命名/落盘不一致，
+          # 拒绝发布坏清单）
+          echo "Validating manifest URLs against hub..."
+          while IFS= read -r u; do
+            [ -n "$u" ] || continue
+            # HTTP 码 + content-type 双重校验：hub 静态路由未生效时任意路径都返回
+            # 200 + text/html（SPA fallback），只看状态码会把"取到前端页面"当可达
+            read -r CODE CTYPE <<< "$(curl -s -o /dev/null -w '%{http_code} %{content_type}' -L --max-time 30 "$u")" || { CODE=000; CTYPE=""; }
+            if [ "$CODE" != "200" ]; then
+              echo "::error::更新清单 URL 不可达 (HTTP $CODE): $u"
+              FAIL=1
+            elif [[ "$CTYPE" == text/html* ]]; then
+              echo "::error::更新清单 URL 返回的是前端页面而非文件 (text/html，hub 静态路由未生效): $u"
+              FAIL=1
+            else
+              echo "  OK $u ($CTYPE)"
+            fi
+          done < <(jq -r '.platforms[]?.url // empty' assets/latest.json)
+
+          # latest.json 最后传（清单生效即意味着所有下载文件已就位）
+          upload_one "assets/latest.json|0|" || FAIL=1
+
           if [ "$FAIL" = "1" ]; then
             echo "::error::部分产物上传 hub 失败，详见上方日志"
             exit 1
