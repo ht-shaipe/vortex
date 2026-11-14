@@ -127,7 +127,7 @@ release:
 	@echo "$(C_CYAN)▶ 更新 Cargo.lock...$(C_RESET)"
 	@cd src-tauri && cargo check 2>/dev/null
 	@echo "$(C_CYAN)▶ 提交版本变更...$(C_RESET)"
-	@git add package.json Cargo.toml Cargo.lock src-tauri/tauri.conf.json docs/index.html
+	@git add package.json Cargo.toml src-tauri/tauri.conf.json docs/index.html
 	@git commit -m "v$(RELEASE_VERSION): bump version"
 	@git tag "v$(RELEASE_VERSION)"
 	@echo "$(C_GREEN)✓ 已提交并打标签 v$(RELEASE_VERSION)$(C_RESET)"
