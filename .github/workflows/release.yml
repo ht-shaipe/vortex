@@ -10,6 +10,14 @@ on:
         description: '版本号，纯 semver，不要加 v 前缀（如 0.2.0；填 v0.2.0 也会自动清洗）'
         required: true
 
+concurrency:
+  # 同仓库 Release 全流程串行：相邻版本连发时后一个 tag 等前一个完整结束
+  # （含 hub-upload）再开始，避免两个 hub-upload 在慢链路上互抢带宽、
+  # 服务端同产物名互踩（v0.1.45/v0.1.46 曾并发各跑满 90min 超时）。
+  # 排队不取消：在传的产物不能杀。
+  group: release
+  cancel-in-progress: false
+
 jobs:
   # 版本解析：全 workflow 单一来源（发布 tag 或手动输入 → 归一化校验 semver）。
   # 下游 job 统一经 needs.resolve.outputs.version / .tag 消费，不再各自重复解析。
@@ -498,12 +506,15 @@ jobs:
       # 显式映射（不继承全量 secrets）：只有上传令牌会传给可复用工作流
       hub_token: ${{ secrets.HUB_UPLOAD_TOKEN }}
 
-  # 所有打包（publish）与更新清单合并（merge-manifest）结束后回调外部接口。
+  # 全链路（打包 publish、清单 merge-manifest、hub 推送 hub-upload）结束后回调外部接口。
   # 依赖 secrets.CALLBACK_URL（必填）与 secrets.CALLBACK_TOKEN（可选，Bearer）。
   # 未配置 CALLBACK_URL 时自动跳过；接口异常只记 warning，不会把已完成的发布标记为失败。
   notify:
-    # 同上：显式依赖 resolve 才能读到 needs.resolve.outputs.version
-    needs: [publish, merge-manifest, resolve]
+    # 显式依赖 resolve 才能读到 needs.resolve.outputs.version；显式依赖 hub-upload：
+    # 回调语义是"全链路发布完成"——hub 推送失败/取消时 success=false，不再出现
+    # GitHub 侧成功但 hub 分发缺失仍报成功的情况（v0.1.43~v0.1.46 hub 均推送失败，
+    # 回调却报了成功）
+    needs: [publish, merge-manifest, resolve, hub-upload]
     # 成功、失败都通知；workflow 被手动取消时不通知
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -514,6 +525,7 @@ jobs:
       CALLBACK_TOKEN: ${{ secrets.CALLBACK_TOKEN }}
       PUBLISH_RESULT: ${{ needs.publish.result }}
       MERGE_RESULT: ${{ needs['merge-manifest'].result }}
+      HUB_RESULT: ${{ needs['hub-upload'].result }}
       NEEDS_JSON: ${{ toJSON(needs) }}
     steps:
       - name: Warn when callback URL is missing
@@ -534,7 +546,9 @@ jobs:
           VERSION="${VERSION#v}"
           TAG="v${VERSION}"
           SUCCESS=false
-          if [ "$PUBLISH_RESULT" = "success" ] && [ "$MERGE_RESULT" = "success" ]; then
+          # hub 推送（skipped/failure/cancelled）不算发布成功
+          if [ "$PUBLISH_RESULT" = "success" ] && [ "$MERGE_RESULT" = "success" ] \
+             && [ "$HUB_RESULT" = "success" ]; then
             SUCCESS=true
           fi
 
@@ -545,6 +559,7 @@ jobs:
             --arg tag "$TAG" \
             --arg ref "$GITHUB_REF" \
             --arg sha "$GITHUB_SHA" \
+            --arg hubResult "$HUB_RESULT" \
             --arg workflow "$GITHUB_WORKFLOW" \
             --arg eventName "$GITHUB_EVENT_NAME" \
             --arg runId "$GITHUB_RUN_ID" \
@@ -562,6 +577,7 @@ jobs:
                ref: $ref,
                sha: $sha,
                success: $success,
+               hub_result: $hubResult,
                jobs: $jobs,
                workflow: $workflow,
                event_name: $eventName,

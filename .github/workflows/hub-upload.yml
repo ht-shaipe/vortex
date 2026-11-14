@@ -52,6 +52,14 @@ name: Hub Upload
 #
 # 各接入仓库自行设置 secret：gh secret set HUB_UPLOAD_TOKEN
 
+concurrency:
+  # 串行锁：同一上传地址（同一 hub）的推送全局排队，组名刻意不含 tag/ref——
+  # 相邻版本连发时后一个 tag 的推送等前一个传完再开始，避免慢链路带宽互抢、
+  # 服务端同产物名互踩（v0.1.45/v0.1.46 曾并发各跑满 90min 超时）。
+  # 按 upload-url 分组：换 hub 地址的调用互不影响；排队可以，杀正在传的不行。
+  group: hub-upload-${{ inputs.upload-url }}
+  cancel-in-progress: false
+
 on:
   workflow_call:
     inputs:
@@ -170,6 +178,10 @@ jobs:
 
           # 单文件上传：参数 "路径|platform|arch"（arch 空串=不区分）。
           # 5 次重试；成功判定 HTTP 2xx 且业务 code 为 0（旧契约）或 2xx（现契约返回 200）。
+          # 确定性错误（401/403、应用不存在或禁用、token 无效）不重试：立即失败并落
+          # ABORT 标记让其余并行组快速退出——服务端配置问题重试永远不会成功，此前
+          # 按网络错误重试 5×20min 正好耗尽 job timeout，还把真实 400 埋进日志
+          # （v0.1.43 起应用被禁用，三次发版各空跑 90min 才暴露）。
           upload_one() {
             local entry="$1"
             local FILE="${entry%%|*}"
@@ -198,6 +210,11 @@ jobs:
             FORM+=(-F "file=@${FILE}")
             OK=false
             for i in 1 2 3 4 5; do
+              # 其他并行组已发现确定性错误时立即放弃，不再空耗大文件 body 上传时间
+              if [ -f "$RESP_DIR/ABORT" ]; then
+                echo "::error::$BASENAME 跳过：其他上传组已发现确定性错误（详见上方日志）"
+                return 1
+              fi
               # 每次尝试独立响应文件：并行组共享 $RESP_DIR，固定文件名会互相覆盖
               RESP_FILE=$(mktemp "$RESP_DIR/resp.XXXXXX")
               HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' \
@@ -220,6 +237,19 @@ jobs:
                 OK=true
                 rm -f "$RESP_FILE"
                 break
+              fi
+              # 确定性错误快速失败：服务端配置/鉴权问题重试永远不成功，落 ABORT
+              # 标记让其余并行组跳过后续上传。大文件要传完整 body 才收到 400，
+              # 但首次确定性失败后所有组秒退，job 失败时间从 90min 降到 ~20min。
+              RESP_TEXT=$(tr -d '\r\n' < "$RESP_FILE" 2>/dev/null || echo "")
+              if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ] \
+                 || printf '%s' "$RESP_TEXT" | grep -q '不存在或已禁用\|token 无效'; then
+                touch "$RESP_DIR/ABORT"
+                echo "::error::$BASENAME 确定性失败（HTTP $HTTP_CODE），重试无意义"
+                echo "       服务端响应：$RESP_TEXT"
+                echo "       应用不存在/禁用 → hub 后台重建或启用 appKey=${APP_KEY} 后重跑；token 无效 → 检查 HUB_UPLOAD_TOKEN"
+                rm -f "$RESP_FILE"
+                return 1
               fi
               echo "::warning::$BASENAME 上传失败（HTTP $HTTP_CODE / code=${RESP_CODE:-?}，第 $i/5 次），10s 后重试"
               cat "$RESP_FILE" 2>/dev/null || true
