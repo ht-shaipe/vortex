@@ -24,7 +24,7 @@
       <div class="card-head">
         <div>
           <div class="card-title">检查更新</div>
-          <div class="card-sub">从 GitHub Releases 拉取最新版本</div>
+          <div class="card-sub">hub 更新源优先，GitHub 兜底</div>
         </div>
         <StatusBadge :tone="statusTone" :label="statusLabel" />
       </div>
@@ -77,6 +77,14 @@
             <button type="button" class="btn primary" @click="checkForUpdate()">重试</button>
             <button type="button" class="btn" @click="openReleases()">手动升级</button>
           </div>
+          <!-- 镜像直链：更新源连不上（受限网络下 GitHub 常见）时的兜底下载入口 -->
+          <p class="para text-12px text-ink-3 leading-[1.7] mt-8px mb-0">
+            也可从镜像源直接下载安装包：
+            <a class="text-accent hover:underline" href="https://hub.htui.cc/apps/vortex/vortex_macos_aarch64.dmg" target="_blank" rel="noopener">macOS (Apple 芯片)</a> ·
+            <a class="text-accent hover:underline" href="https://hub.htui.cc/apps/vortex/vortex_macos_x86_64.dmg" target="_blank" rel="noopener">macOS (Intel)</a> ·
+            <a class="text-accent hover:underline" href="https://hub.htui.cc/apps/vortex/vortex_windows.exe" target="_blank" rel="noopener">Windows</a> ·
+            <a class="text-accent hover:underline" href="https://hub.htui.cc/apps/vortex/vortex_linux.AppImage" target="_blank" rel="noopener">Linux</a>
+          </p>
         </template>
       </div>
     </div>

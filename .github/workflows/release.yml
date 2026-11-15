@@ -137,6 +137,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ needs.resolve.outputs.version }}"
+          # release notes：正文 + hub 镜像直链（受限网络下 GitHub 资产下载慢/不可达的兜底入口）。
+          # 用 printf 单行拼接避免多行字符串破坏 YAML 块或给 markdown 引入前导空格
+          NOTES=$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+            'See the assets below to download and install this version.' \
+            'Mirror direct links (faster in CN network):' \
+            '- macOS (Apple silicon): https://hub.htui.cc/apps/vortex/vortex_macos_aarch64.dmg' \
+            '- macOS (Intel): https://hub.htui.cc/apps/vortex/vortex_macos_x86_64.dmg' \
+            '- Windows: https://hub.htui.cc/apps/vortex/vortex_windows.exe' \
+            '- Linux: https://hub.htui.cc/apps/vortex/vortex_linux.AppImage')
           # 幂等创建 + 重试：并发 job 竞态（already exists）与 GitHub API 瞬时 404/5xx 均靠重试兜底
           for i in 1 2 3 4 5; do
             if gh release view "$TAG" >/dev/null 2>&1; then
@@ -146,7 +155,7 @@ jobs:
             fi
             if gh release create "$TAG" \
               --title "Vortex v${{ needs.resolve.outputs.version }}" \
-              --notes "See the assets below to download and install this version." \
+              --notes "$NOTES" \
               --draft=false; then
               echo "Release $TAG created"
               echo "Release $TAG ready"

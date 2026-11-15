@@ -41,6 +41,19 @@ const currentVersion = ref<string>('')
 let _update: any = null
 
 /**
+ * 归一化更新相关错误为用户可读消息。
+ * 更新插件底层（reqwest）的网络错误原文（如 "error sending request for url (...)"）
+ * 对用户没有可操作信息——受限网络下更新源连不上尤其常见，映射为带建议的提示。
+ */
+function formatUpdateError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  if (/error sending request|timed? ?out|connection|network|dns/i.test(raw)) {
+    return '连接更新源失败（网络受限或代理未开启）。可点击「手动升级」或从镜像源直接下载，稍后重试。'
+  }
+  return raw
+}
+
+/**
  * 检查是否有可用更新。
  * @param silent - 是否静默模式（静默时不显示非桌面环境提示）
  * @returns 是否有可用更新
@@ -80,7 +93,7 @@ async function checkForUpdate(silent = false): Promise<boolean> {
     }
   } catch (e) {
     status.value = 'error'
-    errorMsg.value = e instanceof Error ? e.message : String(e)
+    errorMsg.value = formatUpdateError(e)
     return false
   }
 }
@@ -128,7 +141,7 @@ async function downloadAndInstall(): Promise<void> {
     status.value = 'ready'
   } catch (e) {
     status.value = 'error'
-    errorMsg.value = e instanceof Error ? e.message : String(e)
+    errorMsg.value = formatUpdateError(e)
   }
 }
 
