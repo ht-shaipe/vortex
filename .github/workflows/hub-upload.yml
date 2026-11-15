@@ -125,6 +125,10 @@ jobs:
           fi
           # app-key 回退取仓库名
           APP_KEY="${APP_KEY_INPUT:-${GITHUB_REPOSITORY#*/}}"
+          # APP_KEY 上传步骤要用：必须写 GITHUB_ENV 跨步骤传递。f0b99b6 重构时误删了
+          # 这行，v0.1.45 起请求里 appKey 为空，服务端 400 "appKey 不能为空"（当时服务端
+          # 收完整个大文件 body 才校验，20min 才响应，报错被掩盖成网络超时）
+          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
           # changelog 取 GitHub Release notes（服务端空值不写，幂等更新保留旧值）
           CHANGELOG=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json body -q '.body' 2>/dev/null | sed -e 's/[[:space:]]*$//') || CHANGELOG=""
@@ -243,11 +247,11 @@ jobs:
               # 但首次确定性失败后所有组秒退，job 失败时间从 90min 降到 ~20min。
               RESP_TEXT=$(tr -d '\r\n' < "$RESP_FILE" 2>/dev/null || echo "")
               if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ] \
-                 || printf '%s' "$RESP_TEXT" | grep -q '不存在或已禁用\|token 无效'; then
+                 || printf '%s' "$RESP_TEXT" | grep -q '不存在或已禁用\|token 无效\|不能为空'; then
                 touch "$RESP_DIR/ABORT"
                 echo "::error::$BASENAME 确定性失败（HTTP $HTTP_CODE），重试无意义"
                 echo "       服务端响应：$RESP_TEXT"
-                echo "       应用不存在/禁用 → hub 后台重建或启用 appKey=${APP_KEY} 后重跑；token 无效 → 检查 HUB_UPLOAD_TOKEN"
+                echo "       应用不存在/禁用 → hub 后台重建或启用后重跑；token 无效 → 检查 HUB_UPLOAD_TOKEN；appKey 为空 → 检查 APP_KEY 是否已写入 GITHUB_ENV"
                 rm -f "$RESP_FILE"
                 return 1
               fi
