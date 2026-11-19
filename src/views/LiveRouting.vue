@@ -227,6 +227,23 @@ const todayStats = computed(() => statsOverview.value?.today)
 /** 请求数环比（今日 vs 昨日），无数据时为 null */
 const reqTrendPct = computed<number | null>(() => statsOverview.value?.trend?.requestsPct ?? null)
 
+// ===== 统计数据定时刷新 =====
+const STATS_REFRESH_INTERVAL = 10_000
+let statsTimer: ReturnType<typeof setInterval> | null = null
+/** 防止上一次请求未完成时重复发起 */
+let statsLoading = false
+async function refreshStats() {
+  if (statsLoading) return
+  statsLoading = true
+  try {
+    statsOverview.value = await statsApi.getStats()
+  } catch {
+    /* 静默忽略，保持上一次的数据 */
+  } finally {
+    statsLoading = false
+  }
+}
+
 // ===== 网关概览统计 =====
 const providersCount = ref<number | '—'>('—')
 const activeConns = ref<number | '—'>('—')
@@ -350,14 +367,12 @@ onMounted(() => {
       /* ignore */
     })
   // 今日运行数据（请求/错误/Token，失败时保持 —）
-  statsApi
-    .getStats()
-    .then((ov) => {
-      statsOverview.value = ov
-    })
-    .catch(() => {
-      /* ignore */
-    })
+  // 首次获取与定时刷新共用 refreshStats()，复用防重入与错误处理
+  void refreshStats()
+  // 启动统计数据定时刷新（10 秒间隔，仅统计数据）
+  statsTimer = setInterval(() => {
+    void refreshStats()
+  }, STATS_REFRESH_INTERVAL)
 })
 
 watch(upstreams, () => scheduleDraw())
@@ -369,5 +384,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   resizeObserver?.disconnect()
   resizeObserver = null
+  if (statsTimer) {
+    clearInterval(statsTimer)
+    statsTimer = null
+  }
 })
 </script>
