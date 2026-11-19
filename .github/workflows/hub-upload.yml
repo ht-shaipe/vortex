@@ -24,6 +24,9 @@ name: Hub Upload
 #   不可达或返回前端页面都拒绝发布坏清单），最后传 latest.json（platform 0）。
 #   组间并行是必须的：实测 runner→hub 慢速链路下单文件 10-15min，串行 8 个文件
 #   会撞 job timeout。
+#   总时长受 upload-budget-minutes（默认 75min）deadline 控制：单次尝试的
+#   --max-time 不超过剩余预算、剩余不足时不再发起新尝试，慢链路下按预算快速失败
+#   （服务端幂等，重跑 job 即续传），不再「20min/次 × 5 次重试」空跑到 job timeout。
 # .sig / .rpm 不上传（签名文本已嵌入 latest.json）；Windows 更新器直接下载 setup.exe。
 # changelog 自动取 GitHub Release notes；token 缺失时直接报错（服务端 401）。
 #
@@ -77,6 +80,11 @@ on:
         required: false
         type: string
         default: 'https://hub.htui.cc/api/core/release/upload'
+      upload-budget-minutes:
+        description: '上传阶段总时间预算（分钟）：耗尽后停止重试快速失败；0 = 不设预算仅受 job timeout 约束'
+        required: false
+        type: number
+        default: 75
     secrets:
       hub_token:
         description: '上传令牌，以 X-Upload-Token 请求头携带'
@@ -96,6 +104,11 @@ on:
         required: false
         type: string
         default: 'https://hub.htui.cc/api/core/release/upload'
+      upload-budget-minutes:
+        description: '上传阶段总时间预算（分钟）：耗尽后停止重试快速失败；0 = 不设预算仅受 job timeout 约束'
+        required: false
+        type: number
+        default: 75
 
 jobs:
   hub-upload:
@@ -105,12 +118,14 @@ jobs:
       contents: read
     # 实测 runner→hub 上传吞吐可低至 ~18KB/s（跨境链路），vortex 单产物 40-116MB，
     # 8 个安装包/归档串行可能超过 1 小时；20 分钟上限会把 job 掐死在半路，放宽到 90，
-    # 慢传由 curl --speed-limit 熔断重试兜底
+    # 慢传由 curl --speed-limit 熔断重试兜底；上传阶段另有 75min 预算 deadline
+    # （upload-budget-minutes 可调）保证总时长可控、失败可预期
     timeout-minutes: 90
     env:
       UPLOAD_URL: ${{ inputs.upload-url }}
       RELEASE_TAG: ${{ inputs.tag }}
       APP_KEY_INPUT: ${{ inputs.app-key }}
+      UPLOAD_BUDGET_MIN: ${{ inputs.upload-budget-minutes }}
       # 被调用时取调用方传入的 hub_token；直接 dispatch 时回退取仓库 secret HUB_UPLOAD_TOKEN
       HUB_TOKEN: ${{ secrets.hub_token || secrets.HUB_UPLOAD_TOKEN }}
     steps:
@@ -180,6 +195,21 @@ jobs:
           # 并行上传的响应文件彼此隔离（多个后台组同时 curl -o，不能用固定文件名）
           RESP_DIR=$(mktemp -d)
 
+          # 总时间预算：deadline 覆盖整个上传步骤（并行组 + 清单校验 + latest.json）。
+          # 慢速链路下单次尝试会烧满 --max-time 20min，不设上限时「5 次重试 × 多组并行」
+          # 一路空跑到 job timeout 才失败；deadline 后停止发起新尝试，失败时间可预期。
+          # 服务端上传幂等（同记录覆盖、文件覆盖落盘），重跑 job 即续传，不白传已成功的。
+          BUDGET_MIN="${UPLOAD_BUDGET_MIN:-75}"
+          if [ "$BUDGET_MIN" -gt 0 ] 2>/dev/null; then
+            DEADLINE=$(( $(date +%s) + BUDGET_MIN * 60 ))
+            echo "上传总预算 ${BUDGET_MIN}min：预算耗尽即停止重试快速失败（重跑续传）"
+          else
+            DEADLINE=0
+          fi
+          # 发起新尝试需保留的最小剩余预算：大文件剩余太少传不完就别再开火；
+          # latest.json 很小，收尾阶段会放宽到 30s
+          RESERVE=300
+
           # 单文件上传：参数 "路径|platform|arch"（arch 空串=不区分）。
           # 5 次重试；成功判定 HTTP 2xx 且业务 code 为 0（旧契约）或 2xx（现契约返回 200）。
           # 确定性错误（401/403、应用不存在或禁用、token 无效）不重试：立即失败并落
@@ -192,7 +222,7 @@ jobs:
             local REST="${entry#*|}"
             local PLATFORM="${REST%%|*}"
             local ARCH="${REST#*|}"
-            local BASENAME SIZE FORM OK HTTP_CODE RESP_CODE BIZ_OK FILE_PATH i RESP_FILE
+            local BASENAME SIZE FORM OK HTTP_CODE RESP_CODE BIZ_OK FILE_PATH i RESP_FILE REMAINING MAX_TIME
             BASENAME=$(basename "$FILE")
             SIZE=$(du -h "$FILE" | cut -f1)
             echo "→ Uploading $BASENAME ($SIZE) as platform=$PLATFORM arch=${ARCH:--}"
@@ -219,14 +249,29 @@ jobs:
                 echo "::error::$BASENAME 跳过：其他上传组已发现确定性错误（详见上方日志）"
                 return 1
               fi
+              # 总预算控制：剩余不足 RESERVE 秒不再开始新尝试；单次 --max-time 不超过
+              # 剩余预算，确保「最后一击」也在 deadline 内结束而非再空跑整段 20min
+              MAX_TIME=1200
+              if [ "$DEADLINE" -gt 0 ]; then
+                REMAINING=$(( DEADLINE - $(date +%s) ))
+                if [ "$REMAINING" -le "$RESERVE" ]; then
+                  echo "::error::$BASENAME 上传总预算耗尽（剩 ${REMAINING}s），停止重试；重跑 job 续传（服务端幂等）"
+                  return 1
+                fi
+                MAX_TIME=$(( REMAINING < MAX_TIME ? REMAINING : MAX_TIME ))
+              fi
               # 每次尝试独立响应文件：并行组共享 $RESP_DIR，固定文件名会互相覆盖
               RESP_FILE=$(mktemp "$RESP_DIR/resp.XXXXXX")
               HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' \
-                --connect-timeout 10 --max-time 1200 \
+                --connect-timeout 10 --max-time "$MAX_TIME" \
                 --speed-limit 1024 --speed-time 60 \
                 -X POST "$UPLOAD_URL" "${FORM[@]}") || {
                 rm -f "$RESP_FILE"
-                echo "::warning::$BASENAME 网络错误（第 $i/5 次），10s 后重试"
+                if [ "$DEADLINE" -gt 0 ]; then
+                  echo "::warning::$BASENAME 网络错误（第 $i/5 次），10s 后重试（剩余预算 $(( DEADLINE - $(date +%s) ))s）"
+                else
+                  echo "::warning::$BASENAME 网络错误（第 $i/5 次），10s 后重试"
+                fi
                 sleep 10
                 continue
               }
@@ -351,6 +396,13 @@ jobs:
             fi
           done
 
+          # 有产物上传失败就拒绝发清单：hub 产物文件名跨版本稳定，失败的产物在 hub 上
+          # 仍是旧版本文件，此时上传 latest.json 更新器会拿到「新版本号 + 旧安装包」
+          if [ "$FAIL" = "1" ]; then
+            echo "::error::部分产物上传 hub 失败，跳过清单校验与 latest.json 上传，详见上方日志"
+            exit 1
+          fi
+
           # 清单内所有下载地址必须已在 hub 可达（文件刚落盘；不可达说明命名/落盘不一致，
           # 拒绝发布坏清单）
           echo "Validating manifest URLs against hub..."
@@ -370,11 +422,16 @@ jobs:
             fi
           done < <(jq -r '.platforms[]?.url // empty' assets/latest.json)
 
-          # latest.json 最后传（清单生效即意味着所有下载文件已就位）
-          upload_one "assets/latest.json|0|" || FAIL=1
-
           if [ "$FAIL" = "1" ]; then
-            echo "::error::部分产物上传 hub 失败，详见上方日志"
+            echo "::error::更新清单 URL 校验失败，拒绝上传 latest.json（避免发布坏清单），详见上方日志"
             exit 1
           fi
+
+          # latest.json 最后传（清单生效即意味着所有下载文件已就位）；
+          # 清单是小文件只需几秒，收尾放宽发起新尝试的最小剩余预算
+          RESERVE=30
+          upload_one "assets/latest.json|0|" || {
+            echo "::error::latest.json 上传 hub 失败"
+            exit 1
+          }
           echo "OK All artifacts uploaded to hub"
