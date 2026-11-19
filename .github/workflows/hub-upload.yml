@@ -24,9 +24,9 @@ name: Hub Upload
 #   不可达或返回前端页面都拒绝发布坏清单），最后传 latest.json（platform 0）。
 #   组间并行是必须的：实测 runner→hub 慢速链路下单文件 10-15min，串行 8 个文件
 #   会撞 job timeout。
-#   总时长受 upload-budget-minutes（默认 75min）deadline 控制：单次尝试的
+#   总时长受 upload-budget-minutes（默认 120min）deadline 控制：单次尝试的
 #   --max-time 不超过剩余预算、剩余不足时不再发起新尝试，慢链路下按预算快速失败
-#   （服务端幂等，重跑 job 即续传），不再「20min/次 × 5 次重试」空跑到 job timeout。
+#   （服务端幂等，重跑 job 即续传），不再空跑到 job timeout。
 # .sig / .rpm 不上传（签名文本已嵌入 latest.json）；Windows 更新器直接下载 setup.exe。
 # changelog 自动取 GitHub Release notes；token 缺失时直接报错（服务端 401）。
 #
@@ -84,7 +84,7 @@ on:
         description: '上传阶段总时间预算（分钟）：耗尽后停止重试快速失败；0 = 不设预算仅受 job timeout 约束'
         required: false
         type: number
-        default: 75
+        default: 120
     secrets:
       hub_token:
         description: '上传令牌，以 X-Upload-Token 请求头携带'
@@ -108,7 +108,7 @@ on:
         description: '上传阶段总时间预算（分钟）：耗尽后停止重试快速失败；0 = 不设预算仅受 job timeout 约束'
         required: false
         type: number
-        default: 75
+        default: 120
 
 jobs:
   hub-upload:
@@ -116,11 +116,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # 实测 runner→hub 上传吞吐可低至 ~18KB/s（跨境链路），vortex 单产物 40-116MB，
-    # 8 个安装包/归档串行可能超过 1 小时；20 分钟上限会把 job 掐死在半路，放宽到 90，
-    # 慢传由 curl --speed-limit 熔断重试兜底；上传阶段另有 75min 预算 deadline
-    # （upload-budget-minutes 可调）保证总时长可控、失败可预期
-    timeout-minutes: 90
+    # 实测 runner→hub 上传吞吐可低至 ~18KB/s（跨境链路），vortex 单产物 40-116MB：
+    # 18KB/s 下 39MB 需 ~37min，单次尝试上限已放宽到 40min（--max-time 2400），
+    # 上传阶段另有 120min 预算 deadline（upload-budget-minutes 可调）；
+    # 本值必须大于预算，否则预算尚未熔断就被 job timeout 硬杀、错误日志被截断
+    # （v0.1.48 曾以 90min timeout 撞死，预算机制当时未进 tag）
+    timeout-minutes: 180
     env:
       UPLOAD_URL: ${{ inputs.upload-url }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -196,10 +197,10 @@ jobs:
           RESP_DIR=$(mktemp -d)
 
           # 总时间预算：deadline 覆盖整个上传步骤（并行组 + 清单校验 + latest.json）。
-          # 慢速链路下单次尝试会烧满 --max-time 20min，不设上限时「5 次重试 × 多组并行」
+          # 慢速链路下单次尝试会烧满 --max-time 40min，不设上限时「5 次重试 × 多组并行」
           # 一路空跑到 job timeout 才失败；deadline 后停止发起新尝试，失败时间可预期。
           # 服务端上传幂等（同记录覆盖、文件覆盖落盘），重跑 job 即续传，不白传已成功的。
-          BUDGET_MIN="${UPLOAD_BUDGET_MIN:-75}"
+          BUDGET_MIN="${UPLOAD_BUDGET_MIN:-120}"
           if [ "$BUDGET_MIN" -gt 0 ] 2>/dev/null; then
             DEADLINE=$(( $(date +%s) + BUDGET_MIN * 60 ))
             echo "上传总预算 ${BUDGET_MIN}min：预算耗尽即停止重试快速失败（重跑续传）"
@@ -208,7 +209,7 @@ jobs:
           fi
           # 发起新尝试需保留的最小剩余预算：大文件剩余太少传不完就别再开火；
           # latest.json 很小，收尾阶段会放宽到 30s
-          RESERVE=300
+          RESERVE=600
 
           # 单文件上传：参数 "路径|platform|arch"（arch 空串=不区分）。
           # 5 次重试；成功判定 HTTP 2xx 且业务 code 为 0（旧契约）或 2xx（现契约返回 200）。
@@ -250,8 +251,9 @@ jobs:
                 return 1
               fi
               # 总预算控制：剩余不足 RESERVE 秒不再开始新尝试；单次 --max-time 不超过
-              # 剩余预算，确保「最后一击」也在 deadline 内结束而非再空跑整段 20min
-              MAX_TIME=1200
+              # 剩余预算，确保「最后一击」也在 deadline 内结束而非再空跑整段 40min；
+              # 2400s：18KB/s 坏链路下 23-39MB 需 21-37min，20min 上限永远传不完
+              MAX_TIME=2400
               if [ "$DEADLINE" -gt 0 ]; then
                 REMAINING=$(( DEADLINE - $(date +%s) ))
                 if [ "$REMAINING" -le "$RESERVE" ]; then
@@ -262,9 +264,12 @@ jobs:
               fi
               # 每次尝试独立响应文件：并行组共享 $RESP_DIR，固定文件名会互相覆盖
               RESP_FILE=$(mktemp "$RESP_DIR/resp.XXXXXX")
+              # 龟速熔断：吞吐 <8KB/s 持续 2min 即放弃本次尝试——dead link 快速退出；
+              # 8-19KB/s 的爬行链路 40min 内可传完 23-39MB 产物，不误杀（旧阈值 1KB/s
+              # 过低，龟速爬行不触发熔断，每次尝试都烧满 --max-time）
               HTTP_CODE=$(curl -sS -o "$RESP_FILE" -w '%{http_code}' \
                 --connect-timeout 10 --max-time "$MAX_TIME" \
-                --speed-limit 1024 --speed-time 60 \
+                --speed-limit 8192 --speed-time 120 \
                 -X POST "$UPLOAD_URL" "${FORM[@]}") || {
                 rm -f "$RESP_FILE"
                 if [ "$DEADLINE" -gt 0 ]; then

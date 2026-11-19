@@ -8,6 +8,7 @@
 #   make major                      # bump major 并发布
 #   make current-version            # 查看当前版本与最新标签
 #   make sync-version VERSION=0.1.4 # 仅同步版本号到所有配置文件（不提交不推送）
+#   make reupload                   # 重新触发 hub 上传（默认最新标签，服务端幂等续传）
 #   make check                      # 前端 + Rust 构建检查
 #   make dry-run                    # 预览发布步骤（不执行）
 #   make clean                      # 清理构建产物
@@ -15,6 +16,7 @@
 # 环境变量:
 #   SKIP_CHECK=1                    # 跳过构建检查（快速发布）
 #   NO_PUSH=1                       # 不推送到远程（仅本地提交+标签）
+#   BUDGET=60                       # reupload：上传总时间预算（分钟，默认 120，0=不限）
 
 CURRENT_VERSION := $(shell node -p "require('./package.json').version")
 NEXT_PATCH     := $(shell node -p "const v=require('./package.json').version.split('.');v[2]++;v.join('.')")
@@ -45,7 +47,7 @@ C_RED    := \033[31m
 C_CYAN   := \033[36m
 C_BOLD   := \033[1m
 
-.PHONY: help current-version sync-version check release minor major dry-run clean
+.PHONY: help current-version sync-version check release minor major dry-run clean reupload
 
 # ── 默认目标 ─────────────────────────────────────────────
 
@@ -60,6 +62,8 @@ help:
 	@echo "  make major                      bump major 并发布"
 	@echo "  make current-version            查看当前版本与最新标签"
 	@echo "  make sync-version VERSION=0.1.4  仅同步版本号（不提交不推送）"
+	@echo "  make reupload                   重新触发 hub 上传（默认最新标签）"
+	@echo "  make reupload VERSION=0.1.48    重传指定版本到 hub"
 	@echo "  make check                      构建检查"
 	@echo "  make dry-run                    预览发布步骤"
 	@echo "  make clean                      清理构建产物"
@@ -184,6 +188,38 @@ clean:
 	@rm -rf dist
 	@cd src-tauri && cargo clean
 	@echo "$(C_GREEN)✓ 已清理$(C_RESET)"
+
+# ── Hub 重传 ─────────────────────────────────────────────
+# 重新触发 hub-upload 工作流（其内含 workflow_dispatch 触发器，可独立于 release 运行）。
+# 适用场景：hub 上传超时/预算耗尽后重跑——服务端上传幂等（同记录覆盖、文件覆盖落盘），
+# 已传成功的文件重传覆盖即可，不损失任何进度。
+# 用法:
+#   make reupload                    # 重传最新标签
+#   make reupload VERSION=0.1.48     # 重传指定版本（自动加 v 前缀）
+#   make reupload TAG=v0.1.48        # 重传指定标签（原样使用）
+#   make reupload BUDGET=60          # 指定上传总预算 60min（默认 120，0=不限）
+#   make reupload REF=main           # 指定 dispatch 的 ref（默认当前分支）
+
+REUPLOAD_TAG := $(if $(TAG),$(TAG),$(if $(VERSION),v$(VERSION),$(shell git describe --tags --abbrev=0 2>/dev/null)))
+REUPLOAD_REF := $(if $(REF),$(REF),$(if $(GIT_BRANCH),$(GIT_BRANCH),main))
+
+reupload:
+	@test -n "$(REUPLOAD_TAG)" || (echo "$(C_RED)错误: 未找到可重传的标签（可显式指定: make reupload VERSION=0.1.48）$(C_RESET)" && exit 1)
+	@command -v gh >/dev/null 2>&1 || (echo "$(C_RED)错误: 未安装 gh CLI（brew install gh 后 gh auth login）$(C_RESET)" && exit 1)
+	@git fetch $(GIT_REMOTE) --tags -q 2>/dev/null || true
+	@gh release view "$(REUPLOAD_TAG)" --repo $(REPO_URL) >/dev/null 2>&1 \
+		|| (echo "$(C_RED)错误: Release $(REUPLOAD_TAG) 不存在，hub 上传依赖其资产，请先确认发布成功$(C_RESET)" && exit 1)
+	@echo "$(C_BOLD)═══ 重新上传 $(REUPLOAD_TAG) 到 hub ═══$(C_RESET)"
+	@echo "  $(C_GREEN)ref:$(C_RESET) $(REUPLOAD_REF)"
+	@if [ -n "$(BUDGET)" ]; then \
+		gh workflow run hub-upload.yml --repo $(REPO_URL) --ref $(REUPLOAD_REF) \
+			-f tag=$(REUPLOAD_TAG) -f upload-budget-minutes=$(BUDGET); \
+	else \
+		gh workflow run hub-upload.yml --repo $(REPO_URL) --ref $(REUPLOAD_REF) \
+			-f tag=$(REUPLOAD_TAG); \
+	fi
+	@echo "$(C_GREEN)✓ 已触发 hub-upload 工作流（服务端幂等，已传文件自动覆盖续传）$(C_RESET)"
+	@echo "$(C_BOLD)CI 构建进度:$(C_RESET) $(REPO_URL)/actions"
 
 
 # git commit and push logic
