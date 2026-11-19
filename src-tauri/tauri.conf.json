@@ -1,6 +1,6 @@
 {
   "productName": "Vortex",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "identifier": "com.vortex.gateway",
   "build": {
     "beforeDevCommand": "bun run dev",
